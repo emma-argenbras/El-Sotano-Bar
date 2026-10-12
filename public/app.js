@@ -73,6 +73,16 @@ addEventListener('online', pintarConexion);
 addEventListener('offline', pintarConexion);
 pintarConexion();
 
+// ---------- invitado ----------
+// Si llegó por su pase, el pedido queda a su nombre y la casa puede ver el
+// consumo de cada invitado. Si escanea el QR de la mesa sin pase, no hay
+// forma de atribuirlo: es una limitación, no un olvido.
+const invitadoId = (() => {
+  const porUrl = new URLSearchParams(location.search).get('inv');
+  if (porUrl) localStorage.setItem('sotano:invitado', porUrl);
+  return porUrl || localStorage.getItem('sotano:invitado') || '';
+})();
+
 // ---------- pasar la carta a otro ----------
 // El que ya está adentro muestra el QR en su pantalla, el otro lo escanea con
 // la cámara y entra a la misma mesa. Es un diálogo: se cierra y el carrito,
@@ -317,6 +327,7 @@ $('#btnEnviar').onclick = async () => {
       creadoEn: serverTimestamp(),
     };
     if (nombre) pedido.nombreCliente = nombre;
+    if (invitadoId) pedido.invitadoId = invitadoId;
     if (nota) pedido.nota = nota;
 
     // Con cache persistente, addDoc resuelve local y sincroniza al volver la señal.

@@ -60,6 +60,7 @@ service cloud.firestore {
     //   admin   — administra todo salvo borrar. Cuenta permanente.
     //   barman  — mueve pedidos y marca agotado. Ve precios, caja y eventos,
     //             pero solo las noches en que está asignado al evento.
+    //   puerta  — registra quién entra. No ve la caja ni toca la carta.
     function miRol() {
       return tengoTurno() ? miAcceso().get('rol', 'barman') : '';
     }
@@ -80,6 +81,14 @@ service cloud.firestore {
 
     function esBarra() {
       return esAdmin() || barmanDeTurno();
+    }
+
+    // La puerta solo trabaja la noche en que está asignada, igual que el barman.
+    function esPuerta() {
+      return miRol() == 'puerta'
+        && exists(/databases/$(database)/documents/barra/turno)
+        && request.auth.uid in get(/databases/$(database)/documents/barra/turno)
+             .data.get('barmanes', []);
     }
 
     // Lo que la barra puede tocar de un producto: si se acabó y cuánto queda.
@@ -121,7 +130,8 @@ service cloud.firestore {
     // así que la integridad del total se verifica en el panel de barra (ver LEEME).
     function pedidoValido(d) {
       return d.keys().hasAll(['clienteId', 'estado', 'items', 'total', 'creadoEn'])
-        && d.keys().hasOnly(['clienteId', 'estado', 'items', 'total', 'mesa', 'nota', 'nombreCliente', 'creadoEn'])
+        && d.keys().hasOnly(['clienteId', 'estado', 'items', 'total', 'mesa', 'nota',
+                             'nombreCliente', 'invitadoId', 'creadoEn'])
         && d.clienteId is string
         && d.estado is string
         && d.items is list
@@ -133,7 +143,9 @@ service cloud.firestore {
         && d.creadoEn == request.time
         && (!('mesa' in d.keys()) || (d.mesa is string && d.mesa.size() <= 20))
         && (!('nota' in d.keys()) || (d.nota is string && d.nota.size() <= 300))
-        && (!('nombreCliente' in d.keys()) || (d.nombreCliente is string && d.nombreCliente.size() <= 60));
+        && (!('nombreCliente' in d.keys()) || (d.nombreCliente is string && d.nombreCliente.size() <= 60))
+        // Ata el pedido al invitado para poder ver el consumo de cada uno.
+        && (!('invitadoId' in d.keys()) || (d.invitadoId is string && d.invitadoId.size() <= 40));
     }
 
     // ---------- carta ----------
@@ -197,6 +209,64 @@ service cloud.firestore {
       allow delete: if esElDueno();
     }
 
+    // El contador de registrados lo sube quien se registra, de a uno y solo
+    // mientras quede lugar. Es lo único que un desconocido puede escribir.
+    match /publico/registro {
+      allow update: if esAdmin()
+        || (hayLugar()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['registrados'])
+            && request.resource.data.registrados == resource.data.registrados + 1);
+    }
+
+    // ---------- invitados de la noche ----------
+    //
+    // El id es un token largo al azar y hace de llave: quien lo tiene ve su
+    // pase, y nadie más. Listar la tanda entera es de la casa.
+    //
+    // El cupo es best effort: las reglas no saben contar documentos, así que
+    // se apoyan en el contador de publico/registro. Sirve para cerrar el
+    // registro cuando se llena, no para blindarlo. El control real es la
+    // puerta, que ve el total en vivo.
+    function registro() {
+      return get(/databases/$(database)/documents/publico/registro).data;
+    }
+
+    function hayLugar() {
+      return exists(/databases/$(database)/documents/publico/registro)
+        && registro().get('abierto', false) == true
+        && registro().get('registrados', 0) < registro().get('capacidad', 0);
+    }
+
+    function invitadoValido(d) {
+      return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor'])
+        && d.keys().hasAll(['eventoId', 'nombre', 'telefono', 'creadoEn'])
+        && d.eventoId is string
+        && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60
+        && d.telefono is string && d.telefono.size() >= 6 && d.telefono.size() <= 25
+        && d.creadoEn == request.time
+        && d.get('ingresadoEn', null) == null;
+    }
+
+    match /invitados/{token} {
+      // Con el token en la mano ves tu pase. Sin él, nada.
+      allow get: if true;
+      allow list: if esBarra() || esPuerta();
+
+      // Se registra cualquiera mientras haya lugar y el registro esté abierto,
+      // y siempre contra el evento que publico/registro declara abierto.
+      allow create: if token.size() >= 16
+        && invitadoValido(request.resource.data)
+        && hayLugar()
+        && request.resource.data.eventoId == registro().get('eventoId', '');
+
+      // Marcar el ingreso: puerta o casa. Nadie se marca su propia entrada.
+      allow update: if (esPuerta() || esBarra())
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['ingresadoEn', 'ingresadoPor']);
+
+      allow delete: if esElDueno();
+    }
+
     // ---------- el padrón: quién puede entrar al panel ----------
     // Va fuera de barra/ a propósito: si estuviera adentro, la regla de arriba
     // dejaría que el personal se editara su propio permiso.
@@ -213,7 +283,7 @@ service cloud.firestore {
       // Los roles son estos dos y nada más: con uno inventado la cuenta queda
       // sin acceso y sin forma de arreglarse sola.
       allow create, update: if esAdmin()
-        && request.resource.data.get('rol', 'barman') in ['admin', 'barman'];
+        && request.resource.data.get('rol', 'barman') in ['admin', 'barman', 'puerta'];
       allow delete: if esElDueno();
     }
 

@@ -146,7 +146,12 @@ await chequear('el botón de actualizar recarga la app y la deja limpia', async 
     await c.put('/marca-vieja', new Response('vieja'));
   });
 
-  await barra.locator('#vistaLogin [data-actualizar]').click();
+  // El botón recarga: hay que esperar a que la navegación termine antes de
+  // mirar nada, o el contexto se destruye en el medio.
+  await Promise.all([
+    barra.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }),
+    barra.locator('#vistaLogin [data-actualizar]').click(),
+  ]);
   await barra.waitForSelector('#formLogin', { timeout: 15000 });
 
   const quedo = await barra.evaluate(() => caches.keys());
@@ -584,6 +589,136 @@ await chequear('reabrir vuelve a habilitar los pedidos', async () => {
 });
 
 await barra.click('#tabTablero');
+
+console.log('\nINVITADOS: registro, pase y puerta');
+let tokenInvitado = null;
+
+await chequear('el admin abre un evento con cupo y eso abre el registro', async () => {
+  await barra.click('#tabEvento');
+  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
+  await barra.click('#btnAbrirEvento');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  await barra.fill('#inpEvento', 'Noche con lista');
+  await barra.fill('#inpCapacidad', '2');
+  await barra.click('#btnConfirmarEvento');
+  await barra.waitForSelector('#evento .caja-evento', { timeout: 10000 });
+  // Abrir el evento son varias escrituras; la del registro puede llegar
+  // un instante después de que la tarjeta ya se dibujó.
+  let r;
+  for (let i = 0; i < 40; i++) {
+    r = (await db.doc('publico/registro').get()).data();
+    if (r?.abierto === true) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (r?.abierto !== true) throw new Error('no abrió el registro');
+  if (r?.capacidad !== 2) throw new Error('no guardó el cupo: ' + r?.capacidad);
+});
+
+const ctxInv = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+const invitado = await ctxInv.newPage();
+invitado.on('pageerror', (e) => errores.push('invitado: ' + e.message));
+
+await chequear('un invitado se registra sin cuenta y recibe su pase con QR', async () => {
+  await invitado.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+  await invitado.waitForSelector('#formRegistro', { timeout: 15000 });
+  if (!(await invitado.textContent('#pantalla')).includes('Noche con lista'))
+    throw new Error('no muestra de qué noche se trata');
+  await invitado.fill('#inpNombre', 'Ana Prueba');
+  await invitado.fill('#inpTel', '11 5555 0000');
+  await invitado.click('#btnRegistrar');
+
+  await invitado.waitForSelector('.lienzo-pase .qr', { timeout: 15000 });
+  if (!(await invitado.textContent('.lienzo-pase')).includes('Ana Prueba'))
+    throw new Error('el pase no dice de quién es');
+  tokenInvitado = new URL(invitado.url()).searchParams.get('i');
+  if (!tokenInvitado || tokenInvitado.length < 16) throw new Error('token flojo: ' + tokenInvitado);
+
+  // El contador tiene que haber subido: es lo que cierra el cupo.
+  const r = await db.doc('publico/registro').get();
+  if (r.data()?.registrados !== 1) throw new Error('no contó el registro');
+});
+
+await chequear('el QR del pase codifica su token', async () => {
+  const src = await invitado.getAttribute('.lienzo-pase .qr', 'src');
+  const png = Buffer.from(src.split(',')[1], 'base64');
+  const { PNG } = await import('pngjs');
+  const jsQR = (await import('jsqr')).default;
+  const img = PNG.sync.read(png);
+  const leido = jsQR(new Uint8ClampedArray(img.data), img.width, img.height);
+  if (leido?.data !== tokenInvitado) throw new Error('el QR dice: ' + leido?.data);
+});
+
+await chequear('lleno el cupo, no se registra nadie más', async () => {
+  // Queda uno: lo tomamos, y el siguiente tiene que rebotar.
+  const ctx2 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const p2 = await ctx2.newPage();
+  try {
+    await p2.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await p2.waitForSelector('#formRegistro', { timeout: 15000 });
+    await p2.fill('#inpNombre', 'Beto Prueba');
+    await p2.fill('#inpTel', '11 5555 1111');
+    await p2.click('#btnRegistrar');
+    await p2.waitForSelector('.lienzo-pase .qr', { timeout: 15000 });
+  } finally { await ctx2.close(); }
+
+  const ctx3 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const p3 = await ctx3.newPage();
+  try {
+    await p3.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await p3.waitForFunction(() =>
+      document.querySelector('#pantalla')?.textContent.includes('completo'), null, { timeout: 15000 });
+    if (await p3.locator('#formRegistro').count()) throw new Error('deja anotarse igual');
+  } finally { await ctx3.close(); }
+
+  // Y el servidor también lo rechaza, no solo la pantalla.
+  const rechazado = await invitado.evaluate(async () => {
+    const { getFirestore, doc, setDoc, serverTimestamp } = await import('/vendor/firebase.js');
+    try {
+      await setDoc(doc(getFirestore(), 'invitados', 'colado-con-token-largo-xxxx'), {
+        eventoId: 'cualquiera', nombre: 'Colado', telefono: '1155559999',
+        creadoEn: serverTimestamp(), ingresadoEn: null,
+      });
+      return null;
+    } catch (e) { return e.code; }
+  });
+  if (rechazado !== 'permission-denied') throw new Error('las reglas lo dejaron pasar: ' + rechazado);
+});
+
+await chequear('la casa ve la lista y marca el ingreso', async () => {
+  await barra.click('#tabPuerta');
+  await barra.waitForFunction(() =>
+    document.querySelector('#puerta')?.textContent.includes('Ana Prueba'), null, { timeout: 15000 });
+  const cont = await barra.textContent('.contador-puerta');
+  if (!cont.includes('2')) throw new Error('el contador no cuadra: ' + cont);
+
+  await barra.locator('.invitado', { hasText: 'Ana Prueba' }).locator('[data-ingreso]').click();
+  await barra.waitForFunction(() => {
+    const f = [...document.querySelectorAll('.invitado')].find((x) => x.textContent.includes('Ana Prueba'));
+    return f?.classList.contains('adentro');
+  }, null, { timeout: 10000 });
+
+  // Y el invitado lo ve en su pase, en vivo.
+  await invitado.waitForFunction(() =>
+    document.querySelector('.lienzo-pase')?.classList.contains('usado'), null, { timeout: 15000 });
+});
+
+await chequear('lo que pide el invitado queda a su nombre', async () => {
+  await invitado.goto(`${BASE}/?inv=${tokenInvitado}`, { waitUntil: 'domcontentloaded' });
+  await invitado.waitForSelector('text=Papas bravas', { timeout: 15000 });
+  await invitado.locator('.item', { hasText: 'Papas bravas' }).locator('[data-mas]').click();
+  await invitado.click('#btnConfirmar');
+  await invitado.selectOption('#selMesa', '4');
+  await invitado.click('#btnEnviar');
+  await invitado.waitForSelector('#dlgConfirmar:not([open])', { timeout: 15000 }).catch(() => {});
+
+  await barra.click('#tabTablero');
+  await barra.waitForFunction(() =>
+    document.querySelector('#tablero')?.textContent.includes('Ana Prueba'), null, { timeout: 15000 });
+
+  const guardado = await db.collection('pedidos').where('invitadoId', '==', tokenInvitado).get();
+  if (guardado.empty) throw new Error('el pedido no quedó atado al invitado');
+});
+await ctxInv.close();
 
 // Detección de total adulterado: un cliente malicioso manda precios truchos.
 console.log('\nINTEGRIDAD DE TOTALES');

@@ -378,3 +378,34 @@ body.es-gerente .ancho-full.solo-gerente-inline { display: block !important; wid
 #elegirBarman .vacio { font-size: .86rem; color: var(--suave); padding: .2rem 0; }
 .grupo-personal { font-size: .78rem; color: var(--suave); text-transform: uppercase;
                   letter-spacing: .06em; margin: .9rem 0 .4rem; }
+
+/* ---------- pase del invitado ---------- */
+.lienzo-pase {
+  background: #fff; border-radius: 16px; padding: 1.2rem; text-align: center;
+}
+.lienzo-pase .logo { width: 56%; max-width: 230px; height: auto; display: block; margin: 0 auto .8rem; }
+.lienzo-pase .qr { width: 100%; max-width: 360px; height: auto; display: block; margin: 0 auto; }
+.lienzo-pase .quien {
+  color: #111; font-size: 1.35rem; font-weight: 800; margin-top: .7rem; line-height: 1.2;
+}
+.lienzo-pase .pie-pase { color: #666; font-size: .9rem; margin-top: .25rem; }
+.lienzo-pase.usado { opacity: .62; }
+.lienzo-pase.usado .pie-pase { color: var(--verde); font-weight: 700; }
+
+/* ---------- puerta ---------- */
+.contador-puerta { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+.contador-puerta > div {
+  background: var(--panel-alto); border: 1px solid var(--borde);
+  border-radius: 10px; padding: .7rem; text-align: center;
+}
+.contador-puerta b { display: block; font-size: 1.5rem; line-height: 1.1; }
+.contador-puerta span { font-size: .72rem; color: var(--suave); text-transform: uppercase; letter-spacing: .05em; }
+.contador-puerta .lleno b { color: var(--rojo); }
+#visor { width: 100%; max-width: 420px; border-radius: 14px; background: #000; display: block; margin: .8rem auto 0; }
+.resultado-escaneo { margin-top: .9rem; }
+.invitado .cuerpo .desc { font-variant-numeric: tabular-nums; }
+.invitado.adentro { border-color: rgba(70,192,138,.45); }
+.invitado.adentro .nombre::after { content: ' ✓'; color: var(--verde); }
+
+/* La puerta solo ve su pantalla: lo demás no es asunto suyo. */
+body.es-puerta #tabTablero, body.es-puerta #tabCartaBar, body.es-puerta #tabEvento { display: none; }

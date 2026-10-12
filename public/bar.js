@@ -51,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], invitados: [], registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -210,6 +210,7 @@ onAuthStateChanged(auth, async (u) => {
   if (!dentro) return;
   estado.usuario = aUsuario(u.email);
   pintarConexion(); pintarSonido(); escucharEvento(); escucharCarta();
+  escucharInvitados();
   vigilarMiAcceso(u.uid);
   // Quién es dueño lo deciden las reglas, no el cliente: si puede listar los
   // accesos, es dueño. Así no hay una segunda lista de mails que mantener.
@@ -253,6 +254,11 @@ function escucharEvento() {
     pintarCaja();
   }, fallo('#evento'));
 
+  onSnapshot(doc(db, 'publico', 'registro'), (d) => {
+    estado.registro = d.exists() ? d.data() : null;
+    pintarPuerta(); pintarEvento();
+  }, () => {});
+
   onSnapshot(ESTADO_LOCAL(), (d) => {
     estado.tomandoPedidos = d.exists() ? d.data().tomandoPedidos !== false : true;
     pintarEvento();
@@ -280,16 +286,18 @@ function desdeCuando() {
 function abrirEvento() {
   const hoy = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
   $('#inpEvento').value = hoy[0].toUpperCase() + hoy.slice(1);
+  $('#inpCapacidad').value = '';
   pintarElegirBarman();
   $('#dlgEvento').showModal();
   $('#inpEvento').focus();
 }
 
 function pintarElegirBarman(marcados = []) {
-  const barmanes = estado.accesos.filter((a) => a.rol !== 'admin' && a.activo);
-  $('#elegirBarman').innerHTML = barmanes.length
-    ? barmanes.map((b) => `<label><input type="checkbox" value="${esc(b.uid)}"
-        ${marcados.includes(b.uid) ? 'checked' : ''}> ${esc(b.usuario)}</label>`).join('')
+  const equipo = estado.accesos.filter((a) => a.rol !== 'admin' && a.activo);
+  $('#elegirBarman').innerHTML = equipo.length
+    ? equipo.map((b) => `<label><input type="checkbox" value="${esc(b.uid)}"
+        ${marcados.includes(b.uid) ? 'checked' : ''}> ${esc(b.usuario)}
+        <small style="color:var(--suave)">${b.rol === 'puerta' ? 'puerta' : 'barra'}</small></label>`).join('')
     : `<div class="vacio">Todavía no registraste ningún barman. Podés abrir el evento
        igual y asignarlos después.</div>`;
 }
@@ -303,10 +311,16 @@ $('#btnConfirmarEvento').onclick = async () => {
   if (!nombre) { $('#inpEvento').focus(); return; }
   const elegidos = barmanMarcados();
   try {
+    const capacidad = Math.max(0, Math.floor(Number($('#inpCapacidad').value) || 0));
     const ref = await addDoc(EVENTOS(), {
-      nombre, abiertoEn: serverTimestamp(), cerradoEn: null, cierre: null, barmanes: elegidos,
+      nombre, abiertoEn: serverTimestamp(), cerradoEn: null, cierre: null,
+      barmanes: elegidos, capacidad,
     });
     await marcarTurno(ref.id, elegidos);
+    // El registro de invitados abre solo si pusiste un cupo.
+    await setDoc(doc(db, 'publico', 'registro'), {
+      eventoId: ref.id, nombre, capacidad, registrados: 0, abierto: capacidad > 0,
+    });
     await marcarTomandoPedidos(true, { id: ref.id, nombre });
     $('#dlgEvento').close();
   } catch (e) { alert('No se pudo abrir: ' + (e.code || e.message)); }
@@ -374,6 +388,9 @@ async function cerrarEvento() {
     await updateDoc(doc(db, 'barra', 'eventos', 'items', estado.evento.id),
       { cerradoEn: serverTimestamp(), cierre: r });
     await marcarTurno(null, []);
+    // Cerrada la noche no se registra nadie más.
+    await setDoc(doc(db, 'publico', 'registro'),
+      { eventoId: null, nombre: null, capacidad: 0, registrados: 0, abierto: false });
     await marcarTomandoPedidos(false);
   } catch (e) { alert('No se pudo cerrar: ' + (e.code || e.message)); }
 }
@@ -433,6 +450,16 @@ function pintarEvento() {
         <div><b>${r.cancelados}</b><span>cancelados</span></div>
         <div class="plata"><b>${plata(r.facturado)}</b><span>caja</span></div>
       </div>
+      ${estado.registro?.eventoId === estado.evento.id && Number(estado.registro.capacidad) > 0 ? `
+      <div class="interruptor" style="margin-top:.9rem">
+        <div>
+          <b>Registro de invitados</b>
+          <span>${Number(estado.registro.registrados || 0)} de ${Number(estado.registro.capacidad)} anotados
+            · ${estado.invitados.filter((i) => i.ingresadoEn).length} adentro</span>
+          <span style="word-break:break-all;color:var(--oro)">${esc(location.origin)}/registro.html</span>
+        </div>
+        <button class="btn solo-gerente-inline" id="btnLinkRegistro">Compartir</button>
+      </div>` : ''}
       <div class="interruptor" style="margin-top:.9rem">
         <div>
           <b>De turno</b>
@@ -464,6 +491,16 @@ function pintarEvento() {
     </div>`;
   if ($('#btnCerrarEvento')) $('#btnCerrarEvento').onclick = cerrarEvento;
   if ($('#btnTurno')) $('#btnTurno').onclick = editarTurno;
+  if ($('#btnLinkRegistro')) $('#btnLinkRegistro').onclick = async () => {
+    const url = `${location.origin}/registro.html`;
+    const texto = `Reservá tu lugar para ${estado.evento.nombre} en El Sótano`;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'El Sótano', text: texto, url }); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); $('#btnLinkRegistro').textContent = 'Copiado ✓'; }
+    catch { alert(url); }
+  };
   if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
     const prender = !estado.tomandoPedidos;
     if (!prender && !confirm('¿Cortar los pedidos?\n\nEl QR sigue andando, pero el cliente no va a poder mandar nada hasta que lo reabras.')) return;
@@ -560,6 +597,183 @@ function pintarEventosPasados() {
   });
 }
 
+// ---------- puerta: quién entra ----------
+// La lista la ven la puerta y la casa. El invitado no: su token le abre su
+// pase y nada más.
+function escucharInvitados() {
+  onSnapshot(collection(db, 'invitados'), (snap) => {
+    estado.invitados = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((i) => !estado.registro?.eventoId || i.eventoId === estado.registro.eventoId)
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    pintarPuerta();
+  }, (e) => {
+    if (e.code === 'permission-denied') { estado.invitados = []; pintarPuerta(); return; }
+    fallo('#puerta')(e);
+  });
+}
+
+async function marcarIngreso(id, entra) {
+  try {
+    await updateDoc(doc(db, 'invitados', id), {
+      ingresadoEn: entra ? serverTimestamp() : null,
+      ingresadoPor: entra ? (estado.usuario || 'casa') : null,
+    });
+    if (navigator.vibrate) navigator.vibrate(entra ? [60, 50, 60] : 30);
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+// ---------- lector de QR con la cámara ----------
+let camara = null;
+let leyendo = false;
+
+async function abrirCamara() {
+  const video = $('#visor');
+  if (!video) return;
+  try {
+    camara = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }, audio: false,
+    });
+  } catch (e) {
+    $('#escaneo').innerHTML = `<div class="aviso mal"><span>⚠</span><div>
+      <b>No pude abrir la cámara.</b><br>${esc(e.name)} — buscá al invitado por nombre.</div></div>`;
+    return;
+  }
+  video.srcObject = camara;
+  video.setAttribute('playsinline', '');
+  await video.play().catch(() => {});
+  leyendo = true;
+  const { leerQR } = await import('/vendor/qr.js');
+  const lienzo = document.createElement('canvas');
+  const ctx = lienzo.getContext('2d', { willReadFrequently: true });
+
+  (function mirar() {
+    if (!leyendo) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      lienzo.width = video.videoWidth; lienzo.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, lienzo.width, lienzo.height);
+      const img = ctx.getImageData(0, 0, lienzo.width, lienzo.height);
+      const leido = leerQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+      if (leido?.data) return resolverEscaneo(leido.data.trim());
+    }
+    requestAnimationFrame(mirar);
+  })();
+}
+
+function cerrarCamara() {
+  leyendo = false;
+  camara?.getTracks().forEach((t) => t.stop());
+  camara = null;
+  const v = $('#visor');
+  if (v) v.srcObject = null;
+}
+
+function resolverEscaneo(texto) {
+  leyendo = false;
+  // El QR lleva el token pelado, pero si alguien muestra el link completo
+  // también lo entendemos.
+  const id = texto.includes('i=') ? new URL(texto, location.origin).searchParams.get('i') : texto;
+  const inv = estado.invitados.find((x) => x.id === id);
+  const caja = $('#escaneo');
+  if (!inv) {
+    caja.innerHTML = `<div class="aviso mal"><span>✖</span><div>
+      <b>Ese pase no es de esta noche.</b><br>Buscalo por nombre o que se registre.</div></div>`;
+  } else if (inv.ingresadoEn) {
+    caja.innerHTML = `<div class="aviso mal"><span>⚠</span><div>
+      <b>${esc(inv.nombre)} ya entró.</b><br>Este pase se usó una vez.</div></div>`;
+  } else {
+    marcarIngreso(inv.id, true);
+    caja.innerHTML = `<div class="aviso ok"><span>✓</span><div>
+      <b>Adelante, ${esc(inv.nombre)}.</b><br>Entrada registrada.</div></div>`;
+  }
+  caja.innerHTML += '<button class="btn primario ancho-full" id="btnSeguir" style="margin-top:.7rem">Escanear el siguiente</button>';
+  $('#btnSeguir').onclick = () => { $('#escaneo').innerHTML = ''; abrirCamara(); };
+}
+
+function pintarPuerta() {
+  const cont = $('#puerta');
+  if (!cont) return;
+  const invs = estado.invitados;
+  const adentro = invs.filter((i) => i.ingresadoEn).length;
+  const cupo = Number(estado.registro?.capacidad || 0);
+  const lleno = cupo && adentro >= cupo;
+  const busca = (estado.buscaInvitado || '').toLowerCase();
+  const visibles = busca
+    ? invs.filter((i) => `${i.nombre} ${i.telefono}`.toLowerCase().includes(busca))
+    : invs;
+
+  cont.innerHTML = `
+    <div class="contador-puerta">
+      <div class="${lleno ? 'lleno' : ''}"><b>${adentro}</b><span>adentro</span></div>
+      <div><b>${invs.length}</b><span>registrados</span></div>
+      <div><b>${cupo || '—'}</b><span>cupo</span></div>
+    </div>
+    ${lleno ? `<div class="aviso mal" style="margin-top:.8rem"><span>⚠</span><div>
+      <b>Se llenó.</b> Entraron ${adentro} de ${cupo}.</div></div>` : ''}
+
+    <div style="display:flex;gap:.6rem;margin-top:.9rem">
+      <button class="btn primario" id="btnEscanear" style="flex:1">Escanear pase</button>
+      <button class="btn" id="btnCerrarCam" style="flex:0 0 auto" hidden>Cerrar cámara</button>
+    </div>
+    <video id="visor" hidden muted playsinline></video>
+    <div class="resultado-escaneo" id="escaneo"></div>
+
+    <label class="campo" style="margin-top:1.1rem">
+      <span>Buscar por nombre o teléfono</span>
+      <input id="inpBuscaInv" value="${esc(estado.buscaInvitado || '')}" autocomplete="off">
+    </label>
+
+    ${visibles.length ? visibles.map((i) => `
+      <div class="item invitado ${i.ingresadoEn ? 'adentro' : ''}">
+        <div class="cuerpo">
+          <div class="nombre">${esc(i.nombre)}</div>
+          <div class="desc">${esc(i.telefono)}${i.ingresadoEn ? ' · entró ' + hora(i.ingresadoEn) : ''}${
+            consumoDe(i.id) ? ' · consumió ' + plata(consumoDe(i.id)) : ''}</div>
+        </div>
+        <button class="btn ${i.ingresadoEn ? '' : 'primario'}" data-ingreso="${esc(i.id)}"
+                style="padding:.4rem .7rem;font-size:.82rem">
+          ${i.ingresadoEn ? 'Deshacer' : 'Entró'}
+        </button>
+      </div>`).join('')
+      : `<p style="color:var(--suave);font-size:.9rem">${invs.length
+          ? 'Nadie con ese nombre.'
+          : 'Todavía no se registró nadie para esta noche.'}</p>`}`;
+
+  $('#btnEscanear').onclick = () => {
+    $('#visor').hidden = false;
+    $('#btnCerrarCam').hidden = false;
+    $('#escaneo').innerHTML = '';
+    abrirCamara();
+  };
+  $('#btnCerrarCam').onclick = () => {
+    cerrarCamara();
+    $('#visor').hidden = true;
+    $('#btnCerrarCam').hidden = true;
+  };
+  const inp = $('#inpBuscaInv');
+  inp.oninput = () => {
+    estado.buscaInvitado = inp.value;
+    const pos = inp.selectionStart;
+    pintarPuerta();
+    const nuevo = $('#inpBuscaInv');
+    nuevo.focus(); nuevo.setSelectionRange(pos, pos);
+  };
+  cont.querySelectorAll('[data-ingreso]').forEach((b) => b.onclick = () => {
+    const i = estado.invitados.find((x) => x.id === b.dataset.ingreso);
+    marcarIngreso(i.id, !i.ingresadoEn);
+  });
+}
+
+// Lo que lleva gastado un invitado: la suma de sus pedidos entregados. Sale
+// de los pedidos que ya tiene cargados el tablero, sin leer nada de más.
+function consumoDe(id) {
+  return estado.pedidos
+    .filter((p) => p.invitadoId === id && p.estado === 'entregado')
+    .reduce((s, p) => s + Number(p.total || 0), 0);
+}
+
+const hora = (t) => (t?.toDate ? t.toDate().toLocaleTimeString('es-AR',
+  { hour: '2-digit', minute: '2-digit' }) : '');
+
 // ---------- padrón de personal ----------
 // Cuentas usuario/contraseña, sin mail, que el dueño da de alta para un
 // evento y apaga cuando termina. El permiso es accesosBarra/{uid}: apagarlo
@@ -591,6 +805,10 @@ function aplicarRol() {
   b.toggle('es-dueno', estado.dueno);
   b.toggle('es-gerente', estado.dueno || estado.rol === 'admin');
   b.toggle('es-barra', !estado.dueno && estado.rol === 'barman');
+  // La puerta no trabaja pedidos ni carta: se le deja su pantalla y nada más.
+  const soloPuerta = !estado.dueno && estado.rol === 'puerta';
+  b.toggle('es-puerta', soloPuerta);
+  if (soloPuerta && !$('#vistaPuerta').hidden === false) irA('puerta');
 }
 
 function vigilarMiAcceso(uid) {
@@ -610,7 +828,7 @@ function vigilarMiAcceso(uid) {
 }
 
 async function altaPersona(rol) {
-  const que = rol === 'admin' ? 'administrador' : 'barman';
+  const que = { admin: 'administrador', barman: 'barman', puerta: 'puerta' }[rol];
   const usuario = (prompt(`Usuario del ${que} (sin espacios ni acentos)`) || '').trim().toLowerCase();
   if (!usuario) return;
   if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(usuario)) {
@@ -632,9 +850,8 @@ async function altaPersona(rol) {
       usuario, rol, activo: true, creadoEn: serverTimestamp(),
     });
     alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${que}\n\n`
-      + (rol === 'barman'
-        ? 'Para que entre, asignalo al evento desde "De turno".\n\n'
-        : '')
+      + (rol === 'admin' ? ''
+        : 'Para que entre, asignalo al evento desde "De turno".\n\n')
       + `Que entre en:\n${location.origin}/bar.html`);
   } catch (e) {
     alert(e.code === 'auth/email-already-in-use'
@@ -659,7 +876,8 @@ function pintarAccesos() {
   const cont = $('#accesos');
   if (!cont) return;
   const admins = estado.accesos.filter((a) => a.rol === 'admin');
-  const barmanes = estado.accesos.filter((a) => a.rol !== 'admin');
+  const barmanes = estado.accesos.filter((a) => (a.rol || 'barman') === 'barman');
+  const puertas = estado.accesos.filter((a) => a.rol === 'puerta');
 
   const fila = (a) => `
     <div class="item ${a.activo ? '' : 'agotado'}">
@@ -682,10 +900,16 @@ function pintarAccesos() {
     <div class="grupo-personal">Barman</div>
     ${barmanes.length ? barmanes.map(fila).join('')
       : '<p style="color:var(--suave);font-size:.88rem;margin:0">Todavía no registraste ninguno.</p>'}
-    <button class="btn primario ancho-full" id="btnAltaBarman" style="margin-top:.6rem">Registrar barman</button>`;
+    <button class="btn primario ancho-full" id="btnAltaBarman" style="margin-top:.6rem">Registrar barman</button>
+
+    <div class="grupo-personal">Puerta</div>
+    ${puertas.length ? puertas.map(fila).join('')
+      : '<p style="color:var(--suave);font-size:.88rem;margin:0">Todavía no registraste ninguno.</p>'}
+    <button class="btn ancho-full" id="btnAltaPuerta" style="margin-top:.6rem">Registrar gente de puerta</button>`;
 
   $('#btnAltaAdmin').onclick = () => altaPersona('admin');
   $('#btnAltaBarman').onclick = () => altaPersona('barman');
+  $('#btnAltaPuerta').onclick = () => altaPersona('puerta');
   cont.querySelectorAll('[data-acceso]').forEach((b) =>
     b.onclick = () => alternarAcceso(b.dataset.acceso));
 }
@@ -780,7 +1004,9 @@ function ticket(p, col) {
   <div class="ticket ${col.clave} ${tarde ? 'demorado' : ''}">
     <div class="cabeza">
       <span class="mesa">${p.mesa ? 'Mesa ' + esc(p.mesa) : 'Sin mesa'}</span>
-      ${p.nombreCliente ? `<small style="color:var(--suave)">${esc(p.nombreCliente)}</small>` : ''}
+      ${p.nombreCliente || p.invitadoId
+        ? `<small style="color:var(--suave)">${esc(p.nombreCliente
+            || estado.invitados.find((i) => i.id === p.invitadoId)?.nombre || 'invitado')}</small>` : ''}
       <span class="reloj ${tarde ? 'tarde' : ''}">${min < 1 ? 'recién' : min + ' min'}</span>
     </div>
     <ul>${(p.items || []).map((i) =>
@@ -908,8 +1134,12 @@ $('#btnSonido').onclick = () => {
 
 // ---------- pestañas ----------
 function irA(cual) {
-  const vistas = { tablero: '#vistaTablero', carta: '#vistaCartaBar', evento: '#vistaEvento' };
-  const tabs = { tablero: '#tabTablero', carta: '#tabCartaBar', evento: '#tabEvento' };
+  const vistas = { tablero: '#vistaTablero', carta: '#vistaCartaBar',
+                   evento: '#vistaEvento', puerta: '#vistaPuerta' };
+  const tabs = { tablero: '#tabTablero', carta: '#tabCartaBar',
+                 evento: '#tabEvento', puerta: '#tabPuerta' };
+  // La cámara se apaga al salir de Puerta: no se deja prendida de fondo.
+  if (cual !== 'puerta') cerrarCamara();
   for (const k of Object.keys(vistas)) {
     $(vistas[k]).hidden = k !== cual;
     $(tabs[k]).setAttribute('aria-selected', String(k === cual));
@@ -918,6 +1148,7 @@ function irA(cual) {
 $('#tabTablero').onclick = () => irA('tablero');
 $('#tabCartaBar').onclick = () => irA('carta');
 $('#tabEvento').onclick = () => irA('evento');
+$('#tabPuerta').onclick = () => irA('puerta');
 
 // Los relojes de los tickets tienen que correr aunque no entre nada nuevo.
 setInterval(() => { if (!$('#vistaPanel').hidden && !$('#vistaTablero').hidden) pintarTablero(); }, 30_000);

@@ -57,7 +57,15 @@ before(async () => {
     await setDoc(doc(db, 'accesosBarra/uid-turno-off'), { usuario: 'ex-barman', activo: false, rol: 'barman' });
     await setDoc(doc(db, 'accesosBarra/uid-franco'), { usuario: 'franco', activo: true, rol: 'barman' });
     // Esta noche trabaja nico. Franco está registrado pero no asignado.
-    await setDoc(doc(db, 'barra/turno'), { eventoId: 'ev-1', barmanes: ['uid-turno-ok'] });
+    await setDoc(doc(db, 'barra/turno'), { eventoId: 'ev-1', barmanes: ['uid-turno-ok', 'uid-puerta'] });
+    await setDoc(doc(db, 'accesosBarra/uid-puerta'), { usuario: 'puerta', activo: true, rol: 'puerta' });
+    await setDoc(doc(db, 'publico/registro'), {
+      eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 1, abierto: true,
+    });
+    await setDoc(doc(db, 'invitados/token-largo-de-prueba-1'), {
+      eventoId: 'ev-1', nombre: 'Ana', telefono: '1155550000',
+      creadoEn: new Date(), ingresadoEn: null,
+    });
   });
 });
 
@@ -87,6 +95,112 @@ const gerente = () => env.authenticatedContext('uid-gerente', {
 const franco = () => env.authenticatedContext('uid-franco', {
   email: 'franco@barra.local', provider_id: 'password',
 }).firestore();
+
+const puerta = () => env.authenticatedContext('uid-puerta', {
+  email: 'puerta@barra.local', provider_id: 'password',
+}).firestore();
+
+const invitadoNuevo = (extra = {}) => ({
+  eventoId: 'ev-1', nombre: 'Beto', telefono: '1155551111',
+  creadoEn: serverTimestamp(), ...extra,
+});
+
+describe('registro de invitados', () => {
+  it('cualquiera se registra si hay lugar', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-2'), invitadoNuevo()));
+  });
+
+  it('hasta sin loguearse: el link se comparte por WhatsApp', async () => {
+    await assertSucceeds(setDoc(doc(sinLoguear(), 'invitados/token-largo-de-prueba-3'), invitadoNuevo()));
+  });
+
+  it('con un token corto NO: sería adivinable', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/abc'), invitadoNuevo()));
+  });
+
+  it('sin nombre o sin teléfono NO', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-4'), invitadoNuevo({ nombre: 'A' })));
+    await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-5'), invitadoNuevo({ telefono: '12' })));
+  });
+
+  it('no se puede anotar en un evento que no es el abierto', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-6'), invitadoNuevo({ eventoId: 'otro' })));
+  });
+
+  it('no se puede llegar ya marcado como ingresado', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-7'),
+      invitadoNuevo({ ingresadoEn: serverTimestamp() })));
+  });
+
+  it('con el token se ve el pase propio', async () => {
+    await assertSucceeds(getDoc(doc(anon(), 'invitados/token-largo-de-prueba-1')));
+  });
+
+  it('la lista entera NO la ve un invitado', async () => {
+    await assertFails(getDocs(collection(anon(), 'invitados')));
+  });
+
+  it('el contador sube de a uno, nunca de a más', async () => {
+    await assertSucceeds(updateDoc(doc(anon(), 'publico/registro'), { registrados: 2 }));
+    await assertFails(updateDoc(doc(anon(), 'publico/registro'), { registrados: 50 }));
+  });
+
+  it('un invitado NO puede ampliar el cupo ni reabrir el registro', async () => {
+    await assertFails(updateDoc(doc(anon(), 'publico/registro'), { capacidad: 999 }));
+    await assertFails(updateDoc(doc(anon(), 'publico/registro'), { abierto: false }));
+  });
+
+  it('lleno, no entra nadie más', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/registro'),
+        { eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 3, abierto: true }));
+    await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-8'), invitadoNuevo()));
+  });
+
+  it('cerrado el registro, tampoco', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/registro'),
+        { eventoId: 'ev-1', nombre: 'Noche', capacidad: 9, registrados: 0, abierto: false }));
+    await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-9'), invitadoNuevo()));
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/registro'),
+        { eventoId: 'ev-1', nombre: 'Noche', capacidad: 9, registrados: 0, abierto: true }));
+  });
+});
+
+describe('la puerta', () => {
+  it('ve la lista de invitados', async () => {
+    await assertSucceeds(getDocs(collection(puerta(), 'invitados')));
+  });
+
+  it('marca el ingreso', async () => {
+    await assertSucceeds(updateDoc(doc(puerta(), 'invitados/token-largo-de-prueba-1'),
+      { ingresadoEn: serverTimestamp(), ingresadoPor: 'puerta' }));
+  });
+
+  it('NO puede cambiarle el nombre a un invitado', async () => {
+    await assertFails(updateDoc(doc(puerta(), 'invitados/token-largo-de-prueba-1'), { nombre: 'Otro' }));
+  });
+
+  it('NO ve la caja ni los pedidos', async () => {
+    await assertFails(getDoc(doc(puerta(), 'barra/caja')));
+    await assertFails(getDoc(doc(puerta(), 'pedidos/pedido-de-ana')));
+  });
+
+  it('NO toca la carta', async () => {
+    await assertFails(updateDoc(doc(puerta(), 'carta/fernet'), { disponible: false }));
+  });
+
+  it('un invitado NO se marca su propia entrada', async () => {
+    await assertFails(updateDoc(doc(anon(), 'invitados/token-largo-de-prueba-2'),
+      { ingresadoEn: serverTimestamp() }));
+  });
+
+  it('la casa también marca ingresos', async () => {
+    await assertSucceeds(updateDoc(doc(barra(), 'invitados/token-largo-de-prueba-2'),
+      { ingresadoEn: serverTimestamp(), ingresadoPor: 'admin' }));
+  });
+});
 
 describe('el barman entra solo la noche que trabaja', () => {
   it('asignado al turno, entra', async () => {
