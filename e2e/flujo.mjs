@@ -223,6 +223,53 @@ await chequear('la barra puede agotar un item y el cliente lo ve', async () => {
   }, null, { timeout: 10000 });
 });
 
+console.log('\nCAJA POR EVENTO');
+await chequear('abre un evento y la caja pasa a contar desde ahí', async () => {
+  await barra.click('#tabEvento');
+  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
+  barra.once('dialog', (d) => d.accept('Prueba de noche'));
+  await barra.click('#btnAbrirEvento');
+  await barra.waitForSelector('.caja-evento', { timeout: 10000 });
+  const t = await barra.textContent('.caja-evento');
+  if (!t.includes('Prueba de noche')) throw new Error('no tomó el nombre: ' + t.slice(0, 120));
+
+  // abiertoEn es un serverTimestamp: hasta que vuelve del servidor llega null
+  // y el tablero sigue mostrando el día entero. Esperamos a que se resuelva.
+  await barra.waitForFunction(() =>
+    !document.querySelector('.caja-evento .desde')?.textContent.includes('—'),
+    null, { timeout: 10000 });
+
+  // El pedido entregado antes de abrir el evento no tiene que contar.
+  await barra.waitForFunction(() =>
+    document.querySelector('.caja-evento .plata b')?.textContent.replace(/\D/g, '') === '0',
+    null, { timeout: 10000 });
+});
+await chequear('un pedido nuevo entra al evento y suma a la caja al entregarlo', async () => {
+  await db.collection('pedidos').add({
+    clienteId: 'cliente-evento', estado: 'entregado',
+    items: [{ id: 'papas', nombre: 'Papas bravas', precio: 5500, cantidad: 2 }],
+    total: 11000, mesa: '3', creadoEn: new Date(),
+  });
+  await barra.waitForFunction(() =>
+    document.querySelector('.caja-evento .plata b')?.textContent.replace(/\D/g, '') === '11000',
+    null, { timeout: 10000 });
+  const t = await barra.textContent('.caja-evento .ranking');
+  if (!t.includes('Papas bravas')) throw new Error('el ranking no lo listó');
+});
+await chequear('cerrar el evento congela la caja y lo manda al histórico', async () => {
+  barra.once('dialog', (d) => d.accept());
+  await barra.click('#btnCerrarEvento');
+  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
+  // cerradoEn es un serverTimestamp: localmente llega null y recién al volver
+  // del servidor el evento sale de "abierto" y entra al histórico.
+  await barra.waitForFunction(() =>
+    document.querySelector('#eventosPasados')?.textContent.includes('Prueba de noche'),
+    null, { timeout: 10000 });
+  const fila = await barra.textContent('#eventosPasados .item');
+  if (!fila.includes('11.000')) throw new Error('la caja no quedó congelada: ' + fila);
+});
+await barra.click('#tabTablero');
+
 // Detección de total adulterado: un cliente malicioso manda precios truchos.
 console.log('\nINTEGRIDAD DE TOTALES');
 await chequear('la barra marca un pedido con total adulterado', async () => {

@@ -14,6 +14,6 @@ export {
 export {
   getFirestore, initializeFirestore, connectFirestoreEmulator,
   persistentLocalCache, persistentSingleTabManager,
-  collection, doc, query, where, orderBy, onSnapshot,
+  collection, doc, query, where, orderBy, limit, onSnapshot,
   addDoc, updateDoc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';

@@ -79,6 +79,7 @@
     <div class="tabs" role="tablist">
       <button role="tab" id="tabTablero" aria-selected="true">Pedidos</button>
       <button role="tab" id="tabCartaBar" aria-selected="false">Carta y stock</button>
+      <button role="tab" id="tabEvento" aria-selected="false">Evento</button>
     </div>
 
     <section id="vistaTablero">
@@ -87,6 +88,12 @@
 
     <section id="vistaCartaBar" hidden>
       <div id="cartaBar"><div class="cargando">Cargando carta…</div></div>
+    </section>
+
+    <section id="vistaEvento" hidden>
+      <div id="evento"><div class="cargando">Cargando evento…</div></div>
+      <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Eventos cerrados</h2>
+      <div id="eventosPasados"><div class="cargando">Buscando…</div></div>
     </section>
   </main>
 </div>

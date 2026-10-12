@@ -5,7 +5,7 @@ import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
   sendPasswordResetEmail, setPersistence, browserLocalPersistence, connectAuthEmulator,
   getFirestore, connectFirestoreEmulator, collection, doc, query, where, orderBy,
-  onSnapshot, updateDoc, Timestamp,
+  onSnapshot, updateDoc, Timestamp, addDoc, limit, serverTimestamp,
 } from '/vendor/firebase.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
@@ -39,7 +39,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -185,19 +185,165 @@ onAuthStateChanged(auth, (u) => {
   const dentro = !!u && !u.isAnonymous;
   $('#vistaLogin').hidden = dentro;
   $('#vistaPanel').hidden = !dentro;
-  if (dentro) { pintarConexion(); pintarSonido(); escucharPedidos(); escucharCarta(); }
+  if (dentro) { pintarConexion(); pintarSonido(); escucharEvento(); escucharCarta(); }
 });
 
+// ---------- eventos ----------
+// Un evento es una noche de trabajo: se abre, entran pedidos, se cierra y la
+// caja queda congelada ahí. No se corta a medianoche como el día calendario,
+// que es justo cuando un bar está lleno.
+const EVENTOS = () => collection(db, 'barra', 'eventos', 'items');
+
+
+function escucharEvento() {
+  onSnapshot(query(EVENTOS(), where('cerradoEn', '==', null), limit(1)), (snap) => {
+    estado.evento = snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+    // Siempre: escucharPedidos() no hace nada si el "desde" no cambió. Hace
+    // falta llamarlo igual porque abiertoEn es un serverTimestamp y llega null
+    // en la primera vuelta — el evento no cambia de id, pero sí de arranque.
+    escucharPedidos();
+    pintarEvento();
+    pintarCaja();
+  }, fallo('#evento'));
+
+  onSnapshot(query(EVENTOS(), orderBy('abiertoEn', 'desc'), limit(20)), (snap) => {
+    estado.eventos = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.cerradoEn);
+    pintarEventosPasados();
+  }, fallo('#eventosPasados'));
+}
+
+const fallo = (sel) => (e) => {
+  if (e.code === 'permission-denied') $('#avisoPermiso').classList.remove('oculto');
+  $(sel).innerHTML = `<div class="aviso mal"><span>⚠</span><div>${esc(e.code || e.message)}</div></div>`;
+};
+
+// Desde cuándo mira el tablero: el arranque del evento abierto, o el día de hoy.
+function desdeCuando() {
+  const abierto = estado.evento?.abiertoEn?.toDate?.();
+  if (abierto) return abierto;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  return hoy;
+}
+
+async function abrirEvento() {
+  const sugerido = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
+  const nombre = (prompt('Nombre del evento', sugerido[0].toUpperCase() + sugerido.slice(1)) || '').trim();
+  if (!nombre) return;
+  try {
+    await addDoc(EVENTOS(), { nombre, abiertoEn: serverTimestamp(), cerradoEn: null, cierre: null });
+  } catch (e) { alert('No se pudo abrir: ' + (e.code || e.message)); }
+}
+
+// El cierre guarda los números calculados, no una referencia a los pedidos:
+// el tablero solo carga el evento en curso, así que el histórico tiene que
+// poder leerse sin volver a buscar nada.
+function resumirCaja(pedidos) {
+  const entregados = pedidos.filter((p) => p.estado === 'entregado');
+  const porItem = new Map();
+  for (const p of entregados) {
+    for (const i of (p.items || [])) {
+      const carta = estado.carta.find((x) => x.id === i.id);
+      const precio = Number(carta?.precio ?? i.precio ?? 0);
+      const cant = Number(i.cantidad || 0);
+      const a = porItem.get(i.id) || { nombre: carta?.nombre || i.nombre || i.id, cantidad: 0, importe: 0 };
+      a.cantidad += cant; a.importe += precio * cant;
+      porItem.set(i.id, a);
+    }
+  }
+  return {
+    pedidos: pedidos.length,
+    entregados: entregados.length,
+    cancelados: pedidos.filter((p) => p.estado === 'cancelado').length,
+    sinCerrar: pedidos.filter((p) => !['entregado', 'cancelado'].includes(p.estado)).length,
+    facturado: entregados.reduce((s, p) => s + Number(p.total || 0), 0),
+    porItem: [...porItem.values()].sort((a, b) => b.importe - a.importe),
+  };
+}
+
+async function cerrarEvento() {
+  const r = resumirCaja(estado.pedidos);
+  const aviso = r.sinCerrar
+    ? `\n\nOJO: quedan ${r.sinCerrar} pedidos sin entregar ni cancelar. No entran en la caja.`
+    : '';
+  if (!confirm(`Cerrar "${estado.evento.nombre}"\n\n`
+    + `${r.entregados} entregados · ${plata(r.facturado)}${aviso}\n\nNo se puede reabrir.`)) return;
+  try {
+    await updateDoc(doc(db, 'barra', 'eventos', 'items', estado.evento.id),
+      { cerradoEn: serverTimestamp(), cierre: r });
+  } catch (e) { alert('No se pudo cerrar: ' + (e.code || e.message)); }
+}
+
+function pintarEvento() {
+  const cont = $('#evento');
+  if (!estado.evento) {
+    cont.innerHTML = `<div class="aviso"><span>🎪</span><div>
+      <b>No hay ningún evento abierto.</b><br>
+      Sin evento, el tablero muestra lo del día y se vacía a medianoche.
+      Abriendo uno, la noche sigue entera hasta que vos la cierres.
+      </div></div>
+      <button class="btn primario ancho-full" id="btnAbrirEvento" style="margin-top:.9rem">Abrir evento</button>`;
+    $('#btnAbrirEvento').onclick = abrirEvento;
+    return;
+  }
+  const desde = estado.evento.abiertoEn?.toDate?.();
+  const horas = desde ? ((Date.now() - desde) / 3600000) : 0;
+  const r = resumirCaja(estado.pedidos);
+  cont.innerHTML = `
+    <div class="caja-evento">
+      <div class="titulo">${esc(estado.evento.nombre)}</div>
+      <div class="desde">Abierto ${desde ? desde.toLocaleString('es-AR', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) : '—'}
+        · ${horas < 1 ? 'hace menos de una hora' : `hace ${Math.floor(horas)} h`}</div>
+      <div class="numeros">
+        <div><b>${r.entregados}</b><span>entregados</span></div>
+        <div><b>${r.sinCerrar}</b><span>en curso</span></div>
+        <div><b>${r.cancelados}</b><span>cancelados</span></div>
+        <div class="plata"><b>${plata(r.facturado)}</b><span>caja</span></div>
+      </div>
+      ${r.sinCerrar ? `<div class="aviso mal" style="margin-top:.8rem"><span>⚠</span><div>
+        Hay ${r.sinCerrar} pedidos sin entregar. <b>No suman a la caja</b> hasta que los marques.</div></div>` : ''}
+      ${r.porItem.length ? `<table class="ranking"><tbody>${r.porItem.map((i) => `
+        <tr><td>${esc(i.nombre)}</td><td class="n">${i.cantidad}</td><td class="n">${plata(i.importe)}</td></tr>`).join('')}
+        </tbody></table>` : '<p style="color:var(--suave);font-size:.9rem">Todavía no se entregó nada.</p>'}
+      <button class="btn peligro ancho-full" id="btnCerrarEvento" style="margin-top:1rem">Cerrar evento y hacer la caja</button>
+    </div>`;
+  $('#btnCerrarEvento').onclick = cerrarEvento;
+}
+
+function pintarEventosPasados() {
+  const cont = $('#eventosPasados');
+  if (!estado.eventos.length) {
+    cont.innerHTML = '<p style="color:var(--suave);font-size:.9rem">Todavía no cerraste ninguno.</p>';
+    return;
+  }
+  cont.innerHTML = estado.eventos.map((e) => {
+    const c = e.cierre || {};
+    const f = e.cerradoEn?.toDate?.();
+    return `<div class="item">
+      <div class="cuerpo">
+        <div class="nombre">${esc(e.nombre)}</div>
+        <div class="desc">${f ? f.toLocaleDateString('es-AR') : ''} · ${c.entregados ?? 0} entregados${c.cancelados ? ` · ${c.cancelados} cancelados` : ''}</div>
+      </div>
+      <div class="total">${plata(c.facturado || 0)}</div>
+    </div>`;
+  }).join('');
+}
+
 // ---------- pedidos ----------
+let dejarDeEscucharPedidos = null;
+let desdeActual = null;
 function escucharPedidos() {
-  // Solo lo de hoy: un tablero con el historial completo no sirve en una barra.
-  const desde = new Date(); desde.setHours(0, 0, 0, 0);
+  // Arranca donde arranca el evento; si no hay evento, el día de hoy.
+  const desde = desdeCuando();
+  if (dejarDeEscucharPedidos && desdeActual?.getTime() === desde.getTime()) return;
+  if (dejarDeEscucharPedidos) dejarDeEscucharPedidos();
+  desdeActual = desde;
+  estado.vistos.clear();
   const q = query(
     collection(db, 'pedidos'),
     where('creadoEn', '>=', Timestamp.fromDate(desde)),
     orderBy('creadoEn', 'asc'),
   );
-  onSnapshot(q, (snap) => {
+  dejarDeEscucharPedidos = onSnapshot(q, (snap) => {
     const antes = estado.vistos.size > 0;
     const nuevos = [];
     snap.docChanges().forEach((c) => {
@@ -207,6 +353,7 @@ function escucharPedidos() {
     estado.pedidos.forEach((p) => estado.vistos.add(p.id));
     pintarTablero();
     pintarCaja();
+    pintarEvento();
     // No sonar en la carga inicial, solo cuando entra algo nuevo estando ya abierto.
     if (antes && nuevos.some((id) => estado.pedidos.find((p) => p.id === id)?.estado === 'nuevo')) avisar();
   }, (e) => {
@@ -284,12 +431,12 @@ async function cambiarEstado(id, nuevo) {
 }
 
 function pintarCaja() {
-  const cerrados = estado.pedidos.filter((p) => p.estado === 'entregado');
-  const total = cerrados.reduce((s, p) => s + Number(p.total || 0), 0);
-  const pendientes = estado.pedidos.filter((p) => !['entregado','cancelado'].includes(p.estado)).length;
+  const r = resumirCaja(estado.pedidos);
   const chip = $('#chipCaja');
-  chip.textContent = `${pendientes} en curso · ${plata(total)} cerrado`;
-  chip.className = 'chip ' + (pendientes > 6 ? 'alerta' : 'ok');
+  // Con evento abierto la caja es la del evento; si no, la del día.
+  chip.textContent = `${estado.evento ? esc(estado.evento.nombre) + ' · ' : ''}`
+    + `${r.sinCerrar} en curso · ${plata(r.facturado)} cerrado`;
+  chip.className = 'chip ' + (r.sinCerrar > 6 ? 'alerta' : 'ok');
 }
 
 // ---------- carta y stock ----------
@@ -385,14 +532,16 @@ $('#btnSonido').onclick = () => {
 
 // ---------- pestañas ----------
 function irA(cual) {
-  const t = cual === 'tablero';
-  $('#tabTablero').setAttribute('aria-selected', t);
-  $('#tabCartaBar').setAttribute('aria-selected', !t);
-  $('#vistaTablero').hidden = !t;
-  $('#vistaCartaBar').hidden = t;
+  const vistas = { tablero: '#vistaTablero', carta: '#vistaCartaBar', evento: '#vistaEvento' };
+  const tabs = { tablero: '#tabTablero', carta: '#tabCartaBar', evento: '#tabEvento' };
+  for (const k of Object.keys(vistas)) {
+    $(vistas[k]).hidden = k !== cual;
+    $(tabs[k]).setAttribute('aria-selected', String(k === cual));
+  }
 }
 $('#tabTablero').onclick = () => irA('tablero');
 $('#tabCartaBar').onclick = () => irA('carta');
+$('#tabEvento').onclick = () => irA('evento');
 
 // Los relojes de los tickets tienen que correr aunque no entre nada nuevo.
 setInterval(() => { if (!$('#vistaPanel').hidden && !$('#vistaTablero').hidden) pintarTablero(); }, 30_000);

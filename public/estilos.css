@@ -280,3 +280,27 @@ dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---------- caja por evento ---------- */
+.caja-evento {
+  background: var(--panel); border: 1px solid var(--borde);
+  border-radius: 14px; padding: 1.1rem;
+}
+.caja-evento .titulo { font-size: 1.25rem; font-weight: 800; }
+.caja-evento .desde { color: var(--suave); font-size: .85rem; margin-top: .15rem; }
+.caja-evento .numeros {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: .6rem; margin-top: 1rem;
+}
+.caja-evento .numeros > div {
+  background: var(--panel-alto); border: 1px solid var(--borde);
+  border-radius: 10px; padding: .7rem; text-align: center;
+}
+.caja-evento .numeros b { display: block; font-size: 1.5rem; line-height: 1.1; }
+.caja-evento .numeros span { font-size: .75rem; color: var(--suave); text-transform: uppercase; letter-spacing: .05em; }
+.caja-evento .numeros .plata b { color: var(--oro); }
+.caja-evento .ranking { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: .9rem; }
+.caja-evento .ranking td { padding: .45rem .3rem; border-bottom: 1px solid var(--borde); }
+.caja-evento .ranking td.n { text-align: right; white-space: nowrap; color: var(--suave); }
+.caja-evento .ranking tr td:last-child { color: var(--texto); font-variant-numeric: tabular-nums; }
+#eventosPasados .item .total { font-weight: 700; color: var(--oro); white-space: nowrap; }
