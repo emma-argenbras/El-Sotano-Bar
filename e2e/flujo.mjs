@@ -223,6 +223,24 @@ await chequear('la barra puede agotar un item y el cliente lo ve', async () => {
   }, null, { timeout: 10000 });
 });
 
+await chequear('no avisa "sin conexión" si los datos están llegando', async () => {
+  // El caso real: Chrome deja navigator.onLine en false con internet andando.
+  // El cartel tiene que mirar si Firestore responde, no lo que dice el navegador.
+  const ctxMentiroso = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  await ctxMentiroso.addInitScript(() =>
+    Object.defineProperty(navigator, 'onLine', { get: () => false }));
+  const pag = await ctxMentiroso.newPage();
+  try {
+    await pag.goto(`${BASE}/mesa/7`, { waitUntil: 'domcontentloaded' });
+    await pag.waitForSelector('text=Fernet con coca', { timeout: 15000 });
+    await pag.waitForTimeout(1500);
+    if (await pag.locator('#chipConexion').isVisible())
+      throw new Error('dice sin conexión con la carta cargada');
+    if (!(await pag.locator('#avisoOffline').evaluate((e) => e.classList.contains('oculto'))))
+      throw new Error('muestra el aviso de offline igual');
+  } finally { await ctxMentiroso.close(); }
+});
+
 console.log('\nUSUARIO DE BARRA DEL TURNO');
 await chequear('el dueño crea un usuario de barra sin mail y sin perder su sesión', async () => {
   await barra.click('#tabEvento');

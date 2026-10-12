@@ -51,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -141,9 +141,12 @@ $('#btnCerrarInstalar').onclick = () => $('#dlgInstalar').close();
 pintarInstalar();
 
 // ---------- conexión ----------
+// navigator.onLine miente: hay navegadores que lo dejan en false con
+// internet andando. El que sabe de verdad es Firestore — si lo que estamos
+// mostrando sale del cache, no estamos hablando con el servidor.
 function pintarConexion() {
   const chip = $('#chipConexion');
-  chip.hidden = navigator.onLine;
+  chip.hidden = !estado.desdeCache;
   chip.textContent = 'sin conexión';
   chip.className = 'chip mal';
 }
@@ -475,7 +478,9 @@ function escucharPedidos() {
     where('creadoEn', '>=', Timestamp.fromDate(desde)),
     orderBy('creadoEn', 'asc'),
   );
-  dejarDeEscucharPedidos = onSnapshot(q, (snap) => {
+  dejarDeEscucharPedidos = onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
+    estado.desdeCache = snap.metadata.fromCache;
+    pintarConexion();
     const antes = estado.vistos.size > 0;
     const nuevos = [];
     snap.docChanges().forEach((c) => {
@@ -567,7 +572,7 @@ function pintarCaja() {
   const chip = $('#chipCaja');
   // Con evento abierto la caja es la del evento; si no, la del día.
   chip.textContent = `${estado.evento ? esc(estado.evento.nombre) + ' · ' : ''}`
-    + `${r.sinCerrar} en curso · ${plata(r.facturado)} cerrado`;
+    + `${r.sinCerrar} en curso · ${plata(r.facturado)}`;
   chip.className = 'chip ' + (r.sinCerrar > 6 ? 'alerta' : 'ok');
 }
 

@@ -37,6 +37,7 @@ const plata = (n) => BAR.moneda + Number(n || 0).toLocaleString('es-AR');
 
 // ---------- estado ----------
 const estado = {
+  desdeCache: false,
   uid: null,
   carta: [],
   categoria: null,
@@ -56,8 +57,9 @@ function mesaInicial() {
 let mesa = mesaInicial();
 
 // ---------- conexión ----------
+// Igual que en el panel: lo decide Firestore, no navigator.onLine.
 function pintarConexion() {
-  const off = !navigator.onLine;
+  const off = estado.desdeCache === true;
   $('#avisoOffline').classList.toggle('oculto', !off);
   const chip = $('#chipConexion');
   chip.hidden = !off;
@@ -131,7 +133,9 @@ function mostrarFalloAuth(e) {
 
 // ---------- carta ----------
 function escucharCarta() {
-  onSnapshot(collection(db, 'carta'), (snap) => {
+  onSnapshot(collection(db, 'carta'), { includeMetadataChanges: true }, (snap) => {
+    estado.desdeCache = snap.metadata.fromCache;
+    pintarConexion();
     estado.carta = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       // enCarta:false = no lo vendemos más. No se muestra.
       // disponible:false = se acabó esta noche. Se muestra como "sin stock".

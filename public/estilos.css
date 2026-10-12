@@ -14,10 +14,20 @@
   --azul: #6aa8e8;
   --radio: 14px;
   --sombra: 0 6px 24px rgba(0,0,0,.45);
+  /* viewport-fit=cover lleva el contenido hasta el borde de la pantalla.
+     Sin compensar, el encabezado queda debajo del reloj y la señal. */
+  --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* El atributo hidden lo pone el navegador con `display:none`, pero cualquier
+   regla nuestra con display le gana por especificidad. Pasó con .chip: el
+   cartel de "sin conexión" quedaba a la vista para siempre. */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0; padding: 0;
@@ -35,8 +45,8 @@ a { color: var(--oro); }
 /* ---------- barra superior ---------- */
 .tope {
   position: sticky; top: 0; z-index: 30;
-  display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
-  padding: .85rem 1rem;
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding: calc(.7rem + var(--safe-t)) calc(1rem + var(--safe-r)) .7rem calc(1rem + var(--safe-l));
   background: rgba(13,11,16,.92);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--borde);
@@ -308,3 +318,22 @@ dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
 /* Lo que solo ve el dueño: el personal de turno entra al mismo panel. */
 .solo-dueno { display: none; }
 body.es-dueno .solo-dueno { display: block; }
+
+/* ---------- encabezado en pantalla de celular ----------
+   En un teléfono entran pocas cosas por fila. Lo que no aporta se achica o
+   desaparece, antes que amontonarse y cortarse. */
+@media (max-width: 480px) {
+  .tope { gap: .4rem; }
+  .tope .rotulo { display: none; }          /* el logo y el ícono ya lo dicen */
+  .tope .chip { font-size: .74rem; padding: .25rem .55rem; }
+  .tope .btn { padding: .32rem .6rem !important; font-size: .82rem; }
+  .solo-ancho { display: none; }            /* el ⬇ solo alcanza */
+  /* La caja es el dato que más se mira: fila propia y entera. */
+  #chipCaja { order: 10; flex-basis: 100%; text-align: center; justify-content: center; }
+}
+
+/* El contenido tampoco puede quedar bajo los bordes redondeados. */
+.envoltorio, .ancho {
+  padding-left: calc(1rem + var(--safe-l));
+  padding-right: calc(1rem + var(--safe-r));
+}
