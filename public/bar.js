@@ -239,11 +239,21 @@ function ticket(p, col) {
   const tarde = col.clave !== 'entregado' && ms > DEMORA_MS;
   // La integridad del total se chequea acá: el cliente manda los precios y las
   // reglas no pueden sumar un array. Si no coincide con la carta de ahora, se marca.
+  //
+  // Nunca se usa el precio que vino en el pedido como respaldo: un pedido con un
+  // id inventado traía su propio precio, cuadraba solo y pasaba sin marcar.
+  // Un item que no está en la carta es, por definición, para mirar a mano.
+  const hayCarta = estado.carta.length > 0;
+  const intrusos = (p.items || []).filter((i) => !estado.carta.some((x) => x.id === i.id));
   const esperado = (p.items || []).reduce((s, i) => {
     const c = estado.carta.find((x) => x.id === i.id);
-    return s + (c ? Number(c.precio || 0) : Number(i.precio || 0)) * Number(i.cantidad || 0);
+    return s + Number(c?.precio || 0) * Number(i.cantidad || 0);
   }, 0);
-  const desfasado = estado.carta.length && Math.abs(esperado - Number(p.total || 0)) > 0.5;
+  const desfasado = hayCarta
+    && (intrusos.length > 0 || Math.abs(esperado - Number(p.total || 0)) > 0.5);
+  const aviso = intrusos.length
+    ? `⚠ Tiene algo que no está en la carta (${intrusos.map((i) => esc(i.nombre || i.id)).join(', ')}) — cobralo a mano`
+    : `⚠ Total informado ${plata(p.total)} ≠ carta ${plata(esperado)} — cobrar ${plata(esperado)}`;
 
   return `
   <div class="ticket ${col.clave} ${tarde ? 'demorado' : ''}">
@@ -255,9 +265,9 @@ function ticket(p, col) {
     <ul>${(p.items || []).map((i) =>
       `<li><b>${Number(i.cantidad)}×</b> ${esc(i.nombre)}</li>`).join('')}</ul>
     ${p.nota ? `<div class="nota">📝 ${esc(p.nota)}</div>` : ''}
-    ${desfasado ? `<div class="sospecha">⚠ Total informado ${plata(p.total)} ≠ carta ${plata(esperado)} — cobrar ${plata(esperado)}</div>` : ''}
+    ${desfasado ? `<div class="sospecha">${aviso}</div>` : ''}
     <div class="pie">
-      <span class="total">${plata(desfasado ? esperado : p.total)}</span>
+      <span class="total">${plata(desfasado && !intrusos.length ? esperado : p.total)}</span>
       ${col.siguiente ? `<button class="btn primario" data-avanzar="${p.id}" data-a="${col.siguiente}">${col.accion}</button>` : ''}
       ${col.clave !== 'entregado' ? `<button class="btn peligro" data-cancelar="${p.id}" title="Cancelar">✕</button>` : ''}
     </div>

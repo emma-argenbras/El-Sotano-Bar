@@ -237,6 +237,20 @@ await chequear('la barra marca un pedido con total adulterado', async () => {
   const t = await barra.textContent('.ticket .sospecha');
   if (!t.includes('11.000')) throw new Error('no recalculó bien: ' + t);
 });
+await chequear('también marca el pedido con un id que no existe en la carta', async () => {
+  // El truco: inventar un id. Antes el panel caía al precio que mandaba el
+  // cliente, cuadraba solo y el pedido pasaba sin una sola marca.
+  await db.collection('pedidos').add({
+    clienteId: 'atacante', estado: 'nuevo',
+    items: [{ id: 'no-existe', nombre: 'Rabas', precio: 1, cantidad: 1 }],
+    total: 1, mesa: '10', creadoEn: new Date(),
+  });
+  const marcado = await barra.waitForFunction(() => {
+    const t = [...document.querySelectorAll('.ticket')].find((x) => x.textContent.includes('Mesa 10'));
+    return t ? !!t.querySelector('.sospecha') : false;
+  }, null, { timeout: 10000 }).then(() => true, () => false);
+  if (!marcado) throw new Error('el pedido con id inventado pasó sin marcar');
+});
 
 await navegador.close();
 
