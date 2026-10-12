@@ -143,13 +143,20 @@ describe('tres niveles: dueño, gerente y barra', () => {
       { usuario: 'barra-martes', activo: true, rol: 'barra' }));
   });
 
-  it('el gerente NO puede nombrar otro gerente', async () => {
-    await assertFails(setDoc(doc(gerente(), 'accesosBarra/uid-otro-jefe'),
+  it('el gerente SÍ puede nombrar otro gerente: es cuenta full', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'accesosBarra/uid-otro-jefe'),
       { usuario: 'otro', activo: true, rol: 'gerente' }));
   });
 
-  it('el gerente NO puede ascenderse solo', async () => {
+  it('nadie puede escribir un rol inventado', async () => {
+    // Si no, una cuenta se deja sin acceso sola y no hay como arreglarla.
     await assertFails(updateDoc(doc(gerente(), 'accesosBarra/uid-gerente'), { rol: 'dueno' }));
+    await assertFails(setDoc(doc(barra(), 'accesosBarra/uid-raro'),
+      { usuario: 'raro', activo: true, rol: 'superusuario' }));
+  });
+
+  it('ser dueño sale del token, no del documento: el gerente sigue sin borrar', async () => {
+    await assertFails(deleteDoc(doc(gerente(), 'carta/fernet')));
   });
 
   it('el gerente NO puede borrar un acceso', async () => {

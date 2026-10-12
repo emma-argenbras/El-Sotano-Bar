@@ -170,7 +170,10 @@ service cloud.firestore {
     match /barra/{documento=**} {
       // La barra ve la caja y los eventos; abrirlos y cerrarlos es del gerente.
       allow read: if esBarra();
-      allow create, update: if esGerente();
+      // Los roles son estos dos y nada más: con uno inventado la cuenta queda
+      // sin acceso y sin forma de arreglarse sola.
+      allow create, update: if esGerente()
+        && request.resource.data.get('rol', 'barra') in ['gerente', 'barra'];
       allow delete: if esElDueno();
     }
 
@@ -180,7 +183,10 @@ service cloud.firestore {
     match /publico/{documento} {
       allow read: if true;
       // Cortar y reabrir los pedidos es del gerente.
-      allow create, update: if esGerente();
+      // Los roles son estos dos y nada más: con uno inventado la cuenta queda
+      // sin acceso y sin forma de arreglarse sola.
+      allow create, update: if esGerente()
+        && request.resource.data.get('rol', 'barra') in ['gerente', 'barra'];
       allow delete: if esElDueno();
     }
 
@@ -192,10 +198,16 @@ service cloud.firestore {
       // Cada uno puede ver el suyo: el panel avisa cuando lo apagaron.
       allow get: if esGerente() || esDueno(uid);
       allow list: if esGerente();
-      // Un gerente da de alta y apaga gente de barra. Otro gerente lo nombra
-      // el dueño: si no, cualquiera con la cuenta de Guille se asciende solo.
-      allow create, update: if esElDueno()
-        || (esGerente() && request.resource.data.get('rol', 'barra') == 'barra');
+      // El gerente da de alta y apaga a cualquiera, barra u otro gerente: es
+      // una cuenta full. Lo único que no puede es borrar.
+      //
+      // No hay escalada posible: ser dueño sale del claim del token, que solo
+      // se asigna desde el servidor. Un gerente no puede dárselo a nadie, ni
+      // apagar al dueño, que no tiene documento de acceso.
+      // Los roles son estos dos y nada más: con uno inventado la cuenta queda
+      // sin acceso y sin forma de arreglarse sola.
+      allow create, update: if esGerente()
+        && request.resource.data.get('rol', 'barra') in ['gerente', 'barra'];
       allow delete: if esElDueno();
     }
 

@@ -486,8 +486,8 @@ async function altaUsuarioBarra() {
   let rol = 'barra';
   if (estado.dueno) {
     rol = confirm(`¿"${usuario}" es gerente?\n\n`
-      + 'ACEPTAR = gerente: precios, caja, eventos y alta de barra. No borra nada.\n'
-      + 'CANCELAR = barra: mueve pedidos y marca agotado. Ve precios y caja.')
+      + 'ACEPTAR = gerente: todo lo que podés vos, menos borrar. Cuenta permanente.\n'
+      + 'CANCELAR = barra: mueve pedidos y marca agotado. Ve precios y caja. Del turno.')
       ? 'gerente' : 'barra';
   }
 
@@ -502,8 +502,10 @@ async function altaUsuarioBarra() {
       usuario,
       rol,
       activo: true,
-      eventoId: estado.evento?.id || null,
-      evento: estado.evento?.nombre || null,
+      // Un gerente es permanente. La barra es de esa noche: queda atada al
+      // evento para saber después a qué turno correspondía.
+      eventoId: rol === 'barra' ? (estado.evento?.id || null) : null,
+      evento: rol === 'barra' ? (estado.evento?.nombre || null) : null,
       creadoEn: serverTimestamp(),
     });
     alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${rol}\nContraseña: la que pusiste\n\n`
@@ -538,7 +540,9 @@ function pintarAccesos() {
       <div class="item ${a.activo ? '' : 'agotado'}">
         <div class="cuerpo">
           <div class="nombre">${esc(a.usuario)}${a.activo ? '' : ' — <small>apagado</small>'}</div>
-          <div class="desc">${a.rol === 'gerente' ? 'gerente · ' : 'barra · '}${a.evento ? esc(a.evento) : 'sin evento'}</div>
+          <div class="desc">${a.rol === 'gerente'
+            ? 'gerente · cuenta permanente'
+            : 'barra · ' + (a.evento ? esc(a.evento) : 'sin evento')}</div>
         </div>
         <button class="btn ${a.activo ? 'peligro' : 'primario'}" data-acceso="${esc(a.uid)}"
                 style="padding:.4rem .7rem;font-size:.82rem">${a.activo ? 'Apagar' : 'Prender'}</button>
