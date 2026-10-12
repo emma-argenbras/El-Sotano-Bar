@@ -144,6 +144,12 @@ await chequear('la barra se puede instalar como app aparte', async () => {
   if (m.id === '/index.html') throw new Error('comparte id con la carta: se instalaría una sola');
   if (!m.icons.some((i) => i.purpose === 'maskable')) throw new Error('sin ícono maskable');
 
+  // En la pantalla de inicio tiene que decir "El Sótano", sin que nadie lo
+  // reescriba a mano al instalarlo.
+  if (m.short_name !== 'El Sótano') throw new Error('short_name: ' + m.short_name);
+  const tituloIOS = await barra.getAttribute('meta[name="apple-mobile-web-app-title"]', 'content');
+  if (tituloIOS !== 'El Sótano') throw new Error('nombre en iOS: ' + tituloIOS);
+
   // Cada ícono declarado tiene que existir de verdad.
   const faltan = await barra.evaluate(async (iconos) => {
     const malos = [];
