@@ -134,6 +134,32 @@ await chequear('el panel pide login', async () => {
   await barra.waitForSelector('#formLogin');
   if (!(await barra.locator('#vistaPanel').isHidden())) throw new Error('el panel está visible sin login');
 });
+await chequear('la barra se puede instalar como app aparte', async () => {
+  // Instalada tiene que abrir el tablero, no la carta del cliente.
+  const href = await barra.getAttribute('link[rel=manifest]', 'href');
+  if (href !== '/manifest-barra.webmanifest') throw new Error('manifest: ' + href);
+
+  const m = await barra.evaluate((u) => fetch(u).then((r) => r.json()), href);
+  if (m.start_url !== '/bar.html') throw new Error('start_url: ' + m.start_url);
+  if (m.id === '/index.html') throw new Error('comparte id con la carta: se instalaría una sola');
+  if (!m.icons.some((i) => i.purpose === 'maskable')) throw new Error('sin ícono maskable');
+
+  // Cada ícono declarado tiene que existir de verdad.
+  const faltan = await barra.evaluate(async (iconos) => {
+    const malos = [];
+    for (const i of iconos) {
+      const r = await fetch(i.src, { method: 'HEAD' });
+      if (!r.ok) malos.push(i.src + ' → ' + r.status);
+    }
+    return malos;
+  }, m.icons);
+  if (faltan.length) throw new Error('íconos rotos: ' + faltan.join(', '));
+
+  // Sin service worker registrado desde acá, Chrome no ofrece instalar.
+  const conSw = await barra.evaluate(() =>
+    navigator.serviceWorker.ready.then(() => true, () => false));
+  if (!conSw) throw new Error('/bar.html no registra el service worker');
+});
 await chequear('rechaza una contraseña incorrecta', async () => {
   await barra.fill('#inpMail', MAIL_BARRA);
   await barra.fill('#inpPass', 'equivocada');

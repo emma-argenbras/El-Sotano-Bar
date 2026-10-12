@@ -41,6 +41,45 @@ const COLUMNAS = [
 
 const estado = { pedidos: [], carta: [], sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
+// ---------- instalar la app ----------
+// Instalada, la barra abre a pantalla completa y sin barra del navegador.
+// Tiene manifest propio (manifest-barra.webmanifest), así que arranca en el
+// tablero y no en la carta del cliente.
+let pedidoDeInstalar = null;
+const yaInstalada = () =>
+  matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const esIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+function pintarInstalar() {
+  const caja = document.querySelector('.instalar');
+  const botones = document.querySelectorAll('[data-instalar-btn]');
+  const listo = yaInstalada();
+  // En iOS no existe el prompt: solo se puede explicar el camino a mano.
+  const sePuede = !listo && (pedidoDeInstalar || esIOS());
+
+  if (caja) caja.classList.toggle('oculto', !sePuede);
+  const ayudaIOS = document.querySelector('[data-instalar-ios]');
+  if (ayudaIOS) ayudaIOS.hidden = !(sePuede && !pedidoDeInstalar);
+  botones.forEach((b) => { b.hidden = !(sePuede && pedidoDeInstalar); });
+}
+
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  pedidoDeInstalar = e;
+  pintarInstalar();
+});
+addEventListener('appinstalled', () => { pedidoDeInstalar = null; pintarInstalar(); });
+
+document.querySelectorAll('[data-instalar-btn]').forEach((b) => b.onclick = async () => {
+  if (!pedidoDeInstalar) return;
+  pedidoDeInstalar.prompt();
+  await pedidoDeInstalar.userChoice;
+  pedidoDeInstalar = null;
+  pintarInstalar();
+});
+pintarInstalar();
+
 // ---------- conexión ----------
 function pintarConexion() {
   const chip = $('#chipConexion');
@@ -303,4 +342,12 @@ setInterval(() => { if (!$('#vistaPanel').hidden && !$('#vistaTablero').hidden) 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+// ---------- service worker ----------
+// Hace falta para que el navegador ofrezca instalar, y para que el tablero
+// abra aunque la señal se corte. Antes solo lo registraba la carta: quien
+// entraba derecho a /bar.html se quedaba sin las dos cosas.
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }

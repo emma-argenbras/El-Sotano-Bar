@@ -1,0 +1,19 @@
+{
+  "id": "/bar.html",
+  "name": "Barra — El Sótano",
+  "short_name": "Barra",
+  "description": "Tablero de pedidos de El Sótano: entran, se preparan, salen.",
+  "start_url": "/bar.html",
+  "scope": "/bar.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d0b10",
+  "theme_color": "#0d0b10",
+  "lang": "es-AR",
+  "icons": [
+    { "src": "/iconos/icono-barra-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/iconos/icono-barra-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/iconos/icono-barra-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/iconos/icono-barra.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

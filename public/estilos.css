@@ -48,6 +48,13 @@ a { color: var(--oro); }
 @media (max-width: 430px) { .tope .marca img { height: 25px; } }
 .tope .rotulo { font-size: .78rem; color: var(--suave); font-weight: 600;
                 letter-spacing: .06em; text-transform: uppercase; }
+
+.instalar {
+  margin-top: 1.2rem; padding: .9rem; border-radius: 12px;
+  background: var(--panel-alto); border: 1px solid var(--borde);
+  display: flex; flex-direction: column; gap: .5rem;
+}
+.instalar span, .instalar small { font-size: .84rem; color: var(--suave); line-height: 1.45; }
 .tope .relleno { flex: 1; }
 
 .chip {

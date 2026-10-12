@@ -57,6 +57,18 @@ const icono = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" wid
   ${bombita({ cx: 256, cyBulbo: 290, r: 72, desdeArriba: 72 })}
 </svg>`;
 
+// --- Ícono de la barra: invertido. En la pantalla de inicio hay dos apps
+//     instaladas (carta y barra) y hay que distinguirlas de un vistazo. ---
+const iconoBarra = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="${ORO}"/>
+  ${bombita({ cx: 256, cyBulbo: 290, r: 72, desdeArriba: 72 }).replaceAll(ORO, FONDO)}
+</svg>`;
+
+const iconoBarraMaskable = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="${ORO}"/>
+  ${bombita({ cx: 256, cyBulbo: 288, r: 58, desdeArriba: 136 }).replaceAll(ORO, FONDO)}
+</svg>`;
+
 // --- Maskable: Android recorta en círculo, todo tiene que entrar en el 80% central. ---
 const iconoMaskable = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" fill="${FONDO}"/>
@@ -69,6 +81,8 @@ const svgs = {
   'logo-horizontal.svg': logoH,
   'icono.svg': icono,
   'icono-maskable.svg': iconoMaskable,
+  'icono-barra.svg': iconoBarra,
+  'icono-barra-maskable.svg': iconoBarraMaskable,
 };
 for (const [nombre, contenido] of Object.entries(svgs)) {
   writeFileSync(`${SALIDA}/${nombre}`, contenido.trim() + '\n');
@@ -86,6 +100,10 @@ const PNGS = [
   ['icono-512.png', icono, 512, 512],
   ['icono-maskable-512.png', iconoMaskable, 512, 512],
   ['apple-touch-icon.png', icono, 180, 180],
+  ['icono-barra-192.png', iconoBarra, 192, 192],
+  ['icono-barra-512.png', iconoBarra, 512, 512],
+  ['icono-barra-maskable-512.png', iconoBarraMaskable, 512, 512],
+  ['apple-touch-icon-barra.png', iconoBarra, 180, 180],
   ['logo.png', logo, 714, 594],
   ['logo-horizontal.png', logoH, 1120, 240],
 ];

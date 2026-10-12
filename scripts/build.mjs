@@ -26,7 +26,7 @@ console.log(`✓ ${salida} — ${kb} kB`);
 const SELLADOS = [
   'public/index.html', 'public/bar.html', 'public/qr.html',
   'public/app.js', 'public/bar.js', 'public/estilos.css',
-  'public/manifest.webmanifest',
+  'public/manifest.webmanifest', 'public/manifest-barra.webmanifest',
   'public/iconos/icono.svg', 'public/iconos/logo-horizontal.svg',
   salida,
 ];
