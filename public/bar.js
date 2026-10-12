@@ -211,21 +211,27 @@ function pintarCartaBar() {
     cont.innerHTML = `<div class="vacio">La carta está vacía.<br><small>Desde la Mac: <code>npm run seed</code></small></div>`;
     return;
   }
-  cont.innerHTML = estado.carta.map((i) => `
-    <div class="item ${i.disponible === false ? 'agotado' : ''}">
+  cont.innerHTML = estado.carta.map((i) => {
+    const fuera = i.enCarta === false;   // retirado: el cliente no lo ve
+    return `
+    <div class="item ${fuera || i.disponible === false ? 'agotado' : ''}">
       <div class="cuerpo">
-        <div class="nombre">${esc(i.nombre || i.id)}</div>
+        <div class="nombre">${esc(i.nombre || i.id)}${fuera ? ' — <small>fuera de carta</small>' : ''}</div>
         <div class="desc">${esc(i.categoria || '')} · ${plata(i.precio)}</div>
       </div>
       <div class="cant">
-        <button data-stock="${i.id}" data-d="-1" aria-label="Restar stock">−</button>
+        <button data-stock="${i.id}" data-d="-1" aria-label="Restar stock" ${fuera ? 'disabled' : ''}>−</button>
         <span class="n">${typeof i.stock === 'number' ? i.stock : '∞'}</span>
-        <button data-stock="${i.id}" data-d="1" aria-label="Sumar stock">+</button>
+        <button data-stock="${i.id}" data-d="1" aria-label="Sumar stock" ${fuera ? 'disabled' : ''}>+</button>
       </div>
-      <button class="btn" data-toggle="${i.id}" style="padding:.4rem .7rem;font-size:.82rem">
+      <button class="btn" data-toggle="${i.id}" style="padding:.4rem .7rem;font-size:.82rem" ${fuera ? 'disabled' : ''}>
         ${i.disponible === false ? 'Activar' : 'Agotar'}
       </button>
-    </div>`).join('');
+      <button class="btn" data-carta="${i.id}" style="padding:.4rem .7rem;font-size:.82rem">
+        ${fuera ? 'Poner en carta' : 'Sacar'}
+      </button>
+    </div>`;
+  }).join('');
 
   cont.querySelectorAll('[data-stock]').forEach((b) => b.onclick = async () => {
     const i = estado.carta.find((x) => x.id === b.dataset.stock);
@@ -236,6 +242,14 @@ function pintarCartaBar() {
   cont.querySelectorAll('[data-toggle]').forEach((b) => b.onclick = async () => {
     const i = estado.carta.find((x) => x.id === b.dataset.toggle);
     try { await updateDoc(doc(db, 'carta', i.id), { disponible: i.disponible === false }); }
+    catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+  });
+  // Sacar de la carta / volver a ponerlo. Nada se borra: el item queda guardado.
+  cont.querySelectorAll('[data-carta]').forEach((b) => b.onclick = async () => {
+    const i = estado.carta.find((x) => x.id === b.dataset.carta);
+    const volver = i.enCarta === false;
+    if (!volver && !confirm(`¿Sacar "${i.nombre}" de la carta? El cliente deja de verlo.`)) return;
+    try { await updateDoc(doc(db, 'carta', i.id), { enCarta: volver, ...(volver ? { disponible: true } : {}) }); }
     catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
   });
 }

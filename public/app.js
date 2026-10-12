@@ -93,6 +93,9 @@ function mostrarFalloAuth(e) {
 function escucharCarta() {
   onSnapshot(collection(db, 'carta'), (snap) => {
     estado.carta = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      // enCarta:false = no lo vendemos más. No se muestra.
+      // disponible:false = se acabó esta noche. Se muestra como "sin stock".
+      .filter((i) => i.enCarta !== false)
       .sort((a, b) => (a.categoria || '').localeCompare(b.categoria || '')
         || (a.orden ?? 999) - (b.orden ?? 999)
         || (a.nombre || '').localeCompare(b.nombre || ''));
