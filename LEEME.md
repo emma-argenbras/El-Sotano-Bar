@@ -26,6 +26,12 @@ npm run seed         # carta de ejemplo (idempotente)
 npm run crear:barra  # crea el usuario y te da un link para elegir la contraseña
 ```
 
+Si desplegás con un service account en vez de `firebase login`, `firebase deploy`
+falla en el chequeo de `serviceusage`. Para las reglas usá `npm run deploy:reglas --
+--aplicar`, que habla directo con la API de `firebaserules`. La cuenta necesita
+`firebaserules.rulesets.create` y `firebaserules.releases.create` (rol
+**Firebase Rules Admin**), y para los índices `roles/datastore.indexAdmin`.
+
 La clave privada se baja de
 [Cuentas de servicio](https://console.firebase.google.com/project/el-sotano-bar/settings/serviceaccounts/adminsdk).
 **Nunca va al repositorio** — está en `.gitignore`.
@@ -43,7 +49,8 @@ La clave privada se baja de
 | `npm run seed` | Carga la carta de arranque |
 | `npm run qr` | Genera un PNG de QR por mesa en `./qr/` |
 | `npm run deploy` | Despliega todo |
-| `npm run deploy:rules` | Solo las reglas |
+| `npm run deploy:rules` | Solo las reglas (requiere `firebase login`) |
+| `npm run deploy:reglas -- --aplicar` | Publica las reglas con un service account |
 | `npm run crear:barra` | Alta del usuario de la barra |
 
 En `localhost` la app se conecta sola a los emuladores: probar nunca toca
