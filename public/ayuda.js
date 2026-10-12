@@ -1,0 +1,203 @@
+// Ayuda del panel, por rol. Cada uno ve lo suyo y nada más: al barman no le
+// sirve leer sobre la caja, y a la puerta le estorba todo lo demás.
+//
+// El contenido vive acá y en ningún otro lado. Si cambia cómo funciona algo,
+// se cambia en este archivo y listo.
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  // quien: en qué roles aparece cada tema.
+  const TEMAS = [
+    {
+      quien: ['admin', 'barman', 'puerta'],
+      titulo: 'Entrar e instalar',
+      cuerpo: `
+        <p>Entrás con <b>usuario y contraseña</b>, sin mail. El usuario te lo dio
+        la casa y la contraseña no se recupera: si se pierde, te crean una cuenta
+        nueva.</p>
+        <p>Tocá <b>⬇ Instalar</b> arriba para que quede como una app en tu
+        pantalla de inicio. En iPhone tiene que ser desde Safari: Compartir ⬆︎ →
+        Agregar a inicio. Desde Chrome en iPhone no se puede, es de Apple.</p>
+        <p>Si algo se ve raro o viejo, tocá <b>↻</b>. Limpia la app y la deja en
+        la última versión. Cuando hay una versión nueva te avisa solo.</p>`,
+    },
+    {
+      quien: ['admin'],
+      titulo: 'Agendar una noche',
+      cuerpo: `
+        <p>En <b>Evento → Agendar una noche</b> ponés nombre, fecha, cupo y qué
+        barman o gente de puerta trabaja.</p>
+        <p>Queda <b>agendada</b>, no abierta. Ahí todavía no entran pedidos.</p>
+        <p><b>El registro de invitados abre al agendar</b>, no al arrancar. Esa es
+        la gracia: agendás el viernes de la semana que viene y la gente se anota
+        durante toda la semana.</p>
+        <p>Si dejás el cupo vacío, no hay lista de invitados y la noche funciona
+        como un bar común.</p>`,
+    },
+    {
+      quien: ['admin'],
+      titulo: 'Arrancar y cerrar la noche',
+      cuerpo: `
+        <p><b>Arrancar</b> abre la noche: desde ese momento entran pedidos y la
+        caja cuenta. El tablero mira desde ahí, no desde las 00:00 — una noche de
+        bar no termina a medianoche.</p>
+        <p><b>Cerrar evento y hacer la caja</b> congela los números y la manda al
+        histórico. <b>No se puede reabrir.</b></p>
+        <p>Antes de cerrar, fijate que no queden pedidos sin entregar: <b>no suman
+        a la caja</b>. El cartel te avisa cuántos quedaron.</p>
+        <p><b>Cortar</b> frena la entrada de pedidos sin cerrar la noche. Sirve
+        para el último pedido: cortás, servís lo que quedó pendiente y después
+        cerrás con todo entregado.</p>`,
+    },
+    {
+      quien: ['admin'],
+      titulo: 'Invitados y el link de registro',
+      cuerpo: `
+        <p>En la agenda, cada noche con cupo tiene <b>Compartir link</b>. Eso abre
+        el menú de compartir de tu celular: elegís WhatsApp, Instagram o lo que
+        sea. <b>La app no manda nada por su cuenta.</b></p>
+        <p>El invitado deja nombre y teléfono, y recibe <b>su pase con QR</b>.</p>
+        <p>En <b>Puerta</b> ves la lista completa, quién entró, a qué hora y
+        <b>cuánto consumió cada uno</b>.</p>
+        <p>Si alguien aparece sin anotarse: <b>+ Invitado de último momento</b>.
+        Entra aunque la lista esté llena. Le podés mandar su pase ahí mismo.</p>`,
+    },
+    {
+      quien: ['admin'],
+      titulo: 'La caja',
+      cuerpo: `
+        <p>La caja de la noche suma <b>solo los pedidos entregados</b>. Un pedido
+        que quedó en Preparando no existe para la caja.</p>
+        <p>Si marcaste un pedido entregado por error, en el ticket hay un <b>↩</b>
+        para cancelarlo o devolverlo a Listo. Sin eso la caja queda mal para
+        siempre.</p>
+        <p>Abajo de todo, <b>Caja general</b>: lo facturado de todas las noches,
+        el ticket promedio, cuál fue la mejor noche y qué se vende más. Lo podés
+        ordenar por fecha o por facturación, y abrir cada noche para ver qué se
+        vendió.</p>
+        <p>Los números de una noche cerrada <b>no se mueven</b> aunque mañana
+        cambies un precio.</p>`,
+    },
+    {
+      quien: ['admin'],
+      titulo: 'Personal: quién es quién',
+      cuerpo: `
+        <p>En <b>Evento → Personal</b>. Se registran una vez y después los asignás
+        a cada noche.</p>
+        <p><b>Administrador</b> — todo lo que podés vos menos borrar. Cuenta
+        permanente, no depende del evento.</p>
+        <p><b>Barman</b> — mueve pedidos y marca agotado. Ve precios y caja.
+        <b>Solo entra la noche en que está asignado.</b></p>
+        <p><b>Puerta</b> — solo la pantalla de puerta. No ve caja, pedidos ni
+        carta. También solo la noche que trabaja.</p>
+        <p><b>Dar de baja</b> le corta el acceso al toque, aunque tenga la app
+        abierta. Para sacar a alguien de una noche puntual, mejor usá
+        <b>De turno → Cambiar</b>.</p>`,
+    },
+    {
+      quien: ['admin', 'barman'],
+      titulo: 'El tablero de pedidos',
+      cuerpo: `
+        <p>Los pedidos entran en <b>Entraron</b> y se mueven con un toque:
+        Entraron → Preparando → Listo → Entregado.</p>
+        <p>Cuando lo pasás a <b>Listo</b>, al cliente le suena el celular, le
+        vibra y le aparece un cartel. Viene a buscarlo a la barra.</p>
+        <p>El ticket dice <b>quién pidió</b>. Si dice <b>invitado</b> en dorado,
+        es alguien que la puerta verificó.</p>
+        <p>Un ticket que lleva mucho tiempo se marca en rojo.</p>
+        <p>La <b>✕</b> cancela un pedido.</p>`,
+    },
+    {
+      quien: ['admin', 'barman'],
+      titulo: 'Cuando el ticket se pone rojo con un aviso',
+      cuerpo: `
+        <p>Dice <b>"Total informado ≠ carta"</b>: el precio que mandó el celular
+        del cliente no coincide con la carta. <b>Cobrá lo que dice la carta</b>,
+        que es el número que te muestra abajo.</p>
+        <p>Dice <b>"Tiene algo que no está en la carta"</b>: el pedido trae un
+        producto que no existe. <b>Cobralo a mano</b> y fijate qué pasó.</p>
+        <p>No es paranoia: los precios los manda el celular del cliente y se
+        pueden falsear. Por eso el panel los recalcula siempre.</p>`,
+    },
+    {
+      quien: ['admin', 'barman'],
+      titulo: 'Carta y stock',
+      cuerpo: `
+        <p><b>Agotar</b> marca que se acabó. El cliente lo sigue viendo pero no lo
+        puede pedir. <b>Activar</b> lo vuelve a habilitar.</p>
+        <p>Los <b>− ∞ +</b> ajustan el stock. En ∞ no se controla.</p>
+        <p><b>El stock no baja solo</b> al entregar: hay que ajustarlo a mano.</p>
+        <p class="solo-admin-ayuda"><b>Sacar</b> retira un producto de la carta: el
+        cliente deja de verlo. No se borra, vuelve con <b>Poner en carta</b>.
+        Distinto de Agotar, que es "se acabó esta noche".</p>`,
+    },
+    {
+      quien: ['admin', 'puerta'],
+      titulo: 'Controlar la entrada',
+      cuerpo: `
+        <p><b>Escanear pase</b> abre la cámara. Apuntá al QR del invitado y se
+        marca solo. Si el pase ya se usó, te avisa.</p>
+        <p>Si la cámara no abre o el QR no se lee, <b>buscalo por nombre o
+        teléfono</b> y tocá <b>Entró</b>.</p>
+        <p>Te equivocaste: <b>Deshacer</b> lo saca.</p>
+        <p>Arriba ves <b>cuántos entraron contra el cupo</b>. Cuando se llena,
+        avisa en rojo.</p>
+        <p>Alguien que no está en la lista: avisale a la casa. La lista no se
+        agranda desde la puerta.</p>`,
+    },
+    {
+      quien: ['admin', 'barman', 'puerta'],
+      titulo: 'Si algo no anda',
+      cuerpo: `
+        <p><b>"sin conexión"</b> en rojo: se cortó internet. Lo que ves es lo
+        último que llegó. Vuelve solo.</p>
+        <p><b>"Esto todavía no está listo"</b>: la base está armando algo por
+        dentro. Esperá unos minutos; el resto del panel anda igual.</p>
+        <p><b>"Se cerró tu turno"</b>: te dieron de baja o la noche terminó.
+        Hablá con la casa.</p>
+        <p><b>Se ve raro o faltan cosas</b>: tocá <b>↻</b>. Arregla casi todo.</p>`,
+    },
+  ];
+
+  function pintar(rol) {
+    const mios = TEMAS.filter((t) => t.quien.includes(rol));
+    $('#temasAyuda').innerHTML = mios.map((t, i) => `
+      <details class="tema" ${i === 0 ? 'open' : ''}>
+        <summary>${esc(t.titulo)}</summary>
+        <div class="cuerpo-tema">${t.cuerpo}</div>
+      </details>`).join('');
+    $('#quienAyuda').textContent = {
+      admin: 'Administrador — tenés todo',
+      barman: 'Barman',
+      puerta: 'Puerta',
+    }[rol] || '';
+    // Dentro de la ayuda del barman, lo que es solo de admin no va.
+    if (rol !== 'admin') {
+      $('#temasAyuda').querySelectorAll('.solo-admin-ayuda').forEach((e) => e.remove());
+    }
+  }
+
+  // El rol lo decide el panel (bar.js) y lo deja en el body; acá solo se lee.
+  function miRol() {
+    const c = document.body.classList;
+    if (c.contains('es-dueno') || c.contains('es-gerente')) return 'admin';
+    if (c.contains('es-puerta')) return 'puerta';
+    return 'barman';
+  }
+
+  window.abrirAyuda = () => {
+    pintar(miRol());
+    $('#dlgAyuda').showModal();
+  };
+
+  function enganchar() {
+    document.querySelectorAll('[data-ayuda]').forEach((b) => b.onclick = window.abrirAyuda);
+    const cerrar = $('#btnCerrarAyuda');
+    if (cerrar) cerrar.onclick = () => $('#dlgAyuda').close();
+  }
+  // El script va al final del body, pero no se da por sentado.
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', enganchar);
+  else enganchar();
+})();

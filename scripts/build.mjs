@@ -35,7 +35,7 @@ console.log(`✓ ${salidaQr} — ${(statSync(salidaQr).size / 1024).toFixed(0)} 
 const SELLADOS = [
   'public/index.html', 'public/bar.html', 'public/qr.html',
   'public/app.js', 'public/bar.js', 'public/actualizar.js', 'public/estilos.css',
-  'public/registro.js', 'public/pase.js',
+  'public/registro.js', 'public/pase.js', 'public/ayuda.js',
   'public/manifest.webmanifest', 'public/manifest-barra.webmanifest',
   'public/iconos/icono.svg', 'public/iconos/logo-horizontal.svg',
   salida,

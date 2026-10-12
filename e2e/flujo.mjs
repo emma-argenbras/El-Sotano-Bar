@@ -386,6 +386,23 @@ await chequear('entra con usuario y contraseña, sin escribir ningún mail', asy
     throw new Error('le rechazaron la lectura estando de turno');
 });
 
+await chequear('la ayuda del barman habla de lo suyo y no de la caja', async () => {
+  await turno.click('header [data-ayuda]');
+  await turno.waitForSelector('#dlgAyuda[open]', { timeout: 5000 });
+  const t = await turno.textContent('#temasAyuda');
+  if (!(await turno.textContent('#quienAyuda')).includes('Barman'))
+    throw new Error('no dice qué rol es');
+  for (const debe of ['El tablero de pedidos', 'Carta y stock', 'Si algo no anda']) {
+    if (!t.includes(debe)) throw new Error('le falta: ' + debe);
+  }
+  for (const noDebe of ['La caja', 'Personal: quién es quién', 'Agendar una noche', 'Controlar la entrada']) {
+    if (t.includes(noDebe)) throw new Error('le sobra: ' + noDebe);
+  }
+  // "Sacar" es de admin: dentro de Carta y stock no tiene que aparecer.
+  if (t.includes('Poner en carta')) throw new Error('le muestra algo que no puede hacer');
+  await turno.click('#btnCerrarAyuda');
+});
+
 await chequear('el de la barra ve lo suyo y nada mas', async () => {
   await turno.click('#tabEvento');
   await turno.waitForTimeout(800);
@@ -425,12 +442,15 @@ await chequear('la barra marca agotado pero el servidor le rechaza un precio', a
   if (codigo !== 'permission-denied') throw new Error('le dejó cambiar el precio: ' + codigo);
 
   // Lo dejamos disponible otra vez: los casos que siguen lo necesitan.
+  // Se confirma contra la base, no contra la pantalla: el caso siguiente le
+  // corta el acceso a esta cuenta y una escritura en vuelo se perdería.
   await turno.locator('.item', { hasText: 'Papas bravas' }).locator('[data-toggle]').click();
-  await turno.waitForFunction(() => {
-    const f = [...document.querySelectorAll('#cartaBar .item')]
-      .find((x) => x.textContent.includes('Papas bravas'));
-    return f?.querySelector('[data-toggle]')?.textContent.includes('Agotar');
-  }, null, { timeout: 10000 });
+  let vuelto = false;
+  for (let i = 0; i < 40 && !vuelto; i++) {
+    vuelto = (await db.doc('carta/papas').get()).data()?.disponible === true;
+    if (!vuelto) await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!vuelto) throw new Error('quedó agotado y los casos que siguen lo necesitan');
 });
 
 await chequear('apagarlo le corta el acceso al toque', async () => {
@@ -700,6 +720,20 @@ await chequear('lleno el cupo, no se registra nadie más', async () => {
     } catch (e) { return e.code; }
   });
   if (rechazado !== 'permission-denied') throw new Error('las reglas lo dejaron pasar: ' + rechazado);
+});
+
+await chequear('la ayuda del admin tiene todo', async () => {
+  await barra.click('header [data-ayuda]');
+  await barra.waitForSelector('#dlgAyuda[open]', { timeout: 5000 });
+  const t = await barra.textContent('#temasAyuda');
+  for (const debe of ['Entrar e instalar', 'Agendar una noche', 'Arrancar y cerrar la noche',
+                      'Invitados y el link de registro', 'La caja', 'Personal: quién es quién',
+                      'El tablero de pedidos', 'Carta y stock', 'Controlar la entrada',
+                      'Si algo no anda']) {
+    if (!t.includes(debe)) throw new Error('le falta: ' + debe);
+  }
+  if (!t.includes('Poner en carta')) throw new Error('le esconde algo que sí puede hacer');
+  await barra.click('#btnCerrarAyuda');
 });
 
 await chequear('la casa ve la lista y marca el ingreso', async () => {

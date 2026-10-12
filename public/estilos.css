@@ -409,3 +409,21 @@ body.es-gerente .ancho-full.solo-gerente-inline { display: block !important; wid
 
 /* La puerta solo ve su pantalla: lo demás no es asunto suyo. */
 body.es-puerta #tabTablero, body.es-puerta #tabCartaBar, body.es-puerta #tabEvento { display: none; }
+
+/* ---------- ayuda ---------- */
+#dlgAyuda { max-width: 42rem; }
+#temasAyuda .tema {
+  border: 1px solid var(--borde); border-radius: 11px;
+  background: var(--panel-alto); margin-bottom: .5rem; overflow: hidden;
+}
+#temasAyuda summary {
+  padding: .75rem .85rem; cursor: pointer; font-weight: 700; font-size: .95rem;
+  list-style: none;
+}
+#temasAyuda summary::-webkit-details-marker { display: none; }
+#temasAyuda summary::after { content: ' +'; float: right; color: var(--suave); font-weight: 400; }
+#temasAyuda .tema[open] summary::after { content: ' −'; }
+#temasAyuda .tema[open] summary { border-bottom: 1px solid var(--borde); }
+#temasAyuda .cuerpo-tema { padding: .3rem .85rem .85rem; font-size: .9rem; line-height: 1.55; }
+#temasAyuda .cuerpo-tema p { margin: .6rem 0; color: var(--suave); }
+#temasAyuda .cuerpo-tema b { color: var(--texto); }
