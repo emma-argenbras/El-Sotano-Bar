@@ -372,6 +372,22 @@ async function borrarAgendado(ev) {
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 
+// El link de registro se comparte por donde el celular ofrezca: WhatsApp,
+// Instagram, lo que sea. La app no manda nada por su cuenta.
+async function compartirRegistro(ev, boton) {
+  const url = `${location.origin}/registro.html`;
+  const texto = `Reservá tu lugar para ${ev?.nombre || 'la próxima noche'} en El Sótano`;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'El Sótano', text: texto, url }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    if (boton) { const a = boton.textContent; boton.textContent = 'Copiado ✓';
+      setTimeout(() => { boton.textContent = a; }, 1600); }
+  } catch { alert(url); }
+}
+
 // Cambiar quién está de turno sin cerrar el evento: alguien entra más tarde,
 // otro se va antes.
 async function editarTurno() {
@@ -477,8 +493,13 @@ function pintarEvento() {
             <div class="nombre">${esc(e.nombre)}${esHoy ? ' — <small>es hoy</small>' : ''}</div>
             <div class="desc">${f ? f.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }) : 'sin fecha'}${
               e.capacidad ? ` · cupo ${e.capacidad}` : ' · sin cupo'}${
+              estado.registro?.eventoId === e.id
+                ? ` · ${Number(estado.registro.registrados || 0)} anotados` : ''}${
               pasada ? ' · ya pasó' : ''}</div>
           </div>
+          ${estado.registro?.eventoId === e.id && estado.registro.abierto
+            ? `<button class="btn" data-link="${esc(e.id)}" style="padding:.35rem .6rem;font-size:.8rem">Compartir link</button>`
+            : ''}
           <button class="btn" data-editar="${esc(e.id)}" style="padding:.35rem .6rem;font-size:.8rem">Editar</button>
           <button class="btn peligro" data-quitar="${esc(e.id)}" style="padding:.35rem .6rem;font-size:.8rem">✕</button>
           <button class="btn primario" data-empezar="${esc(e.id)}" style="padding:.35rem .7rem;font-size:.82rem">Arrancar</button>
@@ -495,6 +516,8 @@ function pintarEvento() {
       try { await marcarTomandoPedidos(prender, null); }
       catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
     };
+    cont.querySelectorAll('[data-link]').forEach((b) => b.onclick = () =>
+      compartirRegistro(estado.agenda.find((e) => e.id === b.dataset.link), b));
     cont.querySelectorAll('[data-empezar]').forEach((b) => b.onclick = () =>
       empezarNoche(estado.agenda.find((e) => e.id === b.dataset.empezar)));
     cont.querySelectorAll('[data-editar]').forEach((b) => b.onclick = () =>
@@ -558,16 +581,8 @@ function pintarEvento() {
     </div>`;
   if ($('#btnCerrarEvento')) $('#btnCerrarEvento').onclick = cerrarEvento;
   if ($('#btnTurno')) $('#btnTurno').onclick = editarTurno;
-  if ($('#btnLinkRegistro')) $('#btnLinkRegistro').onclick = async () => {
-    const url = `${location.origin}/registro.html`;
-    const texto = `Reservá tu lugar para ${estado.evento.nombre} en El Sótano`;
-    if (navigator.share) {
-      try { await navigator.share({ title: 'El Sótano', text: texto, url }); return; }
-      catch (e) { if (e.name === 'AbortError') return; }
-    }
-    try { await navigator.clipboard.writeText(url); $('#btnLinkRegistro').textContent = 'Copiado ✓'; }
-    catch { alert(url); }
-  };
+  if ($('#btnLinkRegistro')) $('#btnLinkRegistro').onclick = (e) =>
+    compartirRegistro(estado.evento, e.currentTarget);
   if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
     const prender = !estado.tomandoPedidos;
     if (!prender && !confirm('¿Cortar los pedidos?\n\nEl QR sigue andando, pero el cliente no va a poder mandar nada hasta que lo reabras.')) return;

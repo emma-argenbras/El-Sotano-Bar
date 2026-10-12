@@ -614,8 +614,12 @@ await chequear('el admin abre un evento con cupo y eso abre el registro', async 
   await barra.fill('#inpEvento', 'Noche con lista');
   await barra.fill('#inpCapacidad', '2');
   await barra.click('#btnConfirmarEvento');
-  // El registro abre al agendar: la gracia es que se anoten antes de la noche.
+  // El registro abre al agendar: la gracia es que se anoten antes de la noche,
+  // así que el link tiene que estar a mano sin arrancarla.
   await barra.waitForSelector('[data-empezar]', { timeout: 10000 });
+  await barra.waitForSelector('[data-link]', { timeout: 10000 });
+  const fila = await barra.locator('.item', { hasText: 'Noche con lista' }).textContent();
+  if (!fila.includes('cupo 2')) throw new Error('la agenda no muestra el cupo: ' + fila);
   // Abrir el evento son varias escrituras; la del registro puede llegar
   // un instante después de que la tarjeta ya se dibujó.
   let r;
