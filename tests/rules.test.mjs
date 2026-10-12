@@ -51,6 +51,9 @@ before(async () => {
       total: 4500, creadoEn: new Date(),
     });
     await setDoc(doc(db, 'barra/caja'), { abierta: true, totalNoche: 182000 });
+    // Personal de turno: uno habilitado y uno apagado.
+    await setDoc(doc(db, 'accesosBarra/uid-turno-ok'), { usuario: 'barra-lunes', activo: true });
+    await setDoc(doc(db, 'accesosBarra/uid-turno-off'), { usuario: 'barra-viernes', activo: false });
   });
 });
 
@@ -63,6 +66,71 @@ const sinLoguear = () => env.unauthenticatedContext().firestore();
 const barra = () => env.authenticatedContext('uid-barra', {
   email: MAIL_BARRA, email_verified: true, provider_id: 'password',
 }).firestore();
+
+// Cuentas usuario/contraseña del turno: sin mail real, el permiso vive en
+// accesosBarra/{uid} y el dueño lo prende y lo apaga.
+const turnoOk = () => env.authenticatedContext('uid-turno-ok', {
+  email: 'barra-lunes@barra.local', provider_id: 'password',
+}).firestore();
+const turnoOff = () => env.authenticatedContext('uid-turno-off', {
+  email: 'barra-viernes@barra.local', provider_id: 'password',
+}).firestore();
+
+describe('personal de barra por turno', () => {
+  it('con el acceso prendido PUEDE ver todos los pedidos', async () => {
+    await assertSucceeds(getDoc(doc(turnoOk(), 'pedidos/pedido-de-ana')));
+  });
+
+  it('con el acceso prendido PUEDE mover un pedido de estado', async () => {
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/pedido-de-ana'), { estado: 'en_preparacion' }));
+  });
+
+  it('con el acceso prendido PUEDE agotar un item', async () => {
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'carta/fernet'), { disponible: false }));
+  });
+
+  it('con el acceso APAGADO no ve los pedidos ajenos', async () => {
+    await assertFails(getDoc(doc(turnoOff(), 'pedidos/pedido-de-ana')));
+  });
+
+  it('con el acceso APAGADO no toca la carta', async () => {
+    await assertFails(updateDoc(doc(turnoOff(), 'carta/fernet'), { precio: 1 }));
+  });
+
+  it('con el acceso APAGADO no entra a la caja', async () => {
+    await assertFails(getDoc(doc(turnoOff(), 'barra/caja')));
+  });
+
+  it('NO puede prenderse el acceso solo', async () => {
+    await assertFails(updateDoc(doc(turnoOff(), 'accesosBarra/uid-turno-off'), { activo: true }));
+  });
+
+  it('NO puede darse de alta un acceso nuevo', async () => {
+    await assertFails(setDoc(doc(turnoOk(), 'accesosBarra/uid-inventado'), { usuario: 'x', activo: true }));
+  });
+
+  it('NO puede apagar a otro', async () => {
+    await assertFails(updateDoc(doc(turnoOk(), 'accesosBarra/uid-turno-off'), { activo: false }));
+  });
+
+  it('NO puede listar quiénes tienen acceso', async () => {
+    await assertFails(getDocs(collection(turnoOk(), 'accesosBarra')));
+  });
+
+  it('sí puede ver el suyo, para saber si lo apagaron', async () => {
+    await assertSucceeds(getDoc(doc(turnoOk(), 'accesosBarra/uid-turno-ok')));
+  });
+
+  it('un cliente anónimo NO se puede dar acceso', async () => {
+    await assertFails(setDoc(doc(anon(), 'accesosBarra/cliente-anon-1'), { usuario: 'yo', activo: true }));
+  });
+
+  it('el dueño SÍ da de alta, prende y apaga', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'accesosBarra/uid-nuevo'), { usuario: 'barra-sabado', activo: true }));
+    await assertSucceeds(updateDoc(doc(barra(), 'accesosBarra/uid-nuevo'), { activo: false }));
+    await assertSucceeds(getDocs(collection(barra(), 'accesosBarra')));
+  });
+});
 
 describe('carta', () => {
   it('cliente anónimo PUEDE leer la carta', async () => {

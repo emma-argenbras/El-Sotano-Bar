@@ -31,8 +31,10 @@
 
     <form id="formLogin" style="margin-top:1rem">
       <label class="campo">
-        <span>Mail</span>
-        <input type="email" id="inpMail" autocomplete="username" required inputmode="email">
+        <span>Usuario o mail</span>
+        <input type="text" id="inpMail" autocomplete="username" required
+               autocapitalize="none" autocorrect="off" spellcheck="false"
+               placeholder="barra-lunes">
       </label>
       <label class="campo">
         <span>Contraseña</span>
@@ -92,6 +94,14 @@
 
     <section id="vistaEvento" hidden>
       <div id="evento"><div class="cargando">Cargando evento…</div></div>
+      <div class="solo-dueno">
+        <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Usuarios de barra</h2>
+        <p style="color:var(--suave);font-size:.86rem;margin:0 0 .6rem">
+          Entran con usuario y contraseña, sin mail. Apagalos cuando termina el evento.
+        </p>
+        <div id="accesos"><div class="cargando">Buscando…</div></div>
+      </div>
+
       <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Eventos cerrados</h2>
       <div id="eventosPasados"><div class="cargando">Buscando…</div></div>
     </section>

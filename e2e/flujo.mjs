@@ -223,6 +223,55 @@ await chequear('la barra puede agotar un item y el cliente lo ve', async () => {
   }, null, { timeout: 10000 });
 });
 
+console.log('\nUSUARIO DE BARRA DEL TURNO');
+await chequear('el dueño crea un usuario de barra sin mail y sin perder su sesión', async () => {
+  await barra.click('#tabEvento');
+  await barra.waitForSelector('#btnAltaBarra', { timeout: 10000 });
+  const respuestas = ['barra-turno', 'clave-de-prueba'];
+  barra.on('dialog', async (d) => {
+    if (d.type() === 'prompt') await d.accept(respuestas.shift() ?? '');
+    else await d.accept();
+  });
+  await barra.click('#btnAltaBarra');
+  await barra.waitForFunction(() =>
+    document.querySelector('#accesos')?.textContent.includes('barra-turno'), null, { timeout: 15000 });
+  // El alta usa una app aparte justamente para esto: el dueño sigue adentro.
+  if (await barra.locator('#vistaPanel').isHidden()) throw new Error('al dueño lo sacó de su propio panel');
+  barra.removeAllListeners('dialog');
+});
+
+const ctxTurno = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+const turno = await ctxTurno.newPage();
+turno.on('pageerror', (e) => errores.push('turno: ' + e.message));
+
+await chequear('entra con usuario y contraseña, sin escribir ningún mail', async () => {
+  await turno.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+  await turno.fill('#inpMail', 'barra-turno');
+  await turno.fill('#inpPass', 'clave-de-prueba');
+  await turno.click('#btnEntrar');
+  await turno.waitForSelector('#vistaPanel:not([hidden])', { timeout: 15000 });
+  await turno.waitForSelector('.ticket', { timeout: 15000 });
+});
+
+await chequear('el de la barra NO ve la administración de usuarios', async () => {
+  await turno.click('#tabEvento');
+  await turno.waitForTimeout(600);
+  if (await turno.locator('#btnAltaBarra').isVisible()) throw new Error('puede crear usuarios');
+  if (await turno.locator('.solo-dueno').isVisible()) throw new Error('ve la sección del dueño');
+});
+
+await chequear('apagarlo le corta el acceso al toque', async () => {
+  barra.once('dialog', (d) => d.accept());
+  await barra.click('#accesos [data-acceso]');
+  await barra.waitForFunction(() =>
+    document.querySelector('#accesos')?.textContent.includes('apagado'), null, { timeout: 10000 });
+  // Se va solo, aunque tenga la app abierta: cada cuenta mira su permiso.
+  turno.once('dialog', (d) => d.accept());
+  await turno.waitForSelector('#vistaLogin:not([hidden])', { timeout: 20000 });
+  if (!(await turno.locator('#vistaPanel').isHidden())) throw new Error('sigue adentro del panel');
+});
+await ctxTurno.close();
+
 console.log('\nCAJA POR EVENTO');
 await chequear('abre un evento y la caja pasa a contar desde ahí', async () => {
   await barra.click('#tabEvento');

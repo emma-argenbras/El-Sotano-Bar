@@ -5,15 +5,15 @@
 // dos barras de 4G no debería esperar tres pedidos a un CDN externo antes de
 // ver la carta. Empaquetado, es un solo archivo del mismo dominio, que además
 // el service worker guarda en cache.
-export { initializeApp } from 'firebase/app';
+export { initializeApp, deleteApp } from 'firebase/app';
 export {
   getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator,
-  signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail,
   setPersistence, browserLocalPersistence,
 } from 'firebase/auth';
 export {
   getFirestore, initializeFirestore, connectFirestoreEmulator,
   persistentLocalCache, persistentSingleTabManager,
   collection, doc, query, where, orderBy, limit, onSnapshot,
-  addDoc, updateDoc, serverTimestamp, Timestamp,
+  addDoc, setDoc, updateDoc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';

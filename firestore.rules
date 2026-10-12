@@ -28,11 +28,29 @@ service cloud.firestore {
       ];
     }
 
-    function esBarra() {
+    // El dueño del local. No depende de ningún documento: no puede dejarse
+    // afuera solo. Ojo: esDueno(uid), más abajo, es otra cosa — el dueño de
+    // un pedido.
+    function esElDueno() {
       return logueado() && (
         request.auth.token.get('rol', '') == 'barra'
         || request.auth.token.get('email', '') in mailDeBarra()
       );
+    }
+
+    // Personal de barra del turno: una cuenta usuario/contraseña que el dueño
+    // da de alta para un evento y apaga cuando termina. El permiso vive en
+    // accesosBarra/{uid}, así que apagarlo corta el acceso en el momento, sin
+    // tocar reglas ni redesplegar.
+    function accesoDeTurno() {
+      return logueado()
+        && exists(/databases/$(database)/documents/accesosBarra/$(request.auth.uid))
+        && get(/databases/$(database)/documents/accesosBarra/$(request.auth.uid)).data.activo == true;
+    }
+
+    // El dueño primero: resuelve con el token y no cuesta ninguna lectura.
+    function esBarra() {
+      return esElDueno() || accesoDeTurno();
     }
 
     function esDueno(uid) {
@@ -99,6 +117,17 @@ service cloud.firestore {
 
     match /barra/{documento=**} {
       allow read, write: if esBarra();
+    }
+
+    // ---------- quién es personal de barra ----------
+    // Va fuera de barra/ a propósito: si estuviera adentro, la regla de arriba
+    // dejaría que el personal se editara su propio permiso.
+    // Solo el dueño da de alta, prende y apaga.
+    match /accesosBarra/{uid} {
+      // Cada uno puede ver el suyo: el panel avisa cuando lo apagaron.
+      allow get: if esElDueno() || esDueno(uid);
+      allow list: if esElDueno();
+      allow write: if esElDueno();
     }
 
     // ---------- todo lo demás ----------

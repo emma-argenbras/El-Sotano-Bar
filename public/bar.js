@@ -4,9 +4,20 @@ import {
   initializeApp,
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
   sendPasswordResetEmail, setPersistence, browserLocalPersistence, connectAuthEmulator,
+  createUserWithEmailAndPassword, deleteApp,
   getFirestore, connectFirestoreEmulator, collection, doc, query, where, orderBy,
-  onSnapshot, updateDoc, Timestamp, addDoc, limit, serverTimestamp,
+  onSnapshot, updateDoc, setDoc, Timestamp, addDoc, limit, serverTimestamp,
 } from '/vendor/firebase.js';
+
+// Las cuentas del turno no tienen mail: el usuario escribe "barra-lunes" y
+// por detrás va "barra-lunes@barra.local". El dominio no existe ni tiene que
+// existir — Firebase solo pide que el string tenga forma de mail.
+const DOMINIO_TURNO = 'barra.local';
+const aMail = (entrada) => {
+  const t = String(entrada || '').trim().toLowerCase();
+  return t.includes('@') ? t : `${t}@${DOMINIO_TURNO}`;
+};
+const aUsuario = (mail) => String(mail || '').replace(`@${DOMINIO_TURNO}`, '');
 
 const CFG = window.CONFIG_FIREBASE || {};
 const BAR = window.CONFIG_BAR || { moneda: '$', alertaDemoraMin: 8 };
@@ -24,7 +35,8 @@ const db = getFirestore(app);
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 
 // En local apuntamos a los emuladores: nunca tocar datos de producción probando.
-if (['localhost', '127.0.0.1'].includes(location.hostname)) {
+const EMULADOR = ['localhost', '127.0.0.1'].includes(location.hostname);
+if (EMULADOR) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
 }
@@ -39,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -145,7 +157,7 @@ $('#formLogin').onsubmit = async (e) => {
   btn.disabled = true; btn.textContent = 'Entrando…';
   $('#errorLogin').classList.add('oculto');
   try {
-    await signInWithEmailAndPassword(auth, $('#inpMail').value.trim(), $('#inpPass').value);
+    await signInWithEmailAndPassword(auth, aMail($('#inpMail').value), $('#inpPass').value);
   } catch (err) {
     $('#errorLoginTexto').textContent = mensajeAuth(err.code) || err.message;
     $('#errorLogin').classList.remove('oculto');
@@ -155,8 +167,15 @@ $('#formLogin').onsubmit = async (e) => {
 };
 
 $('#btnOlvide').onclick = async () => {
-  const mail = $('#inpMail').value.trim();
-  if (!mail) { $('#inpMail').focus(); return; }
+  const mail = aMail($('#inpMail').value);
+  if (!mail.startsWith('@') && !mail.includes('@')) { $('#inpMail').focus(); return; }
+  if (mail.endsWith(`@${DOMINIO_TURNO}`)) {
+    $('#errorLoginTexto').textContent =
+      'Las cuentas de turno no tienen mail. Pedile al dueño que te la cambie desde el panel.';
+    $('#errorLogin').className = 'aviso mal';
+    $('#errorLogin').classList.remove('oculto');
+    return;
+  }
   try {
     await sendPasswordResetEmail(auth, mail);
     $('#errorLoginTexto').textContent = 'Te mandamos un mail para cambiar la contraseña.';
@@ -181,11 +200,17 @@ function mensajeAuth(code) {
 
 $('#btnSalir').onclick = () => signOut(auth);
 
-onAuthStateChanged(auth, (u) => {
+onAuthStateChanged(auth, async (u) => {
   const dentro = !!u && !u.isAnonymous;
   $('#vistaLogin').hidden = dentro;
   $('#vistaPanel').hidden = !dentro;
-  if (dentro) { pintarConexion(); pintarSonido(); escucharEvento(); escucharCarta(); }
+  if (!dentro) return;
+  estado.usuario = aUsuario(u.email);
+  pintarConexion(); pintarSonido(); escucharEvento(); escucharCarta();
+  vigilarMiAcceso(u.uid);
+  // Quién es dueño lo deciden las reglas, no el cliente: si puede listar los
+  // accesos, es dueño. Así no hay una segunda lista de mails que mantener.
+  escucharAccesos();
 });
 
 // ---------- eventos ----------
@@ -326,6 +351,113 @@ function pintarEventosPasados() {
       <div class="total">${plata(c.facturado || 0)}</div>
     </div>`;
   }).join('');
+}
+
+// ---------- usuarios de barra del turno ----------
+// Cuentas usuario/contraseña, sin mail, que el dueño da de alta para un
+// evento y apaga cuando termina. El permiso es accesosBarra/{uid}: apagarlo
+// corta el acceso en el momento, sin tocar reglas ni redesplegar.
+function escucharAccesos() {
+  onSnapshot(collection(db, 'accesosBarra'), (snap) => {
+    estado.dueno = true;
+    document.body.classList.add('es-dueno');
+    estado.accesos = snap.docs.map((d) => ({ uid: d.id, ...d.data() }))
+      .sort((a, b) => Number(!!b.activo) - Number(!!a.activo)
+        || String(a.usuario).localeCompare(String(b.usuario)));
+    pintarAccesos();
+  }, (e) => {
+    // permission-denied acá es la respuesta esperada para el personal de
+    // turno: no es dueño, no ve la administración y no pasa nada.
+    estado.dueno = false;
+    document.body.classList.remove('es-dueno');
+    if (e.code !== 'permission-denied') fallo('#accesos')(e);
+  });
+}
+
+// Las reglas rechazan cualquier escritura en cuanto se apaga el acceso, pero
+// un listener ya abierto puede seguir recibiendo un rato: Firestore no vuelve
+// a evaluar la regla al instante. Así que cada cuenta mira su propio permiso
+// y se va sola cuando se lo apagan.
+function vigilarMiAcceso(uid) {
+  // El dueño no tiene documento de acceso, así que "no existe" no puede
+  // significar echarlo. Solo se reacciona a un permiso que estuvo y se cayó.
+  let loTuvo = false;
+  let yendose = false;
+  onSnapshot(doc(db, 'accesosBarra', uid), (d) => {
+    if (d.exists() && d.data().activo === true) { loTuvo = true; return; }
+    if (!d.exists() && !loTuvo) return;
+    if (yendose) return;
+    yendose = true;
+    signOut(auth).finally(() =>
+      alert('Se cerró tu turno. Pedile al dueño que te vuelva a habilitar.'));
+  }, () => {});
+}
+
+async function altaUsuarioBarra() {
+  const usuario = (prompt('Usuario para la barra (sin espacios)',
+    estado.evento ? 'barra-' + String(estado.evento.nombre).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : 'barra') || '').trim().toLowerCase();
+  if (!usuario) return;
+  if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(usuario)) {
+    alert('Entre 3 y 30 caracteres: letras, números, punto, guión o guión bajo. Sin espacios ni acentos.');
+    return;
+  }
+  const clave = (prompt(`Contraseña para "${usuario}" (mínimo 6)\n\nAnotala: no se puede recuperar, se cambia creando otra.`) || '');
+  if (clave.length < 6) { if (clave) alert('Mínimo 6 caracteres.'); return; }
+
+  // Una app aparte para el alta: createUser deja logueada a la cuenta nueva,
+  // y si usáramos la principal el dueño se quedaría afuera de su propio panel.
+  const secundaria = initializeApp(CFG, 'alta-' + Date.now());
+  const authSec = getAuth(secundaria);
+  if (EMULADOR) connectAuthEmulator(authSec, 'http://127.0.0.1:9099', { disableWarnings: true });
+  try {
+    const cred = await createUserWithEmailAndPassword(authSec, aMail(usuario), clave);
+    await setDoc(doc(db, 'accesosBarra', cred.user.uid), {
+      usuario,
+      activo: true,
+      eventoId: estado.evento?.id || null,
+      evento: estado.evento?.nombre || null,
+      creadoEn: serverTimestamp(),
+    });
+    alert(`Listo.\n\nUsuario: ${usuario}\nContraseña: la que pusiste\n\nEn el celular de la barra:\n${location.origin}/bar.html`);
+  } catch (e) {
+    alert(e.code === 'auth/email-already-in-use'
+      ? `Ya existe un usuario "${usuario}". Elegí otro nombre.`
+      : 'No se pudo crear: ' + (e.code || e.message));
+  } finally {
+    await signOut(authSec).catch(() => {});
+    await deleteApp(secundaria).catch(() => {});
+  }
+}
+
+async function alternarAcceso(uid) {
+  const a = estado.accesos.find((x) => x.uid === uid);
+  if (!a) return;
+  if (a.activo && !confirm(`Apagar "${a.usuario}"?\n\nPierde el acceso al toque, aunque tenga la app abierta.`)) return;
+  try { await updateDoc(doc(db, 'accesosBarra', uid), { activo: !a.activo }); }
+  catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+function pintarAccesos() {
+  const cont = $('#accesos');
+  if (!cont) return;
+  const alta = `<button class="btn primario ancho-full" id="btnAltaBarra" style="margin-top:.8rem">Crear usuario de barra</button>`;
+  if (!estado.accesos.length) {
+    cont.innerHTML = `<p style="color:var(--suave);font-size:.9rem;margin:0">
+      Todavía no creaste ninguno. El de la barra entra con usuario y contraseña, sin mail.</p>${alta}`;
+  } else {
+    cont.innerHTML = estado.accesos.map((a) => `
+      <div class="item ${a.activo ? '' : 'agotado'}">
+        <div class="cuerpo">
+          <div class="nombre">${esc(a.usuario)}${a.activo ? '' : ' — <small>apagado</small>'}</div>
+          <div class="desc">${a.evento ? esc(a.evento) : 'sin evento'}</div>
+        </div>
+        <button class="btn ${a.activo ? 'peligro' : 'primario'}" data-acceso="${esc(a.uid)}"
+                style="padding:.4rem .7rem;font-size:.82rem">${a.activo ? 'Apagar' : 'Prender'}</button>
+      </div>`).join('') + alta;
+  }
+  $('#btnAltaBarra').onclick = altaUsuarioBarra;
+  cont.querySelectorAll('[data-acceso]').forEach((b) =>
+    b.onclick = () => alternarAcceso(b.dataset.acceso));
 }
 
 // ---------- pedidos ----------
