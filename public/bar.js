@@ -51,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, rol: '', tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -478,20 +478,89 @@ function pintarEventosPasados() {
     cont.innerHTML = '<p style="color:var(--suave);font-size:.9rem">Todavía no cerraste ninguno.</p>';
     return;
   }
-  cont.innerHTML = estado.eventos.map((e) => {
-    const c = e.cierre || {};
-    const f = e.cerradoEn?.toDate?.();
-    return `<div class="item">
-      <div class="cuerpo">
-        <div class="nombre">${esc(e.nombre)}</div>
-        <div class="desc">${f ? f.toLocaleDateString('es-AR') : ''} · ${c.entregados ?? 0} entregados${c.cancelados ? ` · ${c.cancelados} cancelados` : ''}</div>
+
+  // La caja general: la suma de todo lo cerrado. Es el número que se mira
+  // para saber cómo viene el mes, no el de una noche suelta.
+  const total = estado.eventos.reduce((a, e) => a + Number(e.cierre?.facturado || 0), 0);
+  const pedidos = estado.eventos.reduce((a, e) => a + Number(e.cierre?.entregados || 0), 0);
+  const ticket = pedidos ? Math.round(total / pedidos) : 0;
+  const mejor = [...estado.eventos].sort(
+    (a, b) => Number(b.cierre?.facturado || 0) - Number(a.cierre?.facturado || 0))[0];
+
+  // Lo más vendido de todos los eventos juntos: qué conviene tener siempre.
+  const acumulado = new Map();
+  for (const e of estado.eventos) {
+    for (const i of (e.cierre?.porItem || [])) {
+      const a = acumulado.get(i.nombre) || { cantidad: 0, importe: 0 };
+      a.cantidad += Number(i.cantidad || 0);
+      a.importe += Number(i.importe || 0);
+      acumulado.set(i.nombre, a);
+    }
+  }
+  const top = [...acumulado].sort((a, b) => b[1].importe - a[1].importe).slice(0, 5);
+
+  const porPlata = estado.ordenCaja === 'plata';
+  const lista = [...estado.eventos].sort(porPlata
+    ? (a, b) => Number(b.cierre?.facturado || 0) - Number(a.cierre?.facturado || 0)
+    : (a, b) => (b.cerradoEn?.seconds || 0) - (a.cerradoEn?.seconds || 0));
+
+  cont.innerHTML = `
+    <div class="caja-evento">
+      <div class="titulo">Caja general</div>
+      <div class="desde">${estado.eventos.length} evento${estado.eventos.length === 1 ? '' : 's'} cerrado${estado.eventos.length === 1 ? '' : 's'}</div>
+      <div class="numeros">
+        <div class="plata"><b>${plata(total)}</b><span>facturado</span></div>
+        <div><b>${pedidos}</b><span>pedidos</span></div>
+        <div><b>${plata(ticket)}</b><span>por pedido</span></div>
       </div>
-      <div class="total">${plata(c.facturado || 0)}</div>
-    </div>`;
-  }).join('');
+      ${mejor ? `<p style="font-size:.86rem;color:var(--suave);margin:.9rem 0 0">
+        La mejor noche fue <b style="color:var(--texto)">${esc(mejor.nombre)}</b>
+        con ${plata(mejor.cierre?.facturado || 0)}.</p>` : ''}
+      ${top.length ? `<div class="grupo-personal">Lo más vendido, de todas las noches</div>
+        <table class="ranking"><tbody>${top.map(([nombre, i]) => `
+          <tr><td>${esc(nombre)}</td><td class="n">${i.cantidad}</td><td class="n">${plata(i.importe)}</td></tr>`).join('')}
+        </tbody></table>` : ''}
+    </div>
+
+    <div class="grupo-personal" style="display:flex;align-items:center;gap:.6rem">
+      <span style="flex:1">Noche por noche</span>
+      <button class="btn" id="btnOrdenCaja" style="padding:.25rem .6rem;font-size:.72rem;text-transform:none;letter-spacing:0">
+        ${porPlata ? 'Ver por fecha' : 'Ver por facturación'}
+      </button>
+    </div>
+    ${lista.map((e, i) => {
+      const c = e.cierre || {};
+      const f = e.cerradoEn?.toDate?.();
+      const abierto = estado.detalleEvento === e.id;
+      return `<div class="item ${abierto ? '' : ''}" style="flex-wrap:wrap">
+        <div class="cuerpo">
+          <div class="nombre">${porPlata ? `<b style="color:var(--oro)">${i + 1}º</b> ` : ''}${esc(e.nombre)}</div>
+          <div class="desc">${f ? f.toLocaleDateString('es-AR') : ''} · ${c.entregados ?? 0} entregados${c.cancelados ? ` · ${c.cancelados} cancelados` : ''}</div>
+        </div>
+        <div class="total">${plata(c.facturado || 0)}</div>
+        <button class="btn" data-detalle="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">
+          ${abierto ? 'Ocultar' : 'Ver'}
+        </button>
+        ${abierto ? `<table class="ranking" style="flex-basis:100%"><tbody>${
+          (c.porItem || []).length
+            ? (c.porItem || []).map((it) => `<tr><td>${esc(it.nombre)}</td>
+                <td class="n">${it.cantidad}</td><td class="n">${plata(it.importe)}</td></tr>`).join('')
+            : '<tr><td colspan="3" style="color:var(--suave)">No se entregó nada esa noche.</td></tr>'
+        }</tbody></table>` : ''}
+      </div>`;
+    }).join('')}`;
+
+  $('#btnOrdenCaja').onclick = () => {
+    estado.ordenCaja = porPlata ? 'fecha' : 'plata';
+    pintarEventosPasados();
+  };
+  cont.querySelectorAll('[data-detalle]').forEach((b) => b.onclick = () => {
+    estado.detalleEvento = estado.detalleEvento === b.dataset.detalle ? null : b.dataset.detalle;
+    pintarEventosPasados();
+  });
 }
 
-// ---------- usuarios de barra del turno ----------
+// ---------- padrón de personal ----------
 // Cuentas usuario/contraseña, sin mail, que el dueño da de alta para un
 // evento y apaga cuando termina. El permiso es accesosBarra/{uid}: apagarlo
 // corta el acceso en el momento, sin tocar reglas ni redesplegar.
@@ -673,6 +742,16 @@ function pintarTablero() {
     b.onclick = () => cambiarEstado(b.dataset.avanzar, b.dataset.a));
   cont.querySelectorAll('[data-cancelar]').forEach((b) =>
     b.onclick = () => { if (confirm('¿Cancelar este pedido?')) cambiarEstado(b.dataset.cancelar, 'cancelado'); });
+  // Entregado por error: sin esto la caja queda mal para siempre.
+  cont.querySelectorAll('[data-corregir]').forEach((b) => b.onclick = () => {
+    const p = estado.pedidos.find((x) => x.id === b.dataset.corregir);
+    const r = prompt(`Corregir el pedido de ${p?.mesa ? 'mesa ' + p.mesa : 'sin mesa'} · ${plata(p?.total)}\n\n`
+      + '1 = cancelarlo (sale de la caja)\n'
+      + '2 = volverlo a Listo\n\n'
+      + 'Dejalo vacío para no tocar nada.', '');
+    if (r === '1') cambiarEstado(p.id, 'cancelado');
+    else if (r === '2') cambiarEstado(p.id, 'listo');
+  });
 }
 
 function ticket(p, col) {
@@ -711,7 +790,9 @@ function ticket(p, col) {
     <div class="pie">
       <span class="total">${plata(desfasado && !intrusos.length ? esperado : p.total)}</span>
       ${col.siguiente ? `<button class="btn primario" data-avanzar="${p.id}" data-a="${col.siguiente}">${col.accion}</button>` : ''}
-      ${col.clave !== 'entregado' ? `<button class="btn peligro" data-cancelar="${p.id}" title="Cancelar">✕</button>` : ''}
+      ${col.clave !== 'entregado'
+        ? `<button class="btn peligro" data-cancelar="${p.id}" title="Cancelar">✕</button>`
+        : `<button class="btn solo-gerente-inline" data-corregir="${p.id}" title="Corregir">↩</button>`}
     </div>
   </div>`;
 }

@@ -321,8 +321,8 @@ await chequear('asignarlo al turno le abre el panel', async () => {
   await barra.fill('#inpEvento', 'Noche de prueba');
   await barra.check('#elegirBarman input');
   await barra.click('#btnConfirmarEvento');
-  await barra.waitForSelector('.caja-evento', { timeout: 10000 });
-  const t = await barra.textContent('.caja-evento');
+  await barra.waitForSelector('#evento .caja-evento', { timeout: 10000 });
+  const t = await barra.textContent('#evento .caja-evento');
   if (!t.includes('barra-turno')) throw new Error('no muestra quién está de turno: ' + t.slice(0, 200));
 });
 
@@ -351,9 +351,9 @@ await chequear('el de la barra ve lo suyo y nada mas', async () => {
   if (await turno.locator('#btnCerrarEvento').isVisible()) throw new Error('puede cerrar el evento');
   if (await turno.locator('#btnTomando').isVisible()) throw new Error('puede cortar los pedidos');
   // El evento lo ve, con la caja y el ranking: necesita los precios.
-  if (!(await turno.locator('.caja-evento').isVisible()))
+  if (!(await turno.locator('#evento .caja-evento').isVisible()))
     throw new Error('no ve la caja del evento');
-  if (!(await turno.textContent('.caja-evento')).includes('Noche de prueba'))
+  if (!(await turno.textContent('#evento .caja-evento')).includes('Noche de prueba'))
     throw new Error('no ve de qué evento se trata');
   if (await turno.locator('#btnTurno').isVisible())
     throw new Error('puede cambiar quién está de turno');
@@ -420,19 +420,19 @@ await chequear('abre un evento y la caja pasa a contar desde ahí', async () => 
   await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
   await barra.fill('#inpEvento', 'Prueba de noche');
   await barra.click('#btnConfirmarEvento');
-  await barra.waitForSelector('.caja-evento', { timeout: 10000 });
-  const t = await barra.textContent('.caja-evento');
+  await barra.waitForSelector('#evento .caja-evento', { timeout: 10000 });
+  const t = await barra.textContent('#evento .caja-evento');
   if (!t.includes('Prueba de noche')) throw new Error('no tomó el nombre: ' + t.slice(0, 120));
 
   // abiertoEn es un serverTimestamp: hasta que vuelve del servidor llega null
   // y el tablero sigue mostrando el día entero. Esperamos a que se resuelva.
   await barra.waitForFunction(() =>
-    !document.querySelector('.caja-evento .desde')?.textContent.includes('—'),
+    !document.querySelector('#evento .caja-evento .desde')?.textContent.includes('—'),
     null, { timeout: 10000 });
 
   // El pedido entregado antes de abrir el evento no tiene que contar.
   await barra.waitForFunction(() =>
-    document.querySelector('.caja-evento .plata b')?.textContent.replace(/\D/g, '') === '0',
+    document.querySelector('#evento .caja-evento .plata b')?.textContent.replace(/\D/g, '') === '0',
     null, { timeout: 10000 });
 });
 await chequear('un pedido nuevo entra al evento y suma a la caja al entregarlo', async () => {
@@ -442,9 +442,9 @@ await chequear('un pedido nuevo entra al evento y suma a la caja al entregarlo',
     total: 11000, mesa: '3', creadoEn: new Date(),
   });
   await barra.waitForFunction(() =>
-    document.querySelector('.caja-evento .plata b')?.textContent.replace(/\D/g, '') === '11000',
+    document.querySelector('#evento .caja-evento .plata b')?.textContent.replace(/\D/g, '') === '11000',
     null, { timeout: 10000 });
-  const t = await barra.textContent('.caja-evento .ranking');
+  const t = await barra.textContent('#evento .caja-evento .ranking');
   if (!t.includes('Papas bravas')) throw new Error('el ranking no lo listó');
 });
 await chequear('con el evento abierto, el cliente puede pedir', async () => {
@@ -465,6 +465,42 @@ await chequear('cerrar el evento congela la caja y lo manda al histórico', asyn
 });
 
 console.log('\nVIGENCIA: el QR sigue, el permiso de pedir no');
+await chequear('la caja general suma los eventos cerrados y los rankea', async () => {
+  await barra.click('#tabEvento');
+  await barra.waitForFunction(() =>
+    document.querySelector('#eventosPasados')?.textContent.includes('Caja general'),
+    null, { timeout: 10000 });
+  const caja = await barra.textContent('#eventosPasados');
+  // Dos eventos cerrados en la corrida: el de prueba (sin nada) y este con 11.000.
+  if (!caja.includes('11.000')) throw new Error('no suma lo facturado: ' + caja.slice(0, 200));
+  if (!caja.includes('La mejor noche fue')) throw new Error('no dice cuál fue la mejor noche');
+
+  // Ordenar por facturación pone primero al que más hizo.
+  await barra.click('#btnOrdenCaja');
+  await barra.waitForFunction(() =>
+    document.querySelector('#btnOrdenCaja')?.textContent.includes('Ver por fecha'),
+    null, { timeout: 5000 });
+  const primero = await barra.textContent('#eventosPasados .item');
+  if (!primero.includes('Prueba de noche')) throw new Error('el ranking no ordena: ' + primero);
+
+  // Y el detalle de una noche muestra qué se vendió.
+  await barra.locator('#eventosPasados [data-detalle]').first().click();
+  await barra.waitForSelector('#eventosPasados .ranking', { timeout: 5000 });
+  const detalle = await barra.textContent('#eventosPasados');
+  if (!detalle.includes('Papas bravas')) throw new Error('el detalle no lista lo vendido');
+});
+
+await chequear('un entregado por error se puede corregir', async () => {
+  // Sin esto la caja queda mal para siempre: entregado no tenía vuelta atrás.
+  await barra.click('#tabTablero');
+  const antes = await barra.textContent('#chipCaja');
+  await barra.waitForSelector('.ticket.entregado [data-corregir]', { timeout: 10000 });
+  barra.once('dialog', (d) => d.accept('1'));
+  await barra.locator('.ticket.entregado [data-corregir]').first().click();
+  await barra.waitForFunction((t) =>
+    document.querySelector('#chipCaja')?.textContent !== t, antes, { timeout: 10000 });
+});
+
 await chequear('cerrado el evento, el cliente ve la carta pero no puede pedir', async () => {
   const ctxTarde = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const tarde = await ctxTarde.newPage();
