@@ -352,10 +352,10 @@ await chequear('registrado pero sin turno, el barman entra y no ve nada', async 
 });
 
 await chequear('asignarlo al turno le abre el panel', async () => {
-  await barra.click('#tabEvento');
-  // Sin evento todavía: lo abrimos eligiendo al barman.
-  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
-  await barra.click('#btnAbrirEvento');
+  await barra.click('#tabCalendario');
+  // Sin evento todavía: lo agendamos eligiendo al barman.
+  await barra.waitForSelector('#btnAgendar', { timeout: 10000 });
+  await barra.click('#btnAgendar');
   await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
   await barra.fill('#inpEvento', 'Noche de prueba');
   await barra.check('#elegirBarman input');
@@ -364,6 +364,8 @@ await chequear('asignarlo al turno le abre el panel', async () => {
   await barra.waitForSelector('[data-empezar]', { timeout: 10000 });
   barra.once('dialog', (d) => d.accept());
   await barra.locator('[data-empezar]').first().click();
+  // Arrancar se hace desde el calendario; la noche en curso vive en Noche.
+  await barra.click('#tabEvento');
   await barra.waitForSelector('#evento .caja-evento', { timeout: 15000 });
   const t = await barra.textContent('#evento .caja-evento');
   if (!t.includes('barra-turno')) throw new Error('no muestra quién está de turno: ' + t.slice(0, 200));
@@ -406,6 +408,7 @@ await chequear('la ayuda del barman habla de lo suyo y no de la caja', async () 
 await chequear('el de la barra ve lo suyo y nada mas', async () => {
   await turno.click('#tabEvento');
   await turno.waitForTimeout(800);
+  if (await turno.locator('#tabCalendario').isVisible()) throw new Error('ve el calendario');
   if (await turno.locator('#btnAltaBarman').isVisible()) throw new Error('puede crear usuarios');
   if (await turno.locator('.solo-gerente').isVisible()) throw new Error('ve la administración');
   if (await turno.locator('#btnCerrarEvento').isVisible()) throw new Error('puede cerrar el evento');
@@ -472,20 +475,22 @@ await chequear('cerrar el evento de prueba deja el tablero limpio', async () => 
   await barra.waitForSelector('#btnCerrarEvento', { timeout: 10000 });
   barra.once('dialog', (d) => d.accept());
   await barra.click('#btnCerrarEvento');
-  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
+  await barra.waitForSelector('#btnIrCalendario', { timeout: 10000 });
 });
 
 console.log('\nCAJA POR EVENTO');
 await chequear('abre un evento y la caja pasa a contar desde ahí', async () => {
-  await barra.click('#tabEvento');
-  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
-  await barra.click('#btnAbrirEvento');
+  await barra.click('#tabCalendario');
+  await barra.waitForSelector('#btnAgendar', { timeout: 10000 });
+  await barra.click('#btnAgendar');
   await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
   await barra.fill('#inpEvento', 'Prueba de noche');
   await barra.click('#btnConfirmarEvento');
   await barra.waitForSelector('[data-empezar]', { timeout: 10000 });
   barra.once('dialog', (d) => d.accept());
   await barra.locator('[data-empezar]').first().click();
+  // Arrancar se hace desde el calendario; la noche en curso vive en Noche.
+  await barra.click('#tabEvento');
   await barra.waitForSelector('#evento .caja-evento', { timeout: 15000 });
   const t = await barra.textContent('#evento .caja-evento');
   if (!t.includes('Prueba de noche')) throw new Error('no tomó el nombre: ' + t.slice(0, 120));
@@ -520,7 +525,7 @@ await chequear('con el evento abierto, el cliente puede pedir', async () => {
 await chequear('cerrar el evento congela la caja y lo manda al histórico', async () => {
   barra.once('dialog', (d) => d.accept());
   await barra.click('#btnCerrarEvento');
-  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
+  await barra.waitForSelector('#btnIrCalendario', { timeout: 10000 });
   // cerradoEn es un serverTimestamp: localmente llega null y recién al volver
   // del servidor el evento sale de "abierto" y entra al histórico.
   // Esperamos la fila de la noche, no el texto suelto: "Prueba de noche"
@@ -534,6 +539,42 @@ await chequear('cerrar el evento congela la caja y lo manda al histórico', asyn
 });
 
 console.log('\nVIGENCIA: el QR sigue, el permiso de pedir no');
+await chequear('el calendario muestra el mes y deja elegir un día', async () => {
+  await barra.click('#tabCalendario');
+  await barra.waitForSelector('.grilla-mes .dia', { timeout: 10000 });
+
+  // Las noches de la corrida caen hoy: el día de hoy tiene que tener marca.
+  const marcado = await barra.evaluate(() =>
+    !!document.querySelector('.grilla-mes .dia.hoy .punto'));
+  if (!marcado) throw new Error('el día de hoy no muestra ninguna noche');
+
+  // Navegar de mes no rompe nada y cambia el encabezado.
+  const mes = await barra.textContent('.nombre-mes');
+  await barra.click('#mesDespues');
+  if ((await barra.textContent('.nombre-mes')) === mes) throw new Error('no cambió de mes');
+  await barra.click('#mesAntes');
+  if ((await barra.textContent('.nombre-mes')) !== mes) throw new Error('no volvió');
+
+  // Elegir el día de hoy filtra la lista de abajo a ese día.
+  await barra.click('.grilla-mes .dia.hoy');
+  await barra.waitForFunction(() =>
+    document.querySelector('.grilla-mes .dia.hoy')?.classList.contains('elegido'),
+    null, { timeout: 5000 });
+  const titulo = await barra.textContent('#calendario .grupo-personal');
+  if (titulo.includes('Lo que viene')) throw new Error('no filtró por el día elegido');
+  if (!(await barra.textContent('#calendario')).includes('Prueba de noche'))
+    throw new Error('no lista la noche de ese día');
+
+  // Y agendar desde ahí viene con la fecha puesta.
+  await barra.click('#btnAgendar');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  const hoyISO = await barra.evaluate(() => new Date().toISOString().slice(0, 10));
+  if ((await barra.inputValue('#inpFecha')) !== hoyISO)
+    throw new Error('no trajo la fecha del día elegido');
+  await barra.click('#btnCancelarEvento');
+  await barra.click('#tabEvento');
+});
+
 await chequear('la caja general suma los eventos cerrados y los rankea', async () => {
   await barra.click('#tabEvento');
   await barra.waitForFunction(() =>
@@ -627,9 +668,9 @@ console.log('\nINVITADOS: registro, pase y puerta');
 let tokenInvitado = null;
 
 await chequear('el admin abre un evento con cupo y eso abre el registro', async () => {
-  await barra.click('#tabEvento');
-  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
-  await barra.click('#btnAbrirEvento');
+  await barra.click('#tabCalendario');
+  await barra.waitForSelector('#btnAgendar', { timeout: 10000 });
+  await barra.click('#btnAgendar');
   await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
   await barra.fill('#inpEvento', 'Noche con lista');
   await barra.fill('#inpCapacidad', '2');

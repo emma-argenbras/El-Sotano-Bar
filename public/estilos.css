@@ -275,16 +275,28 @@ dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
 .oculto { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-.tabs { display: flex; gap: .4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--borde); }
+/* Cinco pestanas no entran en un celular de 390px. Antes se partian en varios
+   renglones y el titulo quedaba ilegible: ahora la fila no se parte nunca y se
+   arrastra de costado, como las pestanas de cualquier app. */
+.tabs {
+  display: flex; gap: .4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--borde);
+  flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tabs button {
   padding: .6rem .9rem; background: none; border: none; border-bottom: 2px solid transparent;
   color: var(--suave); font: inherit; font-weight: 600; cursor: pointer;
+  white-space: nowrap; flex: 0 0 auto;
 }
 .tabs button[aria-selected="true"] { color: var(--oro); border-bottom-color: var(--oro); }
 
 @media (max-width: 420px) {
   .envoltorio { padding: .8rem .8rem 8.5rem; }
   .item { padding: .7rem; gap: .6rem; }
+  /* Mas ajustadas: con esto las cinco entran justas y no hay que arrastrar. */
+  .tabs { gap: .1rem; }
+  .tabs button { padding: .6rem .45rem; font-size: .88rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -427,3 +439,29 @@ body.es-puerta #tabTablero, body.es-puerta #tabCartaBar, body.es-puerta #tabEven
 #temasAyuda .cuerpo-tema { padding: .3rem .85rem .85rem; font-size: .9rem; line-height: 1.55; }
 #temasAyuda .cuerpo-tema p { margin: .6rem 0; color: var(--suave); }
 #temasAyuda .cuerpo-tema b { color: var(--texto); }
+
+/* ---------- calendario ---------- */
+.mes-cabeza { display: flex; align-items: center; gap: .6rem; margin-bottom: .8rem; }
+.mes-cabeza .nombre-mes { flex: 1; text-align: center; font-weight: 700; font-size: 1.05rem; text-transform: capitalize; }
+.mes-cabeza .btn { padding: .35rem .75rem; }
+.grilla-mes { display: grid; grid-template-columns: repeat(7, 1fr); gap: .25rem; }
+.grilla-mes .dia-nombre {
+  text-align: center; font-size: .68rem; color: var(--suave);
+  text-transform: uppercase; letter-spacing: .04em; padding-bottom: .2rem;
+}
+.grilla-mes .dia {
+  aspect-ratio: 1; border: 1px solid var(--borde); border-radius: 9px;
+  background: var(--panel); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: .18rem;
+  font-size: .9rem; color: var(--texto); cursor: pointer; padding: 0;
+}
+.grilla-mes .dia.vacio { border: none; background: none; cursor: default; }
+.grilla-mes .dia.hoy { border-color: var(--oro); color: var(--oro); font-weight: 800; }
+.grilla-mes .dia.elegido { background: var(--panel-alto); border-color: var(--oro); }
+.grilla-mes .dia .puntos { display: flex; gap: 2px; height: 5px; }
+.grilla-mes .dia .punto { width: 5px; height: 5px; border-radius: 50%; }
+.punto.agendado { background: var(--oro); }
+.punto.abierto  { background: var(--verde); }
+.punto.cerrado  { background: var(--suave); }
+.leyenda { display: flex; gap: .9rem; flex-wrap: wrap; margin-top: .7rem; font-size: .76rem; color: var(--suave); }
+.leyenda span { display: inline-flex; align-items: center; gap: .3rem; }

@@ -51,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], editandoEvento: null, accesos: [], invitados: [], registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -248,7 +248,7 @@ function escucharEvento() {
   // abierto para una noche agendada sin que la noche haya empezado.
   onSnapshot(query(EVENTOS(), where('estado', '==', 'agendado'), orderBy('fecha', 'asc')), (snap) => {
     estado.agenda = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    pintarEvento();
+    pintarEvento(); pintarCalendario();
   }, fallo('#evento'));
 
   onSnapshot(query(EVENTOS(), where('estado', '==', 'abierto'), limit(1)), (snap) => {
@@ -259,11 +259,12 @@ function escucharEvento() {
     escucharPedidos();
     pintarEvento();
     pintarCaja();
+    pintarCalendario();
   }, fallo('#evento'));
 
   onSnapshot(doc(db, 'publico', 'registro'), (d) => {
     estado.registro = d.exists() ? d.data() : null;
-    pintarPuerta(); pintarEvento();
+    pintarPuerta(); pintarEvento(); pintarCalendario();
   }, () => {});
 
   onSnapshot(ESTADO_LOCAL(), (d) => {
@@ -273,7 +274,7 @@ function escucharEvento() {
 
   onSnapshot(query(EVENTOS(), where('estado', '==', 'cerrado'), orderBy('fecha', 'desc'), limit(30)), (snap) => {
     estado.eventos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    pintarEventosPasados();
+    pintarEventosPasados(); pintarCalendario();
   }, fallo('#eventosPasados'));
 }
 
@@ -296,11 +297,11 @@ function desdeCuando() {
   return hoy;
 }
 
-function abrirEvento(editando = null) {
+function abrirEvento(editando = null, cuando = null) {
   estado.editandoEvento = editando;
-  const d = editando ? editando.fecha?.toDate?.() : new Date();
-  const dia = (d || new Date()).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
-  $('#inpEvento').value = editando?.nombre || (dia[0].toUpperCase() + dia.slice(1));
+  const d = editando ? editando.fecha?.toDate?.() : (cuando || new Date());
+  const etiqueta = (d || new Date()).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
+  $('#inpEvento').value = editando?.nombre || (etiqueta[0].toUpperCase() + etiqueta.slice(1));
   $('#inpFecha').value = (d || new Date()).toISOString().slice(0, 10);
   $('#inpCapacidad').value = editando?.capacidad || '';
   $('#tituloEvento').textContent = editando ? 'Editar la noche' : 'Agendar una noche';
@@ -475,8 +476,20 @@ function pintarEvento() {
         </div></div>`;
       return;
     }
+    // La agenda vive en Calendario. Acá solo lo de hoy y cómo llegar allá.
     const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const proxima = [...estado.agenda]
+      .filter((e) => e.fecha?.toDate && e.fecha.toDate() >= hoy)
+      .sort((a, b) => a.fecha.toDate() - b.fecha.toDate())[0];
     cont.innerHTML = `
+      <div class="aviso"><span>🎪</span><div>
+        <b>No hay ninguna noche abierta.</b><br>
+        ${proxima
+          ? `La próxima es <b>${esc(proxima.nombre)}</b>, ${proxima.fecha.toDate()
+              .toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}.`
+          : 'Tampoco hay ninguna agendada.'}
+        </div></div>
+
       <div class="interruptor">
         <div>
           <b>${estado.tomandoPedidos ? 'Tomando pedidos' : 'No se toman pedidos'}</b>
@@ -489,47 +502,19 @@ function pintarEvento() {
         </button>
       </div>
 
-      <div class="grupo-personal">Agenda</div>
-      ${estado.agenda.length ? estado.agenda.map((e) => {
-        const f = e.fecha?.toDate?.();
-        const esHoy = f && f >= hoy && f < new Date(hoy.getTime() + 86400000);
-        const pasada = f && f < hoy;
-        return `<div class="item" style="flex-wrap:wrap">
-          <div class="cuerpo">
-            <div class="nombre">${esc(e.nombre)}${esHoy ? ' — <small>es hoy</small>' : ''}</div>
-            <div class="desc">${f ? f.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }) : 'sin fecha'}${
-              e.capacidad ? ` · cupo ${e.capacidad}` : ' · sin cupo'}${
-              estado.registro?.eventoId === e.id
-                ? ` · ${Number(estado.registro.registrados || 0)} anotados` : ''}${
-              pasada ? ' · ya pasó' : ''}</div>
-          </div>
-          ${estado.registro?.eventoId === e.id && estado.registro.abierto
-            ? `<button class="btn" data-link="${esc(e.id)}" style="padding:.35rem .6rem;font-size:.8rem">Compartir link</button>`
-            : ''}
-          <button class="btn" data-editar="${esc(e.id)}" style="padding:.35rem .6rem;font-size:.8rem">Editar</button>
-          <button class="btn peligro" data-quitar="${esc(e.id)}" style="padding:.35rem .6rem;font-size:.8rem">✕</button>
-          <button class="btn primario" data-empezar="${esc(e.id)}" style="padding:.35rem .7rem;font-size:.82rem">Arrancar</button>
-        </div>`;
-      }).join('')
-        : '<p style="color:var(--suave);font-size:.9rem;margin:0">No hay ninguna noche agendada.</p>'}
-      <button class="btn primario ancho-full solo-gerente-inline" id="btnAbrirEvento"
-              style="margin-top:.7rem">Agendar una noche</button>`;
+      ${proxima ? `<button class="btn primario ancho-full solo-gerente-inline" data-empezar="${esc(proxima.id)}"
+        style="margin-top:.9rem">Arrancar ${esc(proxima.nombre)}</button>` : ''}
+      <button class="btn ancho-full solo-gerente-inline" id="btnIrCalendario" style="margin-top:.6rem">
+        Ver el calendario</button>`;
 
-    if ($('#btnAbrirEvento')) $('#btnAbrirEvento').onclick = () => abrirEvento();
     if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
       const prender = !estado.tomandoPedidos;
       if (!prender && !confirm('¿Cortar los pedidos?')) return;
       try { await marcarTomandoPedidos(prender, null); }
       catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
     };
-    cont.querySelectorAll('[data-link]').forEach((b) => b.onclick = () =>
-      compartirRegistro(estado.agenda.find((e) => e.id === b.dataset.link), b));
-    cont.querySelectorAll('[data-empezar]').forEach((b) => b.onclick = () =>
-      empezarNoche(estado.agenda.find((e) => e.id === b.dataset.empezar)));
-    cont.querySelectorAll('[data-editar]').forEach((b) => b.onclick = () =>
-      abrirEvento(estado.agenda.find((e) => e.id === b.dataset.editar)));
-    cont.querySelectorAll('[data-quitar]').forEach((b) => b.onclick = () =>
-      borrarAgendado(estado.agenda.find((e) => e.id === b.dataset.quitar)));
+    if ($('#btnIrCalendario')) $('#btnIrCalendario').onclick = () => irA('calendario');
+    enganchatNoches(cont, hoy);
     return;
   }
   const desde = estado.evento.abiertoEn?.toDate?.();
@@ -683,6 +668,123 @@ function pintarEventosPasados() {
     estado.detalleEvento = estado.detalleEvento === b.dataset.detalle ? null : b.dataset.detalle;
     pintarEventosPasados();
   });
+}
+
+// ---------- calendario ----------
+// Separado de la noche en curso a propósito: una cosa es trabajar esta noche
+// y otra es mirar el mes. Amontonarlas en la misma pantalla no deja hacer
+// ninguna de las dos bien.
+const DIAS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+const mismaFecha = (a, b) => a && b && a.toDateString() === b.toDateString();
+
+// Todo lo que el panel tiene cargado, en una sola lista para el mes.
+function noches() {
+  const abierto = estado.evento ? [{ ...estado.evento, estado: 'abierto' }] : [];
+  return [...estado.agenda, ...abierto, ...estado.eventos]
+    .filter((e) => e.fecha?.toDate)
+    .map((e) => ({ ...e, _f: e.fecha.toDate() }));
+}
+
+function pintarCalendario() {
+  const cont = $('#calendario');
+  if (!cont) return;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const cursor = estado.mes ? new Date(estado.mes) : new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const todas = noches();
+
+  const primero = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const ultimo = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+  // La semana arranca el lunes, como la semana de un bar.
+  const antes = (primero.getDay() + 6) % 7;
+
+  const celdas = [];
+  for (let i = 0; i < antes; i++) celdas.push('<div class="dia vacio"></div>');
+  for (let d = 1; d <= ultimo.getDate(); d++) {
+    const fecha = new Date(cursor.getFullYear(), cursor.getMonth(), d);
+    const delDia = todas.filter((e) => mismaFecha(e._f, fecha));
+    celdas.push(`<button class="dia ${mismaFecha(fecha, hoy) ? 'hoy' : ''} ${
+      mismaFecha(fecha, estado.diaElegido) ? 'elegido' : ''}" data-dia="${fecha.toISOString()}">
+      <span>${d}</span>
+      <span class="puntos">${delDia.slice(0, 3).map((e) =>
+        `<span class="punto ${esc(e.estado || 'agendado')}"></span>`).join('')}</span>
+    </button>`);
+  }
+
+  const elegidas = estado.diaElegido
+    ? todas.filter((e) => mismaFecha(e._f, estado.diaElegido))
+    : todas.filter((e) => e._f >= hoy && e.estado === 'agendado')
+        .sort((a, b) => a._f - b._f).slice(0, 8);
+
+  cont.innerHTML = `
+    <div class="mes-cabeza">
+      <button class="btn" id="mesAntes">‹</button>
+      <div class="nombre-mes">${cursor.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</div>
+      <button class="btn" id="mesDespues">›</button>
+    </div>
+    <div class="grilla-mes">
+      ${DIAS.map((d) => `<div class="dia-nombre">${d}</div>`).join('')}
+      ${celdas.join('')}
+    </div>
+    <div class="leyenda">
+      <span><i class="punto agendado"></i> agendada</span>
+      <span><i class="punto abierto"></i> en curso</span>
+      <span><i class="punto cerrado"></i> cerrada</span>
+    </div>
+
+    <div class="grupo-personal">${estado.diaElegido
+      ? estado.diaElegido.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
+      : 'Lo que viene'}</div>
+    ${elegidas.length ? elegidas.map((e) => filaNoche(e, hoy)).join('')
+      : `<p style="color:var(--suave);font-size:.9rem;margin:0">Nada ${
+          estado.diaElegido ? 'ese día' : 'agendado'}.</p>`}
+    <button class="btn primario ancho-full solo-gerente-inline" id="btnAgendar" style="margin-top:.7rem">
+      Agendar una noche${estado.diaElegido ? ' el ' + estado.diaElegido.toLocaleDateString('es-AR') : ''}
+    </button>`;
+
+  $('#mesAntes').onclick = () => {
+    estado.mes = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+    estado.diaElegido = null; pintarCalendario();
+  };
+  $('#mesDespues').onclick = () => {
+    estado.mes = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    estado.diaElegido = null; pintarCalendario();
+  };
+  cont.querySelectorAll('[data-dia]').forEach((b) => b.onclick = () => {
+    const f = new Date(b.dataset.dia);
+    estado.diaElegido = mismaFecha(f, estado.diaElegido) ? null : f;
+    pintarCalendario();
+  });
+  if ($('#btnAgendar')) $('#btnAgendar').onclick = () => abrirEvento(null, estado.diaElegido);
+  enganchatNoches(cont, hoy);
+}
+
+function filaNoche(e, hoy) {
+  const pasada = e._f < hoy;
+  const etiqueta = { abierto: 'en curso', cerrado: 'cerrada' }[e.estado] || (pasada ? 'ya pasó' : 'agendada');
+  return `<div class="item" style="flex-wrap:wrap">
+    <div class="cuerpo">
+      <div class="nombre">${esc(e.nombre)}</div>
+      <div class="desc">${e._f.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+        · ${etiqueta}${e.capacidad ? ` · cupo ${e.capacidad}` : ''}${
+        estado.registro?.eventoId === e.id ? ` · ${Number(estado.registro.registrados || 0)} anotados` : ''}${
+        e.estado === 'cerrado' ? ` · ${plata(e.cierre?.facturado || 0)}` : ''}</div>
+    </div>
+    ${e.estado === 'agendado' ? `
+      ${estado.registro?.eventoId === e.id && estado.registro.abierto
+        ? `<button class="btn" data-link="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">Link</button>` : ''}
+      <button class="btn" data-editar="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">Editar</button>
+      <button class="btn peligro" data-quitar="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">✕</button>
+      <button class="btn primario" data-empezar="${esc(e.id)}" style="padding:.3rem .7rem;font-size:.8rem">Arrancar</button>
+    ` : ''}
+  </div>`;
+}
+
+function enganchatNoches(cont, hoy) {
+  const buscar = (id) => noches().find((e) => e.id === id);
+  cont.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => compartirRegistro(buscar(b.dataset.link), b));
+  cont.querySelectorAll('[data-editar]').forEach((b) => b.onclick = () => abrirEvento(buscar(b.dataset.editar)));
+  cont.querySelectorAll('[data-quitar]').forEach((b) => b.onclick = () => borrarAgendado(buscar(b.dataset.quitar)));
+  cont.querySelectorAll('[data-empezar]').forEach((b) => b.onclick = () => empezarNoche(buscar(b.dataset.empezar)));
 }
 
 // ---------- puerta: quién entra ----------
@@ -975,6 +1077,7 @@ function aplicarRol() {
   b.toggle('es-gerente', estado.dueno || estado.rol === 'admin');
   b.toggle('es-barra', !estado.dueno && estado.rol === 'barman');
   // La puerta no trabaja pedidos ni carta: se le deja su pantalla y nada más.
+  $('#tabCalendario').hidden = !(estado.dueno || estado.rol === 'admin');
   const soloPuerta = !estado.dueno && estado.rol === 'puerta';
   b.toggle('es-puerta', soloPuerta);
   if (soloPuerta && !$('#vistaPuerta').hidden === false) irA('puerta');
@@ -1311,9 +1414,9 @@ $('#btnSonido').onclick = () => {
 // ---------- pestañas ----------
 function irA(cual) {
   const vistas = { tablero: '#vistaTablero', carta: '#vistaCartaBar',
-                   evento: '#vistaEvento', puerta: '#vistaPuerta' };
+                   evento: '#vistaEvento', calendario: '#vistaCalendario', puerta: '#vistaPuerta' };
   const tabs = { tablero: '#tabTablero', carta: '#tabCartaBar',
-                 evento: '#tabEvento', puerta: '#tabPuerta' };
+                 evento: '#tabEvento', calendario: '#tabCalendario', puerta: '#tabPuerta' };
   // La cámara se apaga al salir de Puerta: no se deja prendida de fondo.
   if (cual !== 'puerta') cerrarCamara();
   for (const k of Object.keys(vistas)) {
@@ -1324,6 +1427,7 @@ function irA(cual) {
 $('#tabTablero').onclick = () => irA('tablero');
 $('#tabCartaBar').onclick = () => irA('carta');
 $('#tabEvento').onclick = () => irA('evento');
+$('#tabCalendario').onclick = () => irA('calendario');
 $('#tabPuerta').onclick = () => irA('puerta');
 
 // Los relojes de los tickets tienen que correr aunque no entre nada nuevo.

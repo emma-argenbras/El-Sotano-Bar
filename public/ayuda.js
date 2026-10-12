@@ -25,10 +25,24 @@
     },
     {
       quien: ['admin'],
+      titulo: 'El calendario',
+      cuerpo: `
+        <p>La pestaña <b>Calendario</b> es la vista del mes. Cada día con noche
+        tiene un punto: <b>dorado</b> agendada, <b>verde</b> en curso,
+        <b>gris</b> ya cerrada.</p>
+        <p>Tocás un día y abajo ves lo de ese día, con todo lo que podés hacerle.
+        Tocás de nuevo y vuelve a mostrarte lo que viene.</p>
+        <p>Con un día elegido, <b>Agendar una noche</b> ya viene con esa fecha
+        puesta.</p>
+        <p>La pestaña <b>Noche</b> es solo lo de hoy: la caja, quién está de
+        turno y el registro. El mes se mira acá.</p>`,
+    },
+    {
+      quien: ['admin'],
       titulo: 'Agendar una noche',
       cuerpo: `
-        <p>En <b>Evento → Agendar una noche</b> ponés nombre, fecha, cupo y qué
-        barman o gente de puerta trabaja.</p>
+        <p>En <b>Calendario → Agendar una noche</b> ponés nombre, fecha, cupo y
+        qué barman o gente de puerta trabaja.</p>
         <p>Queda <b>agendada</b>, no abierta. Ahí todavía no entran pedidos.</p>
         <p><b>El registro de invitados abre al agendar</b>, no al arrancar. Esa es
         la gracia: agendás el viernes de la semana que viene y la gente se anota
@@ -55,7 +69,7 @@
       quien: ['admin'],
       titulo: 'Invitados y el link de registro',
       cuerpo: `
-        <p>En la agenda, cada noche con cupo tiene <b>Compartir link</b>. Eso abre
+        <p>En el <b>Calendario</b>, cada noche con cupo tiene <b>Link</b>. Eso abre
         el menú de compartir de tu celular: elegís WhatsApp, Instagram o lo que
         sea. <b>La app no manda nada por su cuenta.</b></p>
         <p>El invitado deja nombre y teléfono, y recibe <b>su pase con QR</b>.</p>
