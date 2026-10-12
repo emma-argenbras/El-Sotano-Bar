@@ -38,6 +38,8 @@ const plata = (n) => BAR.moneda + Number(n || 0).toLocaleString('es-AR');
 // ---------- estado ----------
 const estado = {
   desdeCache: false,
+  vioPedidos: false,
+  hayListo: false,
   tomandoPedidos: true,
   uid: null,
   carta: [],
@@ -303,6 +305,7 @@ $('#btnEnviar').onclick = async () => {
     sessionStorage.setItem('sotano:mesa', mesa);
     pintarChipMesa();
     if (nombre) localStorage.setItem('sotano:nombre', nombre);
+    pedirPermisoAviso();
 
     // Los campos deben coincidir exactamente con pedidoValido() en firestore.rules.
     const pedido = {
@@ -344,7 +347,15 @@ function escucharMisPedidos() {
     orderBy('creadoEn', 'desc'),
   );
   onSnapshot(q, (snap) => {
+    const antes = new Map(estado.pedidos.map((p) => [p.id, p.estado]));
+    const primeraVuelta = !estado.vioPedidos;
+    estado.vioPedidos = true;
     estado.pedidos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // El que recién pasó a listo. En la primera carga no se avisa nada:
+    // si no, al abrir la app suena por algo que ya te entregaron.
+    const reciénListos = primeraVuelta ? [] : estado.pedidos.filter(
+      (p) => p.estado === 'listo' && antes.get(p.id) && antes.get(p.id) !== 'listo');
+    if (reciénListos.length) avisarListo(reciénListos);
     pintarMisPedidos();
   }, (e) => {
     $('#misPedidos').innerHTML =
@@ -357,9 +368,59 @@ const ETIQUETA = {
   listo: 'Listo, va para tu mesa', entregado: 'Entregado', cancelado: 'Cancelado',
 };
 
+// ---------- aviso de "tu pedido está listo" ----------
+// Tres caminos, porque ninguno solo alcanza: el cartel y el badge para quien
+// tiene la app abierta, vibración y sonido para quien la tiene en el bolsillo,
+// y una notificación del sistema donde el navegador la permita.
+function avisarListo(pedidos) {
+  estado.hayListo = true;
+  const que = pedidos.flatMap((p) => (p.items || []).map((i) => `${i.cantidad}× ${i.nombre}`)).join(', ');
+  const mesa = pedidos[0]?.mesa;
+
+  if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 220]);
+  sonar();
+
+  const texto = `${que}${mesa ? ` · mesa ${mesa}` : ''}`;
+  $('#textoListo').textContent = texto;
+  $('#avisoListo').classList.remove('oculto');
+
+  if ('Notification' in window && Notification.permission === 'granted') {
+    // Por el service worker: así aparece aunque la pestaña esté en segundo plano.
+    navigator.serviceWorker?.ready.then((reg) => reg.showNotification('Tu pedido está listo 🍸', {
+      body: `${texto}\nRetiralo en la barra.`,
+      icon: '/iconos/icono-192.png', badge: '/iconos/icono-192.png',
+      tag: 'sotano-listo', renotify: true, vibrate: [120, 80, 120],
+    })).catch(() => {});
+  }
+}
+
+// Un beep corto. Sin librerías ni archivos: el sótano tiene la señal que tiene.
+function sonar() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
+    o.start(); o.stop(ctx.currentTime + 0.52);
+  } catch { /* sin audio, quedan el cartel y la vibración */ }
+}
+
+// Se pide recién al mandar el pedido: antes de eso el cliente no tiene por qué
+// entender para qué le pedimos permiso de notificar.
+function pedirPermisoAviso() {
+  if (!('Notification' in window) || Notification.permission !== 'default') return;
+  Notification.requestPermission().catch(() => {});
+}
+
 function pintarMisPedidos() {
   const activos = estado.pedidos.filter((p) => !['entregado','cancelado'].includes(p.estado)).length;
-  $('#cuentaPedidos').textContent = activos ? `(${activos})` : '';
+  const listos = estado.pedidos.filter((p) => p.estado === 'listo').length;
+  $('#cuentaPedidos').textContent = listos ? '🔔' : (activos ? `(${activos})` : '');
+  $('#cuentaPedidos').classList.toggle('listo', listos > 0);
+  if (!listos) { estado.hayListo = false; $('#avisoListo').classList.add('oculto'); }
 
   if (!estado.pedidos.length) {
     $('#misPedidos').innerHTML = `<div class="vacio">Todavía no pediste nada.<br>
@@ -390,6 +451,7 @@ function irA(cual) {
   $('#vistaCarta').hidden = !carta;
   $('#vistaPedidos').hidden = carta;
 }
+$('#avisoListo').onclick = () => { irA('pedidos'); $('#avisoListo').classList.add('oculto'); };
 $('#tabCarta').onclick = () => irA('carta');
 $('#tabPedidos').onclick = () => irA('pedidos');
 

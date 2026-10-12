@@ -352,3 +352,18 @@ body.es-gerente .ancho-full.solo-gerente-inline { display: block !important; wid
 .interruptor > div { flex: 1; }
 .interruptor span { display: block; font-size: .8rem; color: var(--suave); margin-top: .1rem; }
 .interruptor .btn { white-space: nowrap; }
+
+/* ---------- "tu pedido está listo" ---------- */
+.aviso.listo {
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  border: 1px solid rgba(70,192,138,.5); background: rgba(70,192,138,.12);
+  color: var(--texto); animation: latir 1.6s ease-in-out infinite;
+}
+.aviso.listo b { color: var(--verde); }
+.aviso.listo small { color: var(--suave); }
+@keyframes latir {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(70,192,138,.45); }
+  50%      { box-shadow: 0 0 0 10px rgba(70,192,138,0); }
+}
+@media (prefers-reduced-motion: reduce) { .aviso.listo { animation: none; } }
+#cuentaPedidos.listo { animation: latir 1.6s ease-in-out infinite; border-radius: 999px; }

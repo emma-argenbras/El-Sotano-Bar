@@ -6,9 +6,10 @@
 //
 //   npm run qr
 //   npm run qr -- https://otro-dominio.com
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createContext, runInContext } from 'node:vm';
 import QRCode from 'qrcode';
+import { chromium } from 'playwright';
 
 const BASE = process.argv[2] || 'https://el-sotano-bar.web.app';
 const SALIDA = 'public/qr';
@@ -25,22 +26,46 @@ export const archivoDe = (mesa) => `mesa-${String(mesa).toLowerCase().replace(/\
 
 mkdirSync(SALIDA, { recursive: true });
 
+// La bombita va en el centro del QR. Se puede porque el nivel de corrección H
+// reconstruye hasta ~30% del código perdido; esto tapa cerca del 4%. Igual no
+// se da por sentado: al final del script cada PNG se vuelve a decodificar.
+const LOGO = readFileSync('public/iconos/icono.svg', 'utf8');
+const LADO = 1000;
+const navegador = await chromium.launch(
+  existsSync('/opt/pw-browsers/chromium') ? { executablePath: '/opt/pw-browsers/chromium' } : {},
+);
+const pagina = await navegador.newPage({ viewport: { width: LADO, height: LADO } });
+
+async function qrConLogo(url, destino) {
+  const dataUrl = await QRCode.toDataURL(url, {
+    width: LADO, margin: 2, errorCorrectionLevel: 'H',
+    color: { dark: '#0d0b10', light: '#ffffff' },
+  });
+  await pagina.setContent(`<style>
+      html,body{margin:0;width:${LADO}px;height:${LADO}px;background:#fff}
+      .marco{position:relative;width:${LADO}px;height:${LADO}px}
+      .marco>img{width:100%;height:100%;display:block}
+      .coco{position:absolute;inset:0;margin:auto;width:20%;height:20%;
+            background:#fff;border-radius:18%;display:flex;align-items:center;
+            justify-content:center;padding:1.4%}
+      .coco svg{width:100%;height:100%;display:block}
+    </style>
+    <div class="marco"><img src="${dataUrl}"><div class="coco">${LOGO}</div></div>`,
+    { waitUntil: 'load' });
+  await pagina.screenshot({ path: destino });
+}
+
 const indice = [];
 for (const mesa of MESAS) {
   const url = `${BASE}/mesa/${encodeURIComponent(mesa)}`;
   const archivo = archivoDe(mesa);
-  await QRCode.toFile(`${SALIDA}/${archivo}`, url, {
-    width: 1000, margin: 2, errorCorrectionLevel: 'H',
-    color: { dark: '#0d0b10', light: '#ffffff' },
-  });
+  await qrConLogo(url, `${SALIDA}/${archivo}`);
   indice.push({ mesa: String(mesa), archivo, url });
   console.log(`✓ ${SALIDA}/${archivo}  →  ${url}`);
 }
 
 // Uno sin mesa, para Instagram, WhatsApp o la puerta del local.
-const OPCIONES_QR = { width: 1000, margin: 2, errorCorrectionLevel: 'H',
-                      color: { dark: '#0d0b10', light: '#ffffff' } };
-await QRCode.toFile(`${SALIDA}/general.png`, BASE, OPCIONES_QR);
+await qrConLogo(BASE, `${SALIDA}/general.png`);
 console.log(`✓ ${SALIDA}/general.png  →  ${BASE}`);
 
 // El índice lo lee /qr.html, así que agregar una mesa en config.js y correr
@@ -51,6 +76,24 @@ writeFileSync(`${SALIDA}/mesas.json`, JSON.stringify({
   mesas: indice,
 }, null, 2));
 console.log(`✓ ${SALIDA}/mesas.json`);
+await navegador.close();
+
+// Un QR con el logo encima que no se lee no sirve de nada, y plastificado se
+// descubre tarde. Se decodifican todos antes de dar el trabajo por hecho.
+const { PNG } = await import('pngjs');
+const jsQR = (await import('jsqr')).default;
+let fallados = 0;
+for (const { archivo, url } of [...indice, { archivo: 'general.png', url: BASE }]) {
+  const img = PNG.sync.read(readFileSync(`${SALIDA}/${archivo}`));
+  const leido = jsQR(new Uint8ClampedArray(img.data), img.width, img.height);
+  if (leido?.data !== url) {
+    fallados++;
+    console.error(`✗ ${archivo} NO se lee bien → ${leido?.data ?? '(ilegible)'}`);
+  }
+}
+if (fallados) throw new Error(`${fallados} QR no se leen: no los imprimas`);
+console.log(`✓ los ${indice.length + 1} QR se decodifican y apuntan a donde deben`);
+
 console.log(`\n${MESAS.length} QR listos.`);
 console.log(`  Para ver y compartir:  ${BASE}/qr.html`);
 console.log(`  Para imprimir:         npm run qr:imprimir`);

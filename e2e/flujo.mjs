@@ -209,9 +209,36 @@ await chequear('el cliente ve el cambio en vivo', async () => {
   await cliente.waitForFunction(() =>
     document.querySelector('#misPedidos')?.textContent.includes('Preparando'), null, { timeout: 10000 });
 });
-await chequear('la barra lo pasa a Listo y después Entregado', async () => {
-  await barra.locator('.ticket.en_preparacion [data-avanzar]').click();
-  await barra.waitForSelector('.ticket.listo', { timeout: 10000 });
+await chequear('al pasar a Listo, al cliente le avisa en Mis pedidos', async () => {
+  await barra.locator('.ticket', { hasText: 'Mesa 7' }).locator('[data-avanzar]').click();
+  // El cartel, el badge de la pestaña y la vibración: el cliente puede tener
+  // la pantalla apagada o estar mirando la carta.
+  await cliente.waitForFunction(() =>
+    !document.querySelector('#avisoListo')?.classList.contains('oculto'), null, { timeout: 15000 });
+  const t = await cliente.textContent('#avisoListo');
+  if (!t.includes('listo')) throw new Error('el cartel no dice nada: ' + t);
+  if (!t.includes('Fernet con coca')) throw new Error('no dice qué está listo: ' + t);
+  const badge = await cliente.textContent('#cuentaPedidos');
+  if (!badge.includes('🔔')) throw new Error('la pestaña no se marca: ' + badge);
+
+  // Tocarlo lleva a Mis pedidos.
+  await cliente.click('#avisoListo');
+  if (await cliente.locator('#vistaPedidos').isHidden()) throw new Error('no llevó a Mis pedidos');
+});
+
+await chequear('reabrir la app con un pedido ya listo NO dispara el aviso', async () => {
+  // Si avisara en cada carga, sonaría por algo que ya te entregaron. La sesión
+  // anónima vive en IndexedDB, así que recargar es el reabrir de verdad.
+  await cliente.reload({ waitUntil: 'domcontentloaded' });
+  await cliente.waitForSelector('text=Fernet con coca', { timeout: 15000 });
+  await cliente.waitForFunction(() =>
+    document.querySelector('#cuentaPedidos')?.textContent.includes('🔔'), null, { timeout: 15000 });
+  if (!(await cliente.locator('#avisoListo').evaluate((e) => e.classList.contains('oculto'))))
+    throw new Error('avisó de nuevo al reabrir');
+});
+
+await chequear('la barra lo pasa a Entregado', async () => {
+  // A Listo ya lo movió el caso del aviso, acá se cierra el ciclo.
   await barra.locator('.ticket.listo [data-avanzar]').click();
   await barra.waitForSelector('.ticket.entregado', { timeout: 10000 });
 });

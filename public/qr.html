@@ -15,6 +15,7 @@
   /* El QR va sobre blanco siempre: sobre el fondo oscuro muchas cámaras no leen. */
   .lienzo { background: #fff; border-radius: 14px; padding: 1rem; text-align: center; }
   .lienzo img { width: 100%; max-width: 420px; height: auto; display: block; margin: 0 auto; }
+  .lienzo .logo { max-width: 240px; margin: 0 auto .7rem; }
   .lienzo .cual { color: #111; font-size: 1.9rem; font-weight: 800; letter-spacing: .05em;
                   margin-top: .5rem; }
   .lienzo .pie { color: #666; font-size: .9rem; margin-top: .15rem; }
@@ -41,6 +42,7 @@
 
   <section id="panel" hidden>
     <div class="lienzo">
+      <img class="logo" src="/iconos/logo-horizontal-claro.svg" alt="El Sótano" width="560" height="120">
       <img id="imgQr" alt="">
       <div class="cual" id="cual"></div>
       <div class="pie">Escaneá y pedí desde tu celular</div>

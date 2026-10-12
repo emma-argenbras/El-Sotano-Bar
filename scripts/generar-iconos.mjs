@@ -57,6 +57,10 @@ const icono = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" wid
   ${bombita({ cx: 256, cyBulbo: 290, r: 72, desdeArriba: 72 })}
 </svg>`;
 
+// --- El mismo lockup para fondo claro: la bombita sigue dorada y la marca
+//     pasa a oscuro. Va en la hoja impresa y en la tarjeta de /qr.html. ---
+const logoHClaro = logoH.replace(new RegExp(CREMA, 'gi'), '#1a1a1a');
+
 // --- Ícono de la barra: invertido. En la pantalla de inicio hay dos apps
 //     instaladas (carta y barra) y hay que distinguirlas de un vistazo. ---
 const iconoBarra = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
@@ -79,6 +83,7 @@ mkdirSync(SALIDA, { recursive: true });
 const svgs = {
   'logo.svg': logo,
   'logo-horizontal.svg': logoH,
+  'logo-horizontal-claro.svg': logoHClaro,
   'icono.svg': icono,
   'icono-maskable.svg': iconoMaskable,
   'icono-barra.svg': iconoBarra,
