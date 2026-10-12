@@ -716,6 +716,34 @@ await chequear('la casa ve la lista y marca el ingreso', async () => {
     document.querySelector('.lienzo-pase')?.classList.contains('usado'), null, { timeout: 15000 });
 });
 
+await chequear('la casa anota un invitado de último momento, con la lista llena', async () => {
+  // El cupo era 2 y ya se llenó: por el link no entra nadie más, pero la casa
+  // sí puede anotar a alguien que aparece en la puerta.
+  await barra.click('#tabPuerta');
+  await barra.waitForSelector('#btnAltaInvitado', { timeout: 10000 });
+  await barra.click('#btnAltaInvitado');
+  await barra.waitForSelector('#dlgInvitado[open]', { timeout: 5000 });
+  await barra.fill('#inpInvNombre', 'Cami Última');
+  await barra.fill('#inpInvTel', '11 5555 7777');
+  await barra.click('#btnGuardarInvitado');
+
+  await barra.waitForSelector('#paseNuevo .lienzo-pase .qr', { timeout: 15000 });
+  if (!(await barra.textContent('#paseNuevo')).includes('Cami Última'))
+    throw new Error('no confirma a quién anotó');
+  await barra.click('#btnCerrarInvitado');
+
+  // Entra ya marcada como adentro, que es lo que pasa en la puerta.
+  await barra.waitForFunction(() => {
+    const f = [...document.querySelectorAll('.invitado')].find((x) => x.textContent.includes('Cami Última'));
+    return f?.classList.contains('adentro');
+  }, null, { timeout: 15000 });
+
+  const g = await db.collection('invitados').where('nombre', '==', 'Cami Última').get();
+  if (g.empty) throw new Error('no quedó guardada');
+  if (!g.docs[0].data().ingresadoEn) throw new Error('no quedó marcada como entrada');
+  if (g.docs[0].id.length < 16) throw new Error('token flojo: ' + g.docs[0].id);
+});
+
 await chequear('lo que pide el invitado queda a su nombre', async () => {
   await invitado.goto(`${BASE}/?inv=${tokenInvitado}`, { waitUntil: 'domcontentloaded' });
   await invitado.waitForSelector('text=Papas bravas', { timeout: 15000 });

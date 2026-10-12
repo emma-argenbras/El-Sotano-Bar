@@ -168,6 +168,42 @@ describe('registro de invitados', () => {
   });
 });
 
+describe('invitado de último momento', () => {
+  it('la casa lo anota aunque esté lleno', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/registro'),
+        { eventoId: 'ev-1', nombre: 'Noche', capacidad: 1, registrados: 9, abierto: true }));
+    await assertSucceeds(setDoc(doc(barra(), 'invitados/ultimo-momento-token-largo'), {
+      eventoId: 'ev-1', nombre: 'Cami', telefono: '1155552222',
+      creadoEn: serverTimestamp(), ingresadoEn: serverTimestamp(), ingresadoPor: 'guille',
+    }));
+  });
+
+  it('y aunque el registro esté cerrado', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/registro'),
+        { eventoId: 'ev-1', nombre: 'Noche', capacidad: 50, registrados: 0, abierto: false }));
+    await assertSucceeds(setDoc(doc(barra(), 'invitados/ultimo-momento-token-2xx'), {
+      eventoId: 'ev-1', nombre: 'Dani', telefono: '1155553333', creadoEn: serverTimestamp(),
+    }));
+  });
+
+  it('un desconocido NO puede con el registro cerrado', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/colado-token-largo-xxxxx'), {
+      eventoId: 'ev-1', nombre: 'Colado', telefono: '1155554444', creadoEn: serverTimestamp(),
+    }));
+  });
+
+  it('la puerta tampoco: solo marca ingresos', async () => {
+    await assertFails(setDoc(doc(puerta(), 'invitados/puerta-token-largo-xxxxx'), {
+      eventoId: 'ev-1', nombre: 'Amigo', telefono: '1155555555', creadoEn: serverTimestamp(),
+    }));
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/registro'),
+        { eventoId: 'ev-1', nombre: 'Noche', capacidad: 9, registrados: 0, abierto: true }));
+  });
+});
+
 describe('la puerta', () => {
   it('ve la lista de invitados', async () => {
     await assertSucceeds(getDocs(collection(puerta(), 'invitados')));

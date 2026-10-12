@@ -247,6 +247,18 @@ service cloud.firestore {
         && d.get('ingresadoEn', null) == null;
     }
 
+    // La casa anota a alguien de último momento aunque esté lleno y aunque el
+    // registro esté cerrado: es su decisión. Y puede darlo por entrado en el
+    // mismo acto, que es lo que pasa cuando alguien aparece en la puerta.
+    function invitadoDeLaCasa(d) {
+      return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor'])
+        && d.keys().hasAll(['eventoId', 'nombre', 'telefono', 'creadoEn'])
+        && d.eventoId is string
+        && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60
+        && d.telefono is string && d.telefono.size() <= 25
+        && d.creadoEn == request.time;
+    }
+
     match /invitados/{token} {
       // Con el token en la mano ves tu pase. Sin él, nada.
       allow get: if true;
@@ -254,10 +266,11 @@ service cloud.firestore {
 
       // Se registra cualquiera mientras haya lugar y el registro esté abierto,
       // y siempre contra el evento que publico/registro declara abierto.
-      allow create: if token.size() >= 16
-        && invitadoValido(request.resource.data)
-        && hayLugar()
-        && request.resource.data.eventoId == registro().get('eventoId', '');
+      allow create: if (token.size() >= 16
+          && invitadoValido(request.resource.data)
+          && hayLugar()
+          && request.resource.data.eventoId == registro().get('eventoId', ''))
+        || (esAdmin() && token.size() >= 16 && invitadoDeLaCasa(request.resource.data));
 
       // Marcar el ingreso: puerta o casa. Nadie se marca su propia entrada.
       allow update: if (esPuerta() || esBarra())

@@ -1,1 +1,1 @@
-window.VERSION_APP = "sotano-ff1fc2ccc275";
+window.VERSION_APP = "sotano-07c060670a1a";

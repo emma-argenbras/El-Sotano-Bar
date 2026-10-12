@@ -679,6 +679,84 @@ function escucharInvitados() {
   });
 }
 
+// Token igual que el del registro por link: es la llave del pase.
+function tokenInvitado() {
+  const b = new Uint8Array(24);
+  crypto.getRandomValues(b);
+  return [...b].map((n) => n.toString(36).padStart(2, '0')).join('').slice(0, 32);
+}
+
+function abrirAltaInvitado() {
+  $('#inpInvNombre').value = '';
+  $('#inpInvTel').value = '';
+  $('#inpInvEntra').checked = true;
+  $('#paseNuevo').innerHTML = '';
+  $('#btnGuardarInvitado').hidden = false;
+  $('#btnGuardarInvitado').disabled = false;
+  $('#btnGuardarInvitado').textContent = 'Anotar';
+  $('#dlgInvitado').showModal();
+  $('#inpInvNombre').focus();
+}
+
+$('#btnCerrarInvitado').onclick = () => $('#dlgInvitado').close();
+$('#btnGuardarInvitado').onclick = async () => {
+  const nombre = $('#inpInvNombre').value.trim();
+  const telefono = $('#inpInvTel').value.trim();
+  if (nombre.length < 2) { $('#inpInvNombre').focus(); return; }
+  const entra = $('#inpInvEntra').checked;
+  const btn = $('#btnGuardarInvitado');
+  btn.disabled = true; btn.textContent = 'Anotando…';
+
+  const id = tokenInvitado();
+  try {
+    await setDoc(doc(db, 'invitados', id), {
+      eventoId: estado.evento?.id || estado.registro?.eventoId || '',
+      nombre, telefono,
+      creadoEn: serverTimestamp(),
+      ...(entra ? { ingresadoEn: serverTimestamp(), ingresadoPor: estado.usuario || 'casa' } : {}),
+    });
+    // El contador también, para que el cupo siga cuadrando.
+    if (estado.registro?.eventoId) {
+      await updateDoc(doc(db, 'publico', 'registro'),
+        { registrados: Number(estado.registro.registrados || 0) + 1 }).catch(() => {});
+    }
+    await mostrarPaseNuevo(id, nombre);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Anotar';
+    alert('No se pudo: ' + (e.code || e.message));
+  }
+};
+
+// Su pase, igual que el de quien se registró por el link: para que pueda
+// pedir con su nombre y para que lo tenga si sale y vuelve.
+async function mostrarPaseNuevo(id, nombre) {
+  const url = `${location.origin}/pase.html?i=${encodeURIComponent(id)}`;
+  let img = '';
+  try {
+    const { qrDataURL } = await import('/vendor/qr.js');
+    img = await qrDataURL(id, { width: 600, margin: 1, errorCorrectionLevel: 'H',
+      color: { dark: '#0d0b10', light: '#ffffff' } });
+  } catch { /* sin QR igual queda el link */ }
+  $('#btnGuardarInvitado').hidden = true;
+  $('#paseNuevo').innerHTML = `
+    <div class="aviso ok" style="margin-top:.9rem"><span>✓</span><div>
+      <b>${esc(nombre)} quedó anotado.</b></div></div>
+    ${img ? `<div class="lienzo-pase" style="margin-top:.8rem;padding:.9rem">
+      <img class="qr" src="${img}" alt="Pase de ${esc(nombre)}" style="max-width:220px">
+      <div class="pie-pase">Su pase</div></div>` : ''}
+    <button class="btn primario ancho-full" id="btnPasarPase" style="margin-top:.8rem">
+      Mandarle el pase</button>
+    <p style="font-size:.78rem;color:var(--suave);word-break:break-all;margin:.6rem 0 0">${esc(url)}</p>`;
+  $('#btnPasarPase').onclick = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Tu pase — El Sótano', url }); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); $('#btnPasarPase').textContent = 'Link copiado ✓'; }
+    catch { /* el link ya está a la vista */ }
+  };
+}
+
 async function marcarIngreso(id, entra) {
   try {
     await updateDoc(doc(db, 'invitados', id), {
@@ -781,6 +859,8 @@ function pintarPuerta() {
       <button class="btn primario" id="btnEscanear" style="flex:1">Escanear pase</button>
       <button class="btn" id="btnCerrarCam" style="flex:0 0 auto" hidden>Cerrar cámara</button>
     </div>
+    <button class="btn ancho-full solo-gerente-inline" id="btnAltaInvitado" style="margin-top:.6rem">
+      + Invitado de último momento</button>
     <video id="visor" hidden muted playsinline></video>
     <div class="resultado-escaneo" id="escaneo"></div>
 
@@ -805,6 +885,7 @@ function pintarPuerta() {
           ? 'Nadie con ese nombre.'
           : 'Todavía no se registró nadie para esta noche.'}</p>`}`;
 
+  if ($('#btnAltaInvitado')) $('#btnAltaInvitado').onclick = abrirAltaInvitado;
   $('#btnEscanear').onclick = () => {
     $('#visor').hidden = false;
     $('#btnCerrarCam').hidden = false;

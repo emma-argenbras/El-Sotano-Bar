@@ -125,6 +125,30 @@
   </main>
 </div>
 
+<dialog id="dlgInvitado">
+  <h2 style="margin-top:0">Invitado de último momento</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin-top:0">
+    Mismo formato que el registro por link. Entra aunque la lista esté llena.
+  </p>
+  <label class="campo">
+    <span>Nombre y apellido</span>
+    <input id="inpInvNombre" maxlength="60" autocomplete="off">
+  </label>
+  <label class="campo">
+    <span>Teléfono</span>
+    <input id="inpInvTel" type="tel" maxlength="25" inputmode="tel" autocomplete="off">
+  </label>
+  <label class="campo" style="display:flex;align-items:center;gap:.6rem">
+    <input type="checkbox" id="inpInvEntra" checked style="width:auto;margin:0">
+    <span style="margin:0">Está entrando ahora</span>
+  </label>
+  <div id="paseNuevo"></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCerrarInvitado" style="flex:1">Cerrar</button>
+    <button class="btn primario" id="btnGuardarInvitado" style="flex:1.4">Anotar</button>
+  </div>
+</dialog>
+
 <dialog id="dlgEvento">
   <h2 style="margin-top:0" id="tituloEvento">Agendar una noche</h2>
   <label class="campo">
