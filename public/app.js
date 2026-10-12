@@ -68,11 +68,51 @@ addEventListener('online', pintarConexion);
 addEventListener('offline', pintarConexion);
 pintarConexion();
 
-if (mesa) {
+// ---------- pasar la carta a otro ----------
+// El que ya está adentro muestra el QR en su pantalla, el otro lo escanea con
+// la cámara y entra a la misma mesa. Es un diálogo: se cierra y el carrito,
+// la categoría y todo lo demás siguen igual.
+const archivoQr = (m) => `/qr/mesa-${String(m).toLowerCase().replace(/\s+/g, '-')}.png`;
+const linkDeMesa = (m) => (m ? `${location.origin}/mesa/${encodeURIComponent(m)}` : location.origin);
+
+function pintarChipMesa() {
   const c = $('#chipMesa');
   c.hidden = false;
-  c.textContent = 'Mesa ' + mesa;
+  c.textContent = mesa ? `Mesa ${mesa} · QR` : 'Ver QR';
+  c.onclick = abrirQrMesa;
 }
+
+function abrirQrMesa() {
+  const url = linkDeMesa(mesa);
+  $('#dlgMesaAyuda').textContent = mesa
+    ? `Que la escaneen con la cámara: les abre la carta en la mesa ${mesa}, sin tipear nada.`
+    : 'Que la escaneen con la cámara: les abre la carta.';
+  $('#dlgMesaCual').textContent = mesa ? (/^\d+$/.test(mesa) ? 'MESA ' + mesa : String(mesa).toUpperCase()) : '';
+  $('#dlgMesaLink').textContent = url;
+  const img = $('#imgMesaQr');
+  img.alt = mesa ? 'QR de la mesa ' + mesa : 'QR de la carta';
+  // Si todavía no se generó ese PNG, escondemos el recuadro pero dejamos el link.
+  img.onerror = () => { $('#dlgMesaQr').hidden = true; };
+  img.onload = () => { $('#dlgMesaQr').hidden = false; };
+  img.src = mesa ? archivoQr(mesa) : '/qr/general.png';
+  $('#dlgMesa').showModal();
+}
+
+$('#btnCerrarMesa').onclick = () => $('#dlgMesa').close();
+$('#btnCompartirMesa').onclick = async () => {
+  const url = linkDeMesa(mesa);
+  const texto = mesa ? `Pedí desde la mesa ${mesa} de El Sótano` : 'Pedí desde tu celular en El Sótano';
+  if (navigator.share) {
+    try { await navigator.share({ title: 'El Sótano', text: texto, url }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const b = $('#btnCompartirMesa');
+  try { await navigator.clipboard.writeText(url); b.textContent = 'Link copiado ✓'; }
+  catch { b.textContent = 'Copiá el link de abajo'; }
+  setTimeout(() => { b.textContent = 'Mandar link'; }, 1800);
+};
+
+pintarChipMesa();
 
 // ---------- auth ----------
 onAuthStateChanged(auth, (u) => {
@@ -233,6 +273,7 @@ $('#btnEnviar').onclick = async () => {
     const nota = $('#inpNota').value.trim();
     mesa = $('#selMesa').value;
     sessionStorage.setItem('sotano:mesa', mesa);
+    pintarChipMesa();
     if (nombre) localStorage.setItem('sotano:nombre', nombre);
 
     // Los campos deben coincidir exactamente con pedidoValido() en firestore.rules.

@@ -10,4 +10,6 @@ service-account*.json
 *-adminsdk-*.json
 .env
 .env.*
-qr/
+/qr/
+qr-imprimible/
+capturas/

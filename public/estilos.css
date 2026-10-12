@@ -35,7 +35,7 @@ a { color: var(--oro); }
 /* ---------- barra superior ---------- */
 .tope {
   position: sticky; top: 0; z-index: 30;
-  display: flex; align-items: center; gap: .7rem;
+  display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
   padding: .85rem 1rem;
   background: rgba(13,11,16,.92);
   backdrop-filter: blur(10px);
@@ -43,6 +43,11 @@ a { color: var(--oro); }
 }
 .tope .marca { font-weight: 700; font-size: 1.1rem; letter-spacing: .01em; }
 .tope .marca span { color: var(--oro); }
+/* El logo manda; el texto queda de respaldo si el SVG no carga. */
+.tope .marca img { display: block; height: 30px; width: auto; }
+@media (max-width: 430px) { .tope .marca img { height: 25px; } }
+.tope .rotulo { font-size: .78rem; color: var(--suave); font-weight: 600;
+                letter-spacing: .06em; text-transform: uppercase; }
 .tope .relleno { flex: 1; }
 
 .chip {

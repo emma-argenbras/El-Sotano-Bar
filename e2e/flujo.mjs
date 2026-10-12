@@ -73,6 +73,29 @@ await chequear('sumar al carrito actualiza el total', async () => {
   await cliente.waitForFunction(() =>
     document.querySelector('#totalCarrito')?.textContent.replace(/\D/g, '') === '14500', null, { timeout: 5000 });
 });
+await chequear('muestra el QR de la mesa y vuelve sin perder el carrito', async () => {
+  const antes = await cliente.textContent('#totalCarrito');
+  await cliente.click('#chipMesa');
+  await cliente.waitForSelector('#dlgMesa[open]', { timeout: 5000 });
+
+  const src = await cliente.getAttribute('#imgMesaQr', 'src');
+  if (src !== '/qr/mesa-7.png') throw new Error('QR equivocado: ' + src);
+  // El PNG tiene que existir de verdad, no quedar como imagen rota.
+  const cargo = await cliente.evaluate(() => {
+    const i = document.querySelector('#imgMesaQr');
+    return i.complete ? i.naturalWidth > 0 : new Promise((ok) => {
+      i.onload = () => ok(true); i.onerror = () => ok(false);
+    });
+  });
+  if (!cargo) throw new Error('el PNG del QR no cargó');
+
+  const link = await cliente.textContent('#dlgMesaLink');
+  if (!link.endsWith('/mesa/7')) throw new Error('link equivocado: ' + link);
+
+  await cliente.click('#btnCerrarMesa');
+  await cliente.waitForSelector('#dlgMesa[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+  if (await cliente.textContent('#totalCarrito') !== antes) throw new Error('se perdió el carrito');
+});
 await chequear('se manda el pedido', async () => {
   await cliente.click('#btnConfirmar');
   await cliente.waitForSelector('dialog[open]');

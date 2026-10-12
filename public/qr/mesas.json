@@ -1,0 +1,70 @@
+{
+  "base": "https://el-sotano-bar.web.app",
+  "general": {
+    "mesa": "Sin mesa",
+    "archivo": "general.png",
+    "url": "https://el-sotano-bar.web.app"
+  },
+  "mesas": [
+    {
+      "mesa": "1",
+      "archivo": "mesa-1.png",
+      "url": "https://el-sotano-bar.web.app/mesa/1"
+    },
+    {
+      "mesa": "2",
+      "archivo": "mesa-2.png",
+      "url": "https://el-sotano-bar.web.app/mesa/2"
+    },
+    {
+      "mesa": "3",
+      "archivo": "mesa-3.png",
+      "url": "https://el-sotano-bar.web.app/mesa/3"
+    },
+    {
+      "mesa": "4",
+      "archivo": "mesa-4.png",
+      "url": "https://el-sotano-bar.web.app/mesa/4"
+    },
+    {
+      "mesa": "5",
+      "archivo": "mesa-5.png",
+      "url": "https://el-sotano-bar.web.app/mesa/5"
+    },
+    {
+      "mesa": "6",
+      "archivo": "mesa-6.png",
+      "url": "https://el-sotano-bar.web.app/mesa/6"
+    },
+    {
+      "mesa": "7",
+      "archivo": "mesa-7.png",
+      "url": "https://el-sotano-bar.web.app/mesa/7"
+    },
+    {
+      "mesa": "8",
+      "archivo": "mesa-8.png",
+      "url": "https://el-sotano-bar.web.app/mesa/8"
+    },
+    {
+      "mesa": "9",
+      "archivo": "mesa-9.png",
+      "url": "https://el-sotano-bar.web.app/mesa/9"
+    },
+    {
+      "mesa": "10",
+      "archivo": "mesa-10.png",
+      "url": "https://el-sotano-bar.web.app/mesa/10"
+    },
+    {
+      "mesa": "Barra",
+      "archivo": "mesa-barra.png",
+      "url": "https://el-sotano-bar.web.app/mesa/Barra"
+    },
+    {
+      "mesa": "Para llevar",
+      "archivo": "mesa-para-llevar.png",
+      "url": "https://el-sotano-bar.web.app/mesa/Para%20llevar"
+    }
+  ]
+}

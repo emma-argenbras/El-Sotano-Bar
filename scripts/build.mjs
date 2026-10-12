@@ -24,8 +24,11 @@ console.log(`✓ ${salida} — ${kb} kB`);
 // navegador se queda con el app.js viejo para siempre y un deploy no se ve.
 // El hash la cambia sola cada vez que cambia algo que el cliente descarga.
 const SELLADOS = [
-  'public/index.html', 'public/bar.html', 'public/app.js', 'public/bar.js',
-  'public/estilos.css', 'public/manifest.webmanifest', salida,
+  'public/index.html', 'public/bar.html', 'public/qr.html',
+  'public/app.js', 'public/bar.js', 'public/estilos.css',
+  'public/manifest.webmanifest',
+  'public/iconos/icono.svg', 'public/iconos/logo-horizontal.svg',
+  salida,
 ];
 const hash = createHash('sha256');
 for (const f of SELLADOS) hash.update(readFileSync(f));

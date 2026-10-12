@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QR por mesa — El Sótano</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0b10">
+<link rel="icon" href="/iconos/icono.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/estilos.css">
+<style>
+  .mesas { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr));
+           gap: .55rem; margin: 1rem 0; }
+  .mesas button { padding: .9rem .4rem; font-size: 1.05rem; font-weight: 700; }
+  /* El QR va sobre blanco siempre: sobre el fondo oscuro muchas cámaras no leen. */
+  .lienzo { background: #fff; border-radius: 14px; padding: 1rem; text-align: center; }
+  .lienzo img { width: 100%; max-width: 420px; height: auto; display: block; margin: 0 auto; }
+  .lienzo .cual { color: #111; font-size: 1.9rem; font-weight: 800; letter-spacing: .05em;
+                  margin-top: .5rem; }
+  .lienzo .pie { color: #666; font-size: .9rem; margin-top: .15rem; }
+  .acciones { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: 1rem; }
+  .acciones .btn { flex: 1; min-width: 9rem; }
+  .enlace { margin-top: .9rem; font-size: .85rem; color: var(--suave); word-break: break-all; }
+</style>
+</head>
+<body>
+
+<header class="tope">
+  <a class="marca" href="/" aria-label="El Sótano"><img src="/iconos/logo-horizontal.svg" alt="El Sótano" width="560" height="120"></a><span class="rotulo">QR</span>
+  <div class="relleno"></div>
+  <a class="btn" href="/bar.html">Barra</a>
+</header>
+
+<main class="envoltorio">
+  <p style="color:var(--suave);font-size:.92rem;margin:.2rem 0 0">
+    Elegí la mesa y mostrá la pantalla para que la escaneen. El QR deja la mesa puesta:
+    el cliente no tipea nada.
+  </p>
+
+  <nav class="mesas" id="mesas" aria-label="Mesas"></nav>
+
+  <section id="panel" hidden>
+    <div class="lienzo">
+      <img id="imgQr" alt="">
+      <div class="cual" id="cual"></div>
+      <div class="pie">Escaneá y pedí desde tu celular</div>
+    </div>
+    <div class="acciones">
+      <button class="btn primario" id="btnCompartir">Compartir link</button>
+      <button class="btn" id="btnCopiar">Copiar link</button>
+      <a class="btn" id="btnAbrir" target="_blank" rel="noopener">Abrir</a>
+    </div>
+    <div class="enlace" id="enlace"></div>
+  </section>
+
+  <div class="aviso mal oculto" id="error"><span>⚠</span><div id="errorTexto"></div></div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let elegido = null;
+
+fetch('/qr/mesas.json', { cache: 'no-cache' })
+  .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(({ general, mesas }) => {
+    const todos = [general, ...mesas].filter(Boolean);
+    $('#mesas').innerHTML = todos.map((m, i) =>
+      `<button class="btn" data-i="${i}">${m.mesa}</button>`).join('');
+    $('#mesas').querySelectorAll('button').forEach((b) => {
+      b.onclick = () => mostrar(todos[b.dataset.i]);
+    });
+    mostrar(todos[0]);
+  })
+  .catch((e) => {
+    $('#error').classList.remove('oculto');
+    $('#errorTexto').innerHTML =
+      `<b>No pude leer la lista de QR.</b><br>${e.message}<br>` +
+      `<small>Desde la Mac: <code>npm run qr</code> y desplegá.</small>`;
+  });
+
+function mostrar(m) {
+  elegido = m;
+  $('#panel').hidden = false;
+  $('#imgQr').src = '/qr/' + m.archivo;
+  $('#imgQr').alt = 'QR de ' + m.mesa;
+  $('#cual').textContent = /^\d+$/.test(m.mesa) ? 'MESA ' + m.mesa : m.mesa.toUpperCase();
+  $('#enlace').textContent = m.url;
+  $('#btnAbrir').href = m.url;
+  $('#mesas').querySelectorAll('button').forEach((b) => b.classList.remove('primario'));
+  const activo = [...$('#mesas').querySelectorAll('button')].find((b) => b.textContent === m.mesa);
+  if (activo) activo.classList.add('primario');
+}
+
+$('#btnCompartir').onclick = async () => {
+  const texto = /^\d+$/.test(elegido.mesa)
+    ? `Pedí desde la mesa ${elegido.mesa} de El Sótano`
+    : 'Pedí desde tu celular en El Sótano';
+  // navigator.share solo existe en celulares y requiere https.
+  if (navigator.share) {
+    try { await navigator.share({ title: 'El Sótano', text: texto, url: elegido.url }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  copiar();
+};
+
+$('#btnCopiar').onclick = copiar;
+async function copiar() {
+  try {
+    await navigator.clipboard.writeText(elegido.url);
+    avisar($('#btnCopiar'), 'Copiado ✓');
+  } catch {
+    avisar($('#btnCopiar'), 'Copialo de abajo');
+  }
+}
+function avisar(btn, texto) {
+  const antes = btn.textContent;
+  btn.textContent = texto;
+  setTimeout(() => { btn.textContent = antes; }, 1600);
+}
+</script>
+</body>
+</html>

@@ -13,7 +13,9 @@
     "deploy:reglas": "node scripts/desplegar-reglas.mjs",
     "deploy:hosting": "npm run build && firebase deploy --only hosting",
     "crear:barra": "node scripts/crear-usuario-barra.mjs",
+    "iconos": "node scripts/generar-iconos.mjs",
     "qr": "node scripts/generar-qr.mjs",
+    "qr:imprimir": "node scripts/hoja-qr.mjs",
     "build": "node scripts/build.mjs",
     "e2e": "firebase emulators:exec --only firestore,auth,hosting --project el-sotano-bar \"node e2e/flujo.mjs\""
   },

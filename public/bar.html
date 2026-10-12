@@ -16,8 +16,10 @@
 <!-- ───────── login ───────── -->
 <section class="login" id="vistaLogin">
   <div class="caja">
-    <h1 style="font-size:1.3rem">Barra · El <span style="color:var(--oro)">Sótano</span></h1>
-    <p style="color:var(--suave);font-size:.9rem">Entrá con el mail del local.</p>
+    <img src="/iconos/logo.svg" alt="El Sótano" width="714" height="594"
+         style="display:block;width:170px;height:auto;margin:0 auto .4rem;border-radius:12px">
+    <h1 style="font-size:1.1rem;text-align:center;margin:0">Barra</h1>
+    <p style="color:var(--suave);font-size:.9rem;text-align:center">Entrá con el mail del local.</p>
 
     <div class="aviso mal oculto" id="avisoConfig">
       <span>⚠</span><div><b>Falta configurar Firebase</b> en <code>public/config.js</code>.</div>
@@ -44,7 +46,8 @@
 <!-- ───────── panel ───────── -->
 <div id="vistaPanel" hidden>
   <header class="tope">
-    <div class="marca">Barra · El <span>Sótano</span></div>
+    <a class="marca" href="/bar.html" aria-label="Barra — El Sótano"><img src="/iconos/logo-horizontal.svg" alt="El Sótano" width="560" height="120"></a>
+    <span class="rotulo">Barra</span>
     <div class="relleno"></div>
     <span class="chip" id="chipConexion" hidden></span>
     <span class="chip" id="chipCaja">—</span>
