@@ -279,7 +279,13 @@ function escucharEvento() {
 
 const fallo = (sel) => (e) => {
   if (e.code === 'permission-denied') $('#avisoPermiso').classList.remove('oculto');
-  $(sel).innerHTML = `<div class="aviso mal"><span>⚠</span><div>${esc(e.code || e.message)}</div></div>`;
+  // failed-precondition acá es casi siempre un índice que falta o que todavía
+  // se está construyendo. Decirlo así, y no con el código pelado.
+  const texto = e.code === 'failed-precondition'
+    ? '<b>Esto todavía no está listo.</b><br>La base está armando un índice nuevo. '
+      + 'Probá de nuevo en unos minutos; el resto del panel anda igual.'
+    : esc(e.code || e.message);
+  $(sel).innerHTML = `<div class="aviso mal"><span>⚠</span><div>${texto}</div></div>`;
 };
 
 // Desde cuándo mira el tablero: el arranque del evento abierto, o el día de hoy.

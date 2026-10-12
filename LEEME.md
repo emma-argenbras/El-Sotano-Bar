@@ -51,6 +51,7 @@ La clave privada se baja de
 | `npm run deploy` | Despliega todo |
 | `npm run deploy:rules` | Solo las reglas (requiere `firebase login`) |
 | `npm run deploy:reglas -- --aplicar` | Publica las reglas con un service account |
+| `npm run deploy:indices` | Crea los índices de `firestore.indexes.json` |
 | `npm run crear:barra` | Alta del usuario de la barra |
 
 En `localhost` la app se conecta sola a los emuladores: probar nunca toca
@@ -147,6 +148,12 @@ En orden de lo que más rinde:
 npm test     # las reglas
 npm run e2e  # el flujo completo en navegador
 ```
+
+**El emulador no exige índices y producción sí.** Una consulta nueva con
+`where` + `orderBy` sobre campos distintos pasa todos los tests y después
+devuelve `failed-precondition` en el celular de la barra. Si agregás una
+consulta así, declaralá en `firestore.indexes.json` y corré
+`npm run deploy:indices` junto con el deploy.
 
 Las dos corren contra emuladores locales. Si tocás `firestore.rules`,
 corré `npm test` antes de `npm run deploy:rules`.
