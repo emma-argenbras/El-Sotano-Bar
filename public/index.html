@@ -34,6 +34,12 @@
     </div>
   </div>
 
+  <div class="aviso oculto" id="avisoVersion">
+    <span>⬆</span>
+    <div style="flex:1"><b>Hay una versión nueva.</b> Tocá actualizar para traerla.</div>
+    <button class="btn primario" data-actualizar style="padding:.4rem .8rem">Actualizar</button>
+  </div>
+
   <button class="aviso listo oculto" id="avisoListo" type="button">
     <span>🍸</span>
     <div><b>¡Tu pedido está listo!</b> Retiralo en la barra.<br>
@@ -117,7 +123,9 @@
   <div style="font-size:.78rem;color:var(--suave);margin-top:.7rem;word-break:break-all" id="dlgMesaLink"></div>
 </dialog>
 
+<script src="/version.js"></script>
 <script src="/config.js"></script>
 <script type="module" src="/app.js"></script>
+<script src="/actualizar.js"></script>
 </body>
 </html>

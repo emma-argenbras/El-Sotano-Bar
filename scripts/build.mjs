@@ -25,7 +25,7 @@ console.log(`✓ ${salida} — ${kb} kB`);
 // El hash la cambia sola cada vez que cambia algo que el cliente descarga.
 const SELLADOS = [
   'public/index.html', 'public/bar.html', 'public/qr.html',
-  'public/app.js', 'public/bar.js', 'public/estilos.css',
+  'public/app.js', 'public/bar.js', 'public/actualizar.js', 'public/estilos.css',
   'public/manifest.webmanifest', 'public/manifest-barra.webmanifest',
   'public/iconos/icono.svg', 'public/iconos/logo-horizontal.svg',
   salida,
@@ -33,6 +33,12 @@ const SELLADOS = [
 const hash = createHash('sha256');
 for (const f of SELLADOS) hash.update(readFileSync(f));
 const version = `sotano-${hash.digest('hex').slice(0, 12)}`;
+
+// La versión también queda servible: la app la consulta cada tanto para saber
+// si lo que está corriendo quedó viejo. Van sin cache (ver firebase.json).
+writeFileSync('public/version.js', `window.VERSION_APP = ${JSON.stringify(version)};\n`);
+writeFileSync('public/version.json', JSON.stringify({ version }) + '\n');
+console.log(`✓ public/version.js — ${version}`);
 
 const sw = readFileSync('public/sw.js', 'utf8');
 const nuevo = sw.replace(/^const VERSION = '.*';$/m, `const VERSION = '${version}';`);

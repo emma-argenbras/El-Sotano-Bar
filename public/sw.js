@@ -1,10 +1,10 @@
 // Service worker de El Sótano.
 // El local es un sótano: la señal se corta. El cascarón de la app tiene que
 // abrir igual, y Firestore ya resuelve sus datos con su propio cache.
-const VERSION = 'sotano-4fe3e217bf88';
+const VERSION = 'sotano-bc8217fc44a7';
 const ESENCIALES = [
   '/', '/index.html', '/bar.html', '/estilos.css', '/app.js', '/bar.js',
-  '/config.js', '/manifest.webmanifest', '/vendor/firebase.js',
+  '/config.js', '/actualizar.js', '/manifest.webmanifest', '/vendor/firebase.js',
   '/iconos/icono.svg', '/iconos/icono-192.png', '/iconos/apple-touch-icon.png',
   '/iconos/logo-horizontal.svg', '/iconos/logo.svg',
   '/manifest-barra.webmanifest', '/iconos/icono-barra.svg',
@@ -42,6 +42,10 @@ self.addEventListener('fetch', (e) => {
 
   // Navegación y config: red primero, cache como red de contención.
   const esNavegacion = request.mode === 'navigate';
+  // version.js y version.json nunca salen del cache: son justamente lo que
+  // se consulta para saber si el cache quedó viejo.
+  if (url.pathname.startsWith('/version.')) return;
+
   if (esNavegacion || url.pathname === '/config.js') {
     e.respondWith(
       fetch(request).then((r) => {

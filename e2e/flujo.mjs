@@ -134,6 +134,41 @@ await chequear('el panel pide login', async () => {
   await barra.waitForSelector('#formLogin');
   if (!(await barra.locator('#vistaPanel').isHidden())) throw new Error('el panel está visible sin login');
 });
+await chequear('el botón de actualizar recarga la app y la deja limpia', async () => {
+  // Lo que resuelve: una PWA instalada se queda con los archivos viejos y
+  // nadie va a saber qué es un service worker.
+  if (!(await barra.locator('[data-actualizar]').first().isVisible()))
+    throw new Error('no hay botón de actualizar');
+
+  await barra.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    const c = await caches.open('basura-de-prueba');
+    await c.put('/marca-vieja', new Response('vieja'));
+  });
+
+  await barra.locator('#vistaLogin [data-actualizar]').click();
+  await barra.waitForSelector('#formLogin', { timeout: 15000 });
+
+  const quedo = await barra.evaluate(() => caches.keys());
+  if (quedo.includes('basura-de-prueba')) throw new Error('no limpió el cache viejo');
+  if (new URL(barra.url()).searchParams.has('v')) throw new Error('dejó el cache-buster en la URL');
+});
+
+await chequear('avisa cuando la versión que corre quedó vieja', async () => {
+  await barra.waitForSelector('#formLogin', { timeout: 15000 });
+  await barra.evaluate(() => {
+    const original = window.fetch;
+    window.fetch = (u, o) => (String(u).includes('/version.json')
+      ? Promise.resolve(new Response('{"version":"sotano-otra"}', { status: 200 }))
+      : original(u, o));
+    document.dispatchEvent(new Event('visibilitychange'));
+    dispatchEvent(new Event('visibilitychange'));
+  });
+  await barra.waitForFunction(() =>
+    !document.querySelector('#avisoVersion')?.classList.contains('oculto'),
+    null, { timeout: 10000 });
+});
+
 await chequear('la barra se puede instalar como app aparte', async () => {
   // Instalada tiene que abrir el tablero, no la carta del cliente.
   const href = await barra.getAttribute('link[rel=manifest]', 'href');

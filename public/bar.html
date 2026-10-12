@@ -45,8 +45,9 @@
       <div class="aviso mal oculto" id="errorLogin"><span>⚠</span><div id="errorLoginTexto"></div></div>
       <button class="btn primario ancho-full" id="btnEntrar" type="submit">Entrar</button>
     </form>
-    <p style="margin-top:1rem;text-align:center">
+    <p style="margin-top:1rem;text-align:center;display:flex;gap:.5rem;justify-content:center">
       <button class="btn" id="btnOlvide" style="font-size:.85rem;padding:.4rem .8rem">Olvidé la contraseña</button>
+      <button class="btn" data-actualizar style="font-size:.85rem;padding:.4rem .8rem">↻ Actualizar</button>
     </p>
 
     <div class="instalar oculto" data-instalar>
@@ -68,10 +69,17 @@
     <button class="btn" id="btnSonido" title="Aviso sonoro al entrar un pedido" style="padding:.35rem .7rem">🔔</button>
     <button class="btn" data-instalar-btn hidden title="Instalar la app"
             style="padding:.35rem .7rem">⬇<span class="solo-ancho"> Instalar</span></button>
+    <button class="btn" data-actualizar style="padding:.35rem .7rem">↻<span class="solo-ancho"> Actualizar</span></button>
     <button class="btn" id="btnSalir" style="padding:.35rem .7rem">Salir</button>
   </header>
 
   <main class="ancho">
+  <div class="aviso oculto" id="avisoVersion">
+    <span>⬆</span>
+    <div style="flex:1"><b>Hay una versión nueva.</b> Tocá actualizar para traerla.</div>
+    <button class="btn primario" data-actualizar style="padding:.4rem .8rem">Actualizar</button>
+  </div>
+
     <div class="aviso mal oculto" id="avisoPermiso">
       <span>⛔</span>
       <div>
@@ -139,7 +147,9 @@
   <button class="btn primario ancho-full" id="btnCerrarInstalar" style="margin-top:1.2rem">Listo</button>
 </dialog>
 
+<script src="/version.js"></script>
 <script src="/config.js"></script>
 <script type="module" src="/bar.js"></script>
+<script src="/actualizar.js"></script>
 </body>
 </html>
