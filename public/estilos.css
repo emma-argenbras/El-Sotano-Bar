@@ -367,3 +367,14 @@ body.es-gerente .ancho-full.solo-gerente-inline { display: block !important; wid
 }
 @media (prefers-reduced-motion: reduce) { .aviso.listo { animation: none; } }
 #cuentaPedidos.listo { animation: latir 1.6s ease-in-out infinite; border-radius: 999px; }
+
+/* ---------- elegir barman ---------- */
+#elegirBarman label {
+  display: flex; align-items: center; gap: .6rem; padding: .6rem .7rem;
+  border: 1px solid var(--borde); border-radius: 11px; margin-bottom: .4rem;
+  background: var(--panel-alto); cursor: pointer;
+}
+#elegirBarman input { width: auto; margin: 0; }
+#elegirBarman .vacio { font-size: .86rem; color: var(--suave); padding: .2rem 0; }
+.grupo-personal { font-size: .78rem; color: var(--suave); text-transform: uppercase;
+                  letter-spacing: .06em; margin: .9rem 0 .4rem; }

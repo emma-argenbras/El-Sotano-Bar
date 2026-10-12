@@ -277,15 +277,13 @@ await chequear('no avisa "sin conexión" si los datos están llegando', async ()
 console.log('\nUSUARIO DE BARRA DEL TURNO');
 await chequear('el dueño crea un usuario de barra sin mail y sin perder su sesión', async () => {
   await barra.click('#tabEvento');
-  await barra.waitForSelector('#btnAltaBarra', { timeout: 10000 });
+  await barra.waitForSelector('#btnAltaBarman', { timeout: 10000 });
   const respuestas = ['barra-turno', 'clave-de-prueba'];
   barra.on('dialog', async (d) => {
     if (d.type() === 'prompt') await d.accept(respuestas.shift() ?? '');
-    // El confirm es "¿es gerente?": que no, queremos probar el nivel barra.
-    else if (d.type() === 'confirm') await d.dismiss();
     else await d.accept();
   });
-  await barra.click('#btnAltaBarra');
+  await barra.click('#btnAltaBarman');
   await barra.waitForFunction(() =>
     document.querySelector('#accesos')?.textContent.includes('barra-turno'), null, { timeout: 15000 });
   // El alta usa una app aparte justamente para esto: el dueño sigue adentro.
@@ -297,25 +295,68 @@ const ctxTurno = await navegador.newContext({ viewport: { width: 390, height: 84
 const turno = await ctxTurno.newPage();
 turno.on('pageerror', (e) => errores.push('turno: ' + e.message));
 
+await chequear('registrado pero sin turno, el barman entra y no ve nada', async () => {
+  // Registrado no alcanza: las reglas piden estar asignado al evento.
+  const ctxSinTurno = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pag = await ctxSinTurno.newPage();
+  try {
+    await pag.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+    await pag.fill('#inpMail', 'barra-turno');
+    await pag.fill('#inpPass', 'clave-de-prueba');
+    await pag.click('#btnEntrar');
+    await pag.waitForSelector('#vistaPanel:not([hidden])', { timeout: 15000 });
+    await pag.waitForFunction(() =>
+      document.querySelector('#tablero')?.textContent.includes('permission-denied')
+      || !document.querySelector('#avisoPermiso')?.classList.contains('oculto'),
+      null, { timeout: 20000 });
+  } finally { await ctxSinTurno.close(); }
+});
+
+await chequear('asignarlo al turno le abre el panel', async () => {
+  await barra.click('#tabEvento');
+  // Sin evento todavía: lo abrimos eligiendo al barman.
+  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
+  await barra.click('#btnAbrirEvento');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  await barra.fill('#inpEvento', 'Noche de prueba');
+  await barra.check('#elegirBarman input');
+  await barra.click('#btnConfirmarEvento');
+  await barra.waitForSelector('.caja-evento', { timeout: 10000 });
+  const t = await barra.textContent('.caja-evento');
+  if (!t.includes('barra-turno')) throw new Error('no muestra quién está de turno: ' + t.slice(0, 200));
+});
+
 await chequear('entra con usuario y contraseña, sin escribir ningún mail', async () => {
   await turno.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
   await turno.fill('#inpMail', 'barra-turno');
   await turno.fill('#inpPass', 'clave-de-prueba');
   await turno.click('#btnEntrar');
-  await turno.waitForSelector('#vistaPanel:not([hidden])', { timeout: 15000 });
-  await turno.waitForSelector('.ticket', { timeout: 15000 });
+  await turno.waitForSelector('#vistaPanel:not([hidden])', { timeout: 15000 })
+    .catch(async () => {
+      throw new Error('login falló: ' + (await turno.textContent('#errorLoginTexto')));
+    });
+  // El tablero del evento recién abierto está vacío; lo que prueba el acceso
+  // es que la carta le llegue.
+  await turno.click('#tabCartaBar');
+  await turno.waitForSelector('#cartaBar .item', { timeout: 15000 });
+  if (!(await turno.locator('#avisoPermiso').evaluate((e) => e.classList.contains('oculto'))))
+    throw new Error('le rechazaron la lectura estando de turno');
 });
 
 await chequear('el de la barra ve lo suyo y nada mas', async () => {
   await turno.click('#tabEvento');
   await turno.waitForTimeout(800);
-  if (await turno.locator('#btnAltaBarra').isVisible()) throw new Error('puede crear usuarios');
+  if (await turno.locator('#btnAltaBarman').isVisible()) throw new Error('puede crear usuarios');
   if (await turno.locator('.solo-gerente').isVisible()) throw new Error('ve la administración');
   if (await turno.locator('#btnCerrarEvento').isVisible()) throw new Error('puede cerrar el evento');
   if (await turno.locator('#btnTomando').isVisible()) throw new Error('puede cortar los pedidos');
-  // Sin evento abierto le explicamos qué pasa, no le dejamos una tarjeta muda.
-  if (!(await turno.textContent('#evento')).includes('No hay ningún evento abierto'))
-    throw new Error('no le dice nada sobre el evento');
+  // El evento lo ve, con la caja y el ranking: necesita los precios.
+  if (!(await turno.locator('.caja-evento').isVisible()))
+    throw new Error('no ve la caja del evento');
+  if (!(await turno.textContent('.caja-evento')).includes('Noche de prueba'))
+    throw new Error('no ve de qué evento se trata');
+  if (await turno.locator('#btnTurno').isVisible())
+    throw new Error('puede cambiar quién está de turno');
 
   await turno.click('#tabCartaBar');
   await turno.waitForTimeout(500);
@@ -353,7 +394,7 @@ await chequear('apagarlo le corta el acceso al toque', async () => {
   barra.once('dialog', (d) => d.accept());
   await barra.click('#accesos [data-acceso]');
   await barra.waitForFunction(() =>
-    document.querySelector('#accesos')?.textContent.includes('apagado'), null, { timeout: 10000 });
+    document.querySelector('#accesos')?.textContent.includes('dado de baja'), null, { timeout: 10000 });
   // Se va solo, aunque tenga la app abierta: cada cuenta mira su permiso.
   turno.once('dialog', (d) => d.accept());
   await turno.waitForSelector('#vistaLogin:not([hidden])', { timeout: 20000 });
@@ -361,12 +402,24 @@ await chequear('apagarlo le corta el acceso al toque', async () => {
 });
 await ctxTurno.close();
 
+// El evento de prueba del bloque anterior queda abierto: lo cerramos para que
+// los casos de abajo empiecen sin ninguno.
+await chequear('cerrar el evento de prueba deja el tablero limpio', async () => {
+  await barra.click('#tabEvento');
+  await barra.waitForSelector('#btnCerrarEvento', { timeout: 10000 });
+  barra.once('dialog', (d) => d.accept());
+  await barra.click('#btnCerrarEvento');
+  await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
+});
+
 console.log('\nCAJA POR EVENTO');
 await chequear('abre un evento y la caja pasa a contar desde ahí', async () => {
   await barra.click('#tabEvento');
   await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
-  barra.once('dialog', (d) => d.accept('Prueba de noche'));
   await barra.click('#btnAbrirEvento');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  await barra.fill('#inpEvento', 'Prueba de noche');
+  await barra.click('#btnConfirmarEvento');
   await barra.waitForSelector('.caja-evento', { timeout: 10000 });
   const t = await barra.textContent('.caja-evento');
   if (!t.includes('Prueba de noche')) throw new Error('no tomó el nombre: ' + t.slice(0, 120));

@@ -31,6 +31,9 @@ service cloud.firestore {
     // El dueño del local. No depende de ningún documento: no puede dejarse
     // afuera solo. Ojo: esDueno(uid), más abajo, es otra cosa — el dueño de
     // un pedido.
+    // El claim 'rol' del token vale 'barra' por historia: marca al dueño y lo
+    // asigna el servidor con la clave privada. No tiene nada que ver con el
+    // campo rol de accesosBarra, que distingue admin de barman.
     function esElDueno() {
       return logueado() && (
         request.auth.token.get('rol', '') == 'barra'
@@ -53,20 +56,30 @@ service cloud.firestore {
     }
 
     // Tres niveles:
-    //   dueño    — todo, incluido borrar. Es el único que borra.
-    //   gerente  — todo salvo borrar y crear gerentes.
-    //   barra    — mueve pedidos y marca agotado. Ve precios, caja y eventos.
+    //   dueño   — todo, incluido borrar. Es el único que borra.
+    //   admin   — administra todo salvo borrar. Cuenta permanente.
+    //   barman  — mueve pedidos y marca agotado. Ve precios, caja y eventos,
+    //             pero solo las noches en que está asignado al evento.
     function miRol() {
-      return tengoTurno() ? miAcceso().get('rol', 'barra') : '';
+      return tengoTurno() ? miAcceso().get('rol', 'barman') : '';
     }
 
     // El dueño primero: resuelve con el token y no cuesta ninguna lectura.
-    function esGerente() {
-      return esElDueno() || miRol() == 'gerente';
+    function esAdmin() {
+      return esElDueno() || miRol() == 'admin';
+    }
+
+    // Quién trabaja esta noche. barra/turno lo escriben los administradores al
+    // abrir el evento; al cerrarlo queda vacío y ningún barman entra.
+    function barmanDeTurno() {
+      return miRol() == 'barman'
+        && exists(/databases/$(database)/documents/barra/turno)
+        && request.auth.uid in get(/databases/$(database)/documents/barra/turno)
+             .data.get('barmanes', []);
     }
 
     function esBarra() {
-      return esElDueno() || tengoTurno();
+      return esAdmin() || barmanDeTurno();
     }
 
     // Lo que la barra puede tocar de un producto: si se acabó y cuánto queda.
@@ -129,9 +142,9 @@ service cloud.firestore {
       // La carta se ve sin loguearse: el QR de la mesa abre y muestra.
       allow read: if true;
       // Precios, nombres y altas: gerente para arriba.
-      allow create: if esGerente();
+      allow create: if esAdmin();
       // La barra solo marca agotado y ajusta el stock de lo que ya existe.
-      allow update: if esGerente() || (esBarra() && soloStock());
+      allow update: if esAdmin() || (esBarra() && soloStock());
       // Borrar es del dueño y de nadie más.
       allow delete: if esElDueno();
     }
@@ -168,12 +181,9 @@ service cloud.firestore {
     // ---------- barra (privado) ----------
 
     match /barra/{documento=**} {
-      // La barra ve la caja y los eventos; abrirlos y cerrarlos es del gerente.
+      // El barman ve la caja y los eventos; abrirlos y cerrarlos es del admin.
       allow read: if esBarra();
-      // Los roles son estos dos y nada más: con uno inventado la cuenta queda
-      // sin acceso y sin forma de arreglarse sola.
-      allow create, update: if esGerente()
-        && request.resource.data.get('rol', 'barra') in ['gerente', 'barra'];
+      allow create, update: if esAdmin();
       allow delete: if esElDueno();
     }
 
@@ -182,32 +192,28 @@ service cloud.firestore {
     // está tomando pedidos antes incluso de que el cliente entre.
     match /publico/{documento} {
       allow read: if true;
-      // Cortar y reabrir los pedidos es del gerente.
-      // Los roles son estos dos y nada más: con uno inventado la cuenta queda
-      // sin acceso y sin forma de arreglarse sola.
-      allow create, update: if esGerente()
-        && request.resource.data.get('rol', 'barra') in ['gerente', 'barra'];
+      // Cortar y reabrir los pedidos es del administrador.
+      allow create, update: if esAdmin();
       allow delete: if esElDueno();
     }
 
-    // ---------- quién es personal de barra ----------
+    // ---------- el padrón: quién puede entrar al panel ----------
     // Va fuera de barra/ a propósito: si estuviera adentro, la regla de arriba
     // dejaría que el personal se editara su propio permiso.
-    // Solo el dueño da de alta, prende y apaga.
     match /accesosBarra/{uid} {
       // Cada uno puede ver el suyo: el panel avisa cuando lo apagaron.
-      allow get: if esGerente() || esDueno(uid);
-      allow list: if esGerente();
-      // El gerente da de alta y apaga a cualquiera, barra u otro gerente: es
-      // una cuenta full. Lo único que no puede es borrar.
+      allow get: if esAdmin() || esDueno(uid);
+      allow list: if esAdmin();
+      // Un administrador da de alta y apaga a cualquiera, barman u otro
+      // administrador: es cuenta full. Lo único que no puede es borrar.
       //
       // No hay escalada posible: ser dueño sale del claim del token, que solo
       // se asigna desde el servidor. Un gerente no puede dárselo a nadie, ni
       // apagar al dueño, que no tiene documento de acceso.
       // Los roles son estos dos y nada más: con uno inventado la cuenta queda
       // sin acceso y sin forma de arreglarse sola.
-      allow create, update: if esGerente()
-        && request.resource.data.get('rol', 'barra') in ['gerente', 'barra'];
+      allow create, update: if esAdmin()
+        && request.resource.data.get('rol', 'barman') in ['admin', 'barman'];
       allow delete: if esElDueno();
     }
 

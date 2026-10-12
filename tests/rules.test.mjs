@@ -52,9 +52,12 @@ before(async () => {
     });
     await setDoc(doc(db, 'barra/caja'), { abierta: true, totalNoche: 182000 });
     // Personal de turno: uno habilitado y uno apagado.
-    await setDoc(doc(db, 'accesosBarra/uid-turno-ok'), { usuario: 'barra-lunes', activo: true, rol: 'barra' });
-    await setDoc(doc(db, 'accesosBarra/uid-gerente'), { usuario: 'guille', activo: true, rol: 'gerente' });
-    await setDoc(doc(db, 'accesosBarra/uid-turno-off'), { usuario: 'barra-viernes', activo: false });
+    await setDoc(doc(db, 'accesosBarra/uid-turno-ok'), { usuario: 'nico', activo: true, rol: 'barman' });
+    await setDoc(doc(db, 'accesosBarra/uid-gerente'), { usuario: 'guille', activo: true, rol: 'admin' });
+    await setDoc(doc(db, 'accesosBarra/uid-turno-off'), { usuario: 'ex-barman', activo: false, rol: 'barman' });
+    await setDoc(doc(db, 'accesosBarra/uid-franco'), { usuario: 'franco', activo: true, rol: 'barman' });
+    // Esta noche trabaja nico. Franco está registrado pero no asignado.
+    await setDoc(doc(db, 'barra/turno'), { eventoId: 'ev-1', barmanes: ['uid-turno-ok'] });
   });
 });
 
@@ -81,7 +84,54 @@ const gerente = () => env.authenticatedContext('uid-gerente', {
   email: 'guille@barra.local', provider_id: 'password',
 }).firestore();
 
-describe('tres niveles: dueño, gerente y barra', () => {
+const franco = () => env.authenticatedContext('uid-franco', {
+  email: 'franco@barra.local', provider_id: 'password',
+}).firestore();
+
+describe('el barman entra solo la noche que trabaja', () => {
+  it('asignado al turno, entra', async () => {
+    await assertSucceeds(getDoc(doc(turnoOk(), 'pedidos/pedido-de-ana')));
+  });
+
+  it('registrado pero NO asignado, no entra', async () => {
+    await assertFails(getDoc(doc(franco(), 'pedidos/pedido-de-ana')));
+  });
+
+  it('no asignado, tampoco toca la carta', async () => {
+    await assertFails(updateDoc(doc(franco(), 'carta/fernet'), { disponible: false }));
+  });
+
+  it('no asignado, no ve la caja', async () => {
+    await assertFails(getDoc(doc(franco(), 'barra/caja')));
+  });
+
+  it('un barman NO puede meterse en el turno solo', async () => {
+    await assertFails(setDoc(doc(franco(), 'barra/turno'),
+      { eventoId: 'ev-1', barmanes: ['uid-franco'] }));
+  });
+
+  it('el administrador SÍ arma el turno', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'barra/turno'),
+      { eventoId: 'ev-1', barmanes: ['uid-turno-ok', 'uid-franco'] }));
+  });
+
+  it('recién asignado, ya entra', async () => {
+    await assertSucceeds(getDoc(doc(franco(), 'pedidos/pedido-de-ana')));
+  });
+
+  it('cerrado el turno, ningún barman entra', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'barra/turno'), { eventoId: null, barmanes: [] }));
+    await assertFails(getDoc(doc(turnoOk(), 'pedidos/pedido-de-ana')));
+    await assertFails(getDoc(doc(franco(), 'pedidos/pedido-de-ana')));
+    // El administrador sigue entrando: no depende del turno.
+    await assertSucceeds(getDoc(doc(gerente(), 'pedidos/pedido-de-ana')));
+    // Lo dejamos como estaba para los casos que siguen.
+    await assertSucceeds(setDoc(doc(gerente(), 'barra/turno'),
+      { eventoId: 'ev-1', barmanes: ['uid-turno-ok'] }));
+  });
+});
+
+describe('tres niveles: dueño, administrador y barman', () => {
   it('la barra mueve un pedido de estado', async () => {
     await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/pedido-de-ana'), { estado: 'listo' }));
   });
@@ -118,34 +168,34 @@ describe('tres niveles: dueño, gerente y barra', () => {
     await assertFails(deleteDoc(doc(turnoOk(), 'pedidos/pedido-de-ana')));
   });
 
-  it('el gerente SÍ cambia precios', async () => {
+  it('el administrador SÍ cambia precios', async () => {
     await assertSucceeds(updateDoc(doc(gerente(), 'carta/fernet'), { precio: 4800 }));
   });
 
-  it('el gerente SÍ abre y cierra la caja del evento', async () => {
+  it('el administrador SÍ abre y cierra la caja del evento', async () => {
     await assertSucceeds(updateDoc(doc(gerente(), 'barra/caja'), { abierta: false }));
   });
 
-  it('el gerente SÍ corta y reabre los pedidos', async () => {
+  it('el administrador SÍ corta y reabre los pedidos', async () => {
     await assertSucceeds(setDoc(doc(gerente(), 'publico/estado'), { tomandoPedidos: true }));
   });
 
-  it('el gerente NO puede borrar un pedido', async () => {
+  it('el administrador NO puede borrar un pedido', async () => {
     await assertFails(deleteDoc(doc(gerente(), 'pedidos/pedido-de-ana')));
   });
 
-  it('el gerente NO puede borrar un producto', async () => {
+  it('el administrador NO puede borrar un producto', async () => {
     await assertFails(deleteDoc(doc(gerente(), 'carta/fernet')));
   });
 
-  it('el gerente SÍ da de alta gente de barra', async () => {
+  it('el administrador SÍ da de alta gente de barra', async () => {
     await assertSucceeds(setDoc(doc(gerente(), 'accesosBarra/uid-barra-nuevo'),
-      { usuario: 'barra-martes', activo: true, rol: 'barra' }));
+      { usuario: 'barra-martes', activo: true, rol: 'barman' }));
   });
 
-  it('el gerente SÍ puede nombrar otro gerente: es cuenta full', async () => {
+  it('el administrador SÍ puede nombrar otro administrador: es cuenta full', async () => {
     await assertSucceeds(setDoc(doc(gerente(), 'accesosBarra/uid-otro-jefe'),
-      { usuario: 'otro', activo: true, rol: 'gerente' }));
+      { usuario: 'otro', activo: true, rol: 'admin' }));
   });
 
   it('nadie puede escribir un rol inventado', async () => {
@@ -159,13 +209,13 @@ describe('tres niveles: dueño, gerente y barra', () => {
     await assertFails(deleteDoc(doc(gerente(), 'carta/fernet')));
   });
 
-  it('el gerente NO puede borrar un acceso', async () => {
+  it('el administrador NO puede borrar un acceso', async () => {
     await assertFails(deleteDoc(doc(gerente(), 'accesosBarra/uid-barra-nuevo')));
   });
 
   it('la barra NO puede dar de alta a nadie', async () => {
     await assertFails(setDoc(doc(turnoOk(), 'accesosBarra/uid-colado'),
-      { usuario: 'colado', activo: true, rol: 'barra' }));
+      { usuario: 'colado', activo: true, rol: 'barman' }));
   });
 
   it('el dueño SÍ borra', async () => {
@@ -449,7 +499,9 @@ describe('barra (colección privada)', () => {
     await assertSucceeds(setDoc(doc(barra(), 'barra/caja'), { abierta: true, totalNoche: 200000 }));
   });
 
-  it('un usuario con claim rol=barra también entra (sin estar en la lista de mails)', async () => {
+  it('un usuario con el claim de dueño entra sin estar en la lista de mails', async () => {
+    // Ojo: el claim del token es otra cosa que el rol de accesosBarra. Este
+    // marca al dueño y se llama 'barra' por historia.
     const porClaim = env.authenticatedContext('uid-staff-2', { rol: 'barra' }).firestore();
     await assertSucceeds(getDoc(doc(porClaim, 'barra/caja')));
   });

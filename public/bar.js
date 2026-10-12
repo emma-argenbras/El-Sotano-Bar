@@ -224,6 +224,13 @@ const EVENTOS = () => collection(db, 'barra', 'eventos', 'items');
 // Lo lee cualquiera sin loguearse: el QR de la mesa necesita saberlo antes
 // de que el cliente entre. Las reglas rechazan pedidos nuevos si está en no.
 const ESTADO_LOCAL = () => doc(db, 'publico', 'estado');
+// Quién trabaja esta noche. Las reglas leen este documento para decidir si un
+// barman entra: registrado no alcanza, hay que estar asignado al turno.
+const TURNO = () => doc(db, 'barra', 'turno');
+
+async function marcarTurno(eventoId, barmanes) {
+  await setDoc(TURNO(), { eventoId, barmanes, cambiadoEn: serverTimestamp() });
+}
 
 async function marcarTomandoPedidos(valor, evento) {
   await setDoc(ESTADO_LOCAL(), {
@@ -270,14 +277,64 @@ function desdeCuando() {
   return hoy;
 }
 
-async function abrirEvento() {
-  const sugerido = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
-  const nombre = (prompt('Nombre del evento', sugerido[0].toUpperCase() + sugerido.slice(1)) || '').trim();
-  if (!nombre) return;
+function abrirEvento() {
+  const hoy = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
+  $('#inpEvento').value = hoy[0].toUpperCase() + hoy.slice(1);
+  pintarElegirBarman();
+  $('#dlgEvento').showModal();
+  $('#inpEvento').focus();
+}
+
+function pintarElegirBarman(marcados = []) {
+  const barmanes = estado.accesos.filter((a) => a.rol !== 'admin' && a.activo);
+  $('#elegirBarman').innerHTML = barmanes.length
+    ? barmanes.map((b) => `<label><input type="checkbox" value="${esc(b.uid)}"
+        ${marcados.includes(b.uid) ? 'checked' : ''}> ${esc(b.usuario)}</label>`).join('')
+    : `<div class="vacio">Todavía no registraste ningún barman. Podés abrir el evento
+       igual y asignarlos después.</div>`;
+}
+
+const barmanMarcados = () =>
+  [...document.querySelectorAll('#elegirBarman input:checked')].map((i) => i.value);
+
+$('#btnCancelarEvento').onclick = () => $('#dlgEvento').close();
+$('#btnConfirmarEvento').onclick = async () => {
+  const nombre = $('#inpEvento').value.trim();
+  if (!nombre) { $('#inpEvento').focus(); return; }
+  const elegidos = barmanMarcados();
   try {
-    const ref = await addDoc(EVENTOS(), { nombre, abiertoEn: serverTimestamp(), cerradoEn: null, cierre: null });
+    const ref = await addDoc(EVENTOS(), {
+      nombre, abiertoEn: serverTimestamp(), cerradoEn: null, cierre: null, barmanes: elegidos,
+    });
+    await marcarTurno(ref.id, elegidos);
     await marcarTomandoPedidos(true, { id: ref.id, nombre });
+    $('#dlgEvento').close();
   } catch (e) { alert('No se pudo abrir: ' + (e.code || e.message)); }
+};
+
+// Cambiar quién está de turno sin cerrar el evento: alguien entra más tarde,
+// otro se va antes.
+async function editarTurno() {
+  pintarElegirBarman(estado.evento?.barmanes || []);
+  $('#inpEvento').value = estado.evento.nombre;
+  $('#inpEvento').disabled = true;
+  $('#btnConfirmarEvento').textContent = 'Guardar';
+  const dlg = $('#dlgEvento');
+  const antes = $('#btnConfirmarEvento').onclick;
+  $('#btnConfirmarEvento').onclick = async () => {
+    const elegidos = barmanMarcados();
+    try {
+      await updateDoc(doc(db, 'barra', 'eventos', 'items', estado.evento.id), { barmanes: elegidos });
+      await marcarTurno(estado.evento.id, elegidos);
+      dlg.close();
+    } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+  };
+  dlg.addEventListener('close', () => {
+    $('#inpEvento').disabled = false;
+    $('#btnConfirmarEvento').textContent = 'Abrir';
+    $('#btnConfirmarEvento').onclick = antes;
+  }, { once: true });
+  dlg.showModal();
 }
 
 // El cierre guarda los números calculados, no una referencia a los pedidos:
@@ -316,6 +373,7 @@ async function cerrarEvento() {
   try {
     await updateDoc(doc(db, 'barra', 'eventos', 'items', estado.evento.id),
       { cerradoEn: serverTimestamp(), cierre: r });
+    await marcarTurno(null, []);
     await marcarTomandoPedidos(false);
   } catch (e) { alert('No se pudo cerrar: ' + (e.code || e.message)); }
 }
@@ -325,7 +383,7 @@ function pintarEvento() {
   if (!estado.evento) {
     // La barra no puede abrir un evento: decirle qué pasa, no dejarla mirando
     // una tarjeta vacía con botones que no existen.
-    if (!estado.dueno && estado.rol !== 'gerente') {
+    if (!estado.dueno && estado.rol !== 'admin') {
       cont.innerHTML = `<div class="aviso"><span>🎪</span><div>
         <b>No hay ningún evento abierto.</b><br>
         ${estado.tomandoPedidos
@@ -375,6 +433,16 @@ function pintarEvento() {
         <div><b>${r.cancelados}</b><span>cancelados</span></div>
         <div class="plata"><b>${plata(r.facturado)}</b><span>caja</span></div>
       </div>
+      <div class="interruptor" style="margin-top:.9rem">
+        <div>
+          <b>De turno</b>
+          <span>${(estado.evento.barmanes || []).length
+            ? (estado.evento.barmanes || []).map((u) =>
+                esc(estado.accesos.find((a) => a.uid === u)?.usuario || u)).join(', ')
+            : 'Nadie asignado. Solo entran los administradores.'}</span>
+        </div>
+        <button class="btn solo-gerente-inline" id="btnTurno">Cambiar</button>
+      </div>
       ${r.sinCerrar ? `<div class="aviso mal" style="margin-top:.8rem"><span>⚠</span><div>
         Hay ${r.sinCerrar} pedidos sin entregar. <b>No suman a la caja</b> hasta que los marques.</div></div>` : ''}
       <div class="interruptor">
@@ -384,7 +452,7 @@ function pintarEvento() {
             ? 'El QR de la mesa abre la carta y deja pedir.'
             : 'El QR sigue andando, pero nadie puede mandar un pedido.'}</span>
         </div>
-        <button class="btn ${estado.tomandoPedidos ? 'peligro' : 'primario'}" id="btnTomando">
+        <button class="btn ${estado.tomandoPedidos ? 'peligro' : 'primario'} solo-gerente-inline" id="btnTomando">
           ${estado.tomandoPedidos ? 'Cortar' : 'Reabrir'}
         </button>
       </div>
@@ -395,6 +463,7 @@ function pintarEvento() {
               style="margin-top:1rem">Cerrar evento y hacer la caja</button>
     </div>`;
   if ($('#btnCerrarEvento')) $('#btnCerrarEvento').onclick = cerrarEvento;
+  if ($('#btnTurno')) $('#btnTurno').onclick = editarTurno;
   if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
     const prender = !estado.tomandoPedidos;
     if (!prender && !confirm('¿Cortar los pedidos?\n\nEl QR sigue andando, pero el cliente no va a poder mandar nada hasta que lo reabras.')) return;
@@ -451,8 +520,8 @@ function escucharAccesos() {
 function aplicarRol() {
   const b = document.body.classList;
   b.toggle('es-dueno', estado.dueno);
-  b.toggle('es-gerente', estado.dueno || estado.rol === 'gerente');
-  b.toggle('es-barra', !estado.dueno && estado.rol === 'barra');
+  b.toggle('es-gerente', estado.dueno || estado.rol === 'admin');
+  b.toggle('es-barra', !estado.dueno && estado.rol === 'barman');
 }
 
 function vigilarMiAcceso(uid) {
@@ -461,7 +530,7 @@ function vigilarMiAcceso(uid) {
   let loTuvo = false;
   let yendose = false;
   onSnapshot(doc(db, 'accesosBarra', uid), (d) => {
-    if (d.exists()) { estado.rol = d.data().rol || 'barra'; aplicarRol(); }
+    if (d.exists()) { estado.rol = d.data().rol || 'barman'; aplicarRol(); }
     if (d.exists() && d.data().activo === true) { loTuvo = true; return; }
     if (!d.exists() && !loTuvo) return;
     if (yendose) return;
@@ -471,44 +540,32 @@ function vigilarMiAcceso(uid) {
   }, () => {});
 }
 
-async function altaUsuarioBarra() {
-  const usuario = (prompt('Usuario para la barra (sin espacios)',
-    estado.evento ? 'barra-' + String(estado.evento.nombre).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : 'barra') || '').trim().toLowerCase();
+async function altaPersona(rol) {
+  const que = rol === 'admin' ? 'administrador' : 'barman';
+  const usuario = (prompt(`Usuario del ${que} (sin espacios ni acentos)`) || '').trim().toLowerCase();
   if (!usuario) return;
   if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(usuario)) {
-    alert('Entre 3 y 30 caracteres: letras, números, punto, guión o guión bajo. Sin espacios ni acentos.');
+    alert('Entre 3 y 30 caracteres: letras, números, punto, guión o guión bajo.');
     return;
   }
-  const clave = (prompt(`Contraseña para "${usuario}" (mínimo 6)\n\nAnotala: no se puede recuperar, se cambia creando otra.`) || '');
+  const clave = prompt(`Contraseña para "${usuario}" (mínimo 6)\n\n`
+    + 'Anotala: no se puede recuperar, se cambia creando otra cuenta.') || '';
   if (clave.length < 6) { if (clave) alert('Mínimo 6 caracteres.'); return; }
 
-  // El dueño puede nombrar un gerente; un gerente solo da de alta barra.
-  let rol = 'barra';
-  if (estado.dueno) {
-    rol = confirm(`¿"${usuario}" es gerente?\n\n`
-      + 'ACEPTAR = gerente: todo lo que podés vos, menos borrar. Cuenta permanente.\n'
-      + 'CANCELAR = barra: mueve pedidos y marca agotado. Ve precios y caja. Del turno.')
-      ? 'gerente' : 'barra';
-  }
-
   // Una app aparte para el alta: createUser deja logueada a la cuenta nueva,
-  // y si usáramos la principal el dueño se quedaría afuera de su propio panel.
+  // y si usáramos la principal te quedarías afuera de tu propio panel.
   const secundaria = initializeApp(CFG, 'alta-' + Date.now());
   const authSec = getAuth(secundaria);
   if (EMULADOR) connectAuthEmulator(authSec, 'http://127.0.0.1:9099', { disableWarnings: true });
   try {
     const cred = await createUserWithEmailAndPassword(authSec, aMail(usuario), clave);
     await setDoc(doc(db, 'accesosBarra', cred.user.uid), {
-      usuario,
-      rol,
-      activo: true,
-      // Un gerente es permanente. La barra es de esa noche: queda atada al
-      // evento para saber después a qué turno correspondía.
-      eventoId: rol === 'barra' ? (estado.evento?.id || null) : null,
-      evento: rol === 'barra' ? (estado.evento?.nombre || null) : null,
-      creadoEn: serverTimestamp(),
+      usuario, rol, activo: true, creadoEn: serverTimestamp(),
     });
-    alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${rol}\nContraseña: la que pusiste\n\n`
+    alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${que}\n\n`
+      + (rol === 'barman'
+        ? 'Para que entre, asignalo al evento desde "De turno".\n\n'
+        : '')
       + `Que entre en:\n${location.origin}/bar.html`);
   } catch (e) {
     alert(e.code === 'auth/email-already-in-use'
@@ -523,7 +580,8 @@ async function altaUsuarioBarra() {
 async function alternarAcceso(uid) {
   const a = estado.accesos.find((x) => x.uid === uid);
   if (!a) return;
-  if (a.activo && !confirm(`Apagar "${a.usuario}"?\n\nPierde el acceso al toque, aunque tenga la app abierta.`)) return;
+  if (a.activo && !confirm(`¿Dar de baja a "${a.usuario}"?\n\n`
+    + 'Pierde el acceso al toque, aunque tenga la app abierta.')) return;
   try { await updateDoc(doc(db, 'accesosBarra', uid), { activo: !a.activo }); }
   catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
@@ -531,24 +589,34 @@ async function alternarAcceso(uid) {
 function pintarAccesos() {
   const cont = $('#accesos');
   if (!cont) return;
-  const alta = `<button class="btn primario ancho-full" id="btnAltaBarra" style="margin-top:.8rem">Crear usuario de barra</button>`;
-  if (!estado.accesos.length) {
-    cont.innerHTML = `<p style="color:var(--suave);font-size:.9rem;margin:0">
-      Todavía no creaste ninguno. El de la barra entra con usuario y contraseña, sin mail.</p>${alta}`;
-  } else {
-    cont.innerHTML = estado.accesos.map((a) => `
-      <div class="item ${a.activo ? '' : 'agotado'}">
-        <div class="cuerpo">
-          <div class="nombre">${esc(a.usuario)}${a.activo ? '' : ' — <small>apagado</small>'}</div>
-          <div class="desc">${a.rol === 'gerente'
-            ? 'gerente · cuenta permanente'
-            : 'barra · ' + (a.evento ? esc(a.evento) : 'sin evento')}</div>
-        </div>
-        <button class="btn ${a.activo ? 'peligro' : 'primario'}" data-acceso="${esc(a.uid)}"
-                style="padding:.4rem .7rem;font-size:.82rem">${a.activo ? 'Apagar' : 'Prender'}</button>
-      </div>`).join('') + alta;
-  }
-  $('#btnAltaBarra').onclick = altaUsuarioBarra;
+  const admins = estado.accesos.filter((a) => a.rol === 'admin');
+  const barmanes = estado.accesos.filter((a) => a.rol !== 'admin');
+
+  const fila = (a) => `
+    <div class="item ${a.activo ? '' : 'agotado'}">
+      <div class="cuerpo">
+        <div class="nombre">${esc(a.usuario)}${a.activo ? '' : ' — <small>dado de baja</small>'}</div>
+        <div class="desc">${a.rol === 'admin'
+          ? 'administra todo menos borrar'
+          : (estado.evento?.barmanes || []).includes(a.uid) ? 'trabaja esta noche' : 'sin turno asignado'}</div>
+      </div>
+      <button class="btn ${a.activo ? 'peligro' : 'primario'}" data-acceso="${esc(a.uid)}"
+              style="padding:.4rem .7rem;font-size:.82rem">${a.activo ? 'Dar de baja' : 'Reactivar'}</button>
+    </div>`;
+
+  cont.innerHTML = `
+    <div class="grupo-personal">Administradores</div>
+    ${admins.length ? admins.map(fila).join('')
+      : '<p style="color:var(--suave);font-size:.88rem;margin:0">Solo vos.</p>'}
+    <button class="btn ancho-full" id="btnAltaAdmin" style="margin-top:.6rem">Crear administrador</button>
+
+    <div class="grupo-personal">Barman</div>
+    ${barmanes.length ? barmanes.map(fila).join('')
+      : '<p style="color:var(--suave);font-size:.88rem;margin:0">Todavía no registraste ninguno.</p>'}
+    <button class="btn primario ancho-full" id="btnAltaBarman" style="margin-top:.6rem">Registrar barman</button>`;
+
+  $('#btnAltaAdmin').onclick = () => altaPersona('admin');
+  $('#btnAltaBarman').onclick = () => altaPersona('barman');
   cont.querySelectorAll('[data-acceso]').forEach((b) =>
     b.onclick = () => alternarAcceso(b.dataset.acceso));
 }
