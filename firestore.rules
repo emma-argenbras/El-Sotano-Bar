@@ -1,0 +1,110 @@
+rules_version = '2';
+
+// El Sótano Bar — reglas de Firestore
+//
+// Modelo:
+//   carta/{itemId}    Lectura pública. Escritura (precios, stock, disponible) solo barra.
+//   pedidos/{id}      Cliente crea a su nombre y en estado "nuevo". Lee SOLO los suyos.
+//                     Cambios de estado: solo barra.
+//   barra/{doc=**}    Privado de la barra (caja, turnos, config). Cliente no lee ni escribe.
+//
+// Identidad de barra: claim personalizado rol=="barra" (preferido, cero lecturas),
+// con fallback a lista de mails. Los anónimos no tienen email en el token, así que
+// nunca entran por el fallback.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+
+    function logueado() {
+      return request.auth != null;
+    }
+
+    function mailDeBarra() {
+      // Agregar mails acá y redesplegar: npm run deploy:rules
+      return [
+        'emmanuelclubdelmate@gmail.com'
+      ];
+    }
+
+    function esBarra() {
+      return logueado() && (
+        request.auth.token.get('rol', '') == 'barra'
+        || request.auth.token.get('email', '') in mailDeBarra()
+      );
+    }
+
+    function esDueno(uid) {
+      return logueado() && request.auth.uid == uid;
+    }
+
+    // Estados válidos del ciclo de vida de un pedido
+    function estadosValidos() {
+      return ['nuevo', 'en_preparacion', 'listo', 'entregado', 'cancelado'];
+    }
+
+    // Forma mínima que debe tener un pedido creado por un cliente.
+    // Nota: los precios los manda el cliente. Las reglas no pueden sumar arrays,
+    // así que la integridad del total se verifica en el panel de barra (ver LEEME).
+    function pedidoValido(d) {
+      return d.keys().hasAll(['clienteId', 'estado', 'items', 'total', 'creadoEn'])
+        && d.keys().hasOnly(['clienteId', 'estado', 'items', 'total', 'mesa', 'nota', 'nombreCliente', 'creadoEn'])
+        && d.clienteId is string
+        && d.estado is string
+        && d.items is list
+        && d.items.size() > 0
+        && d.items.size() <= 40
+        && d.total is number
+        && d.total >= 0
+        && d.total <= 5000000
+        && d.creadoEn == request.time
+        && (!('mesa' in d.keys()) || (d.mesa is string && d.mesa.size() <= 20))
+        && (!('nota' in d.keys()) || (d.nota is string && d.nota.size() <= 300))
+        && (!('nombreCliente' in d.keys()) || (d.nombreCliente is string && d.nombreCliente.size() <= 60));
+    }
+
+    // ---------- carta ----------
+
+    match /carta/{itemId} {
+      // La carta se ve sin loguearse: el QR de la mesa abre y muestra.
+      allow read: if true;
+      // Precios, stock y disponibilidad: solo barra.
+      allow write: if esBarra();
+    }
+
+    // ---------- pedidos ----------
+
+    match /pedidos/{pedidoId} {
+      // El cliente ve solo los propios; la barra ve todos.
+      // En list, el cliente DEBE filtrar where('clienteId','==',uid) o la query falla entera.
+      allow get, list: if esBarra() || (logueado() && esDueno(resource.data.clienteId));
+
+      // Crear: a su propio nombre y siempre arrancando en "nuevo".
+      allow create: if logueado()
+        && esDueno(request.resource.data.clienteId)
+        && request.resource.data.estado == 'nuevo'
+        && pedidoValido(request.resource.data);
+
+      // Cambiar estado / anular: solo barra, y solo a un estado conocido.
+      allow update: if esBarra()
+        && request.resource.data.estado in estadosValidos()
+        && request.resource.data.clienteId == resource.data.clienteId
+        && request.resource.data.creadoEn == resource.data.creadoEn;
+
+      allow delete: if esBarra();
+    }
+
+    // ---------- barra (privado) ----------
+
+    match /barra/{documento=**} {
+      allow read, write: if esBarra();
+    }
+
+    // ---------- todo lo demás ----------
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

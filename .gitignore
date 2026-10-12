@@ -1,0 +1,13 @@
+node_modules/
+*.log
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.DS_Store
+# Credenciales: NUNCA al repo
+service-account*.json
+*-adminsdk-*.json
+.env
+.env.*
+qr/

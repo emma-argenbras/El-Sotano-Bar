@@ -1,0 +1,16 @@
+{
+  "name": "El Sótano Bar",
+  "short_name": "El Sótano",
+  "description": "Pedí desde la mesa, sin esperar al mozo.",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0b10",
+  "theme_color": "#0d0b10",
+  "lang": "es-AR",
+  "icons": [
+    { "src": "/iconos/icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/iconos/icono-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

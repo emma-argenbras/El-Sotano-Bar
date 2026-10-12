@@ -1,0 +1,27 @@
+{
+  "name": "el-sotano-bar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA de pedidos para El Sotano Bar (Firebase Hosting + Firestore + Auth)",
+  "type": "module",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-el-sotano \"node --test tests/*.test.mjs\"",
+    "emu": "firebase emulators:start --project el-sotano-bar",
+    "seed": "node scripts/seed-carta.mjs",
+    "deploy": "npm run build && firebase deploy",
+    "deploy:rules": "firebase deploy --only firestore:rules",
+    "deploy:hosting": "npm run build && firebase deploy --only hosting",
+    "crear:barra": "node scripts/crear-usuario-barra.mjs",
+    "qr": "node scripts/generar-qr.mjs",
+    "build": "node scripts/build.mjs",
+    "e2e": "firebase emulators:exec --only firestore,auth,hosting --project el-sotano-bar \"node e2e/flujo.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "esbuild": "^0.28.2",
+    "firebase": "^11.0.0",
+    "firebase-admin": "^14.5.0",
+    "playwright": "^1.64.0",
+    "qrcode": "^1.5.4"
+  }
+}

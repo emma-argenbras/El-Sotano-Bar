@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>El Sótano — Pedí desde la mesa</title>
+<meta name="description" content="Carta y pedidos de El Sótano Bar. Pedí desde la mesa, sin esperar al mozo.">
+<meta name="theme-color" content="#0d0b10">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/iconos/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="/iconos/icono.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+
+<header class="tope">
+  <div class="marca">El <span>Sótano</span></div>
+  <div class="relleno"></div>
+  <span class="chip" id="chipMesa" hidden></span>
+  <span class="chip" id="chipConexion" hidden></span>
+</header>
+
+<main class="envoltorio">
+
+  <div class="aviso mal oculto" id="avisoConfig">
+    <span>⚠</span>
+    <div>
+      <b>Falta configurar Firebase.</b><br>
+      Editá <code>public/config.js</code> con los datos reales del proyecto
+      (<code>firebase apps:sdkconfig web</code>) y volvé a desplegar.
+    </div>
+  </div>
+
+  <div class="aviso oculto" id="avisoOffline">
+    <span>📡</span>
+    <div><b>Sin conexión.</b> Ves la última carta guardada. Tu pedido se envía solo cuando vuelva la señal.</div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabCarta"   aria-selected="true"  aria-controls="vistaCarta">Carta</button>
+    <button role="tab" id="tabPedidos" aria-selected="false" aria-controls="vistaPedidos">Mis pedidos <span id="cuentaPedidos"></span></button>
+  </div>
+
+  <section id="vistaCarta" role="tabpanel" aria-labelledby="tabCarta">
+    <nav class="categorias" id="categorias" aria-label="Categorías"></nav>
+    <div id="carta"><div class="cargando">Cargando la carta…</div></div>
+  </section>
+
+  <section id="vistaPedidos" role="tabpanel" aria-labelledby="tabPedidos" hidden>
+    <div id="misPedidos"><div class="cargando">Buscando tus pedidos…</div></div>
+  </section>
+
+</main>
+
+<div class="carrito" id="carrito" aria-live="polite">
+  <div class="resumen">
+    <div class="total">
+      <span id="totalCarrito">$0</span>
+      <small id="detalleCarrito">0 items</small>
+    </div>
+    <button class="btn" id="btnVaciar">Vaciar</button>
+    <button class="btn primario" id="btnConfirmar">Pedir</button>
+  </div>
+</div>
+
+<dialog id="dlgConfirmar">
+  <h2>Confirmá tu pedido</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin-top:0">
+    Lo preparamos y te lo llevamos. Se paga en la barra.
+  </p>
+  <div id="resumenPedido" style="margin:.9rem 0;font-size:.92rem"></div>
+  <label class="campo">
+    <span>Mesa</span>
+    <select id="selMesa"></select>
+  </label>
+  <label class="campo">
+    <span>Tu nombre <small>(opcional, ayuda a encontrarte)</small></span>
+    <input id="inpNombre" maxlength="60" placeholder="Ej: Emma" autocomplete="name">
+  </label>
+  <label class="campo">
+    <span>Aclaración <small>(opcional)</small></span>
+    <textarea id="inpNota" maxlength="300" placeholder="Ej: sin hielo, uno sin TACC"></textarea>
+  </label>
+  <div class="aviso mal oculto" id="errorPedido"><span>⚠</span><div id="errorPedidoTexto"></div></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarDlg" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnEnviar" style="flex:1.4">Mandar pedido</button>
+  </div>
+</dialog>
+
+<script src="/config.js"></script>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

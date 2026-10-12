@@ -1,0 +1,62 @@
+// Service worker de El Sótano.
+// El local es un sótano: la señal se corta. El cascarón de la app tiene que
+// abrir igual, y Firestore ya resuelve sus datos con su propio cache.
+const VERSION = 'sotano-v1';
+const ESENCIALES = [
+  '/', '/index.html', '/bar.html', '/estilos.css', '/app.js', '/bar.js',
+  '/config.js', '/manifest.webmanifest', '/vendor/firebase.js',
+  '/iconos/icono.svg', '/iconos/icono-192.png', '/iconos/apple-touch-icon.png',
+];
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(VERSION)
+      .then((c) => c.addAll(ESENCIALES).catch(() => {}))
+      .then(() => self.skipWaiting()),
+  );
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys()
+      .then((ks) => Promise.all(ks.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener('fetch', (e) => {
+  const { request } = e;
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+
+  // Nunca tocar el tráfico de Firebase: Firestore y Auth manejan lo suyo.
+  if (/(firestore|googleapis|firebaseio|identitytoolkit|firebaseapp)\.com$/.test(url.hostname)) return;
+
+  if (url.origin !== location.origin) return;
+
+  // Navegación y config: red primero, cache como red de contención.
+  const esNavegacion = request.mode === 'navigate';
+  if (esNavegacion || url.pathname === '/config.js') {
+    e.respondWith(
+      fetch(request).then((r) => {
+        const copia = r.clone();
+        caches.open(VERSION).then((c) => c.put(request, copia)).catch(() => {});
+        return r;
+      }).catch(() => caches.match(request).then((hit) => hit || caches.match('/index.html'))),
+    );
+    return;
+  }
+
+  // Resto de estáticos: cache primero, refresco en segundo plano.
+  e.respondWith(
+    caches.match(request).then((hit) => {
+      const red = fetch(request).then((r) => {
+        const copia = r.clone();
+        caches.open(VERSION).then((c) => c.put(request, copia)).catch(() => {});
+        return r;
+      }).catch(() => hit);
+      return hit || red;
+    }),
+  );
+});

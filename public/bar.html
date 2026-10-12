@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Barra — El Sótano</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0d0b10">
+<link rel="icon" href="/iconos/icono.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/iconos/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+
+<!-- ───────── login ───────── -->
+<section class="login" id="vistaLogin">
+  <div class="caja">
+    <h1 style="font-size:1.3rem">Barra · El <span style="color:var(--oro)">Sótano</span></h1>
+    <p style="color:var(--suave);font-size:.9rem">Entrá con el mail del local.</p>
+
+    <div class="aviso mal oculto" id="avisoConfig">
+      <span>⚠</span><div><b>Falta configurar Firebase</b> en <code>public/config.js</code>.</div>
+    </div>
+
+    <form id="formLogin" style="margin-top:1rem">
+      <label class="campo">
+        <span>Mail</span>
+        <input type="email" id="inpMail" autocomplete="username" required inputmode="email">
+      </label>
+      <label class="campo">
+        <span>Contraseña</span>
+        <input type="password" id="inpPass" autocomplete="current-password" required>
+      </label>
+      <div class="aviso mal oculto" id="errorLogin"><span>⚠</span><div id="errorLoginTexto"></div></div>
+      <button class="btn primario ancho-full" id="btnEntrar" type="submit">Entrar</button>
+    </form>
+    <p style="margin-top:1rem;text-align:center">
+      <button class="btn" id="btnOlvide" style="font-size:.85rem;padding:.4rem .8rem">Olvidé la contraseña</button>
+    </p>
+  </div>
+</section>
+
+<!-- ───────── panel ───────── -->
+<div id="vistaPanel" hidden>
+  <header class="tope">
+    <div class="marca">Barra · El <span>Sótano</span></div>
+    <div class="relleno"></div>
+    <span class="chip" id="chipConexion" hidden></span>
+    <span class="chip" id="chipCaja">—</span>
+    <button class="btn" id="btnSonido" title="Aviso sonoro al entrar un pedido" style="padding:.35rem .7rem">🔔</button>
+    <button class="btn" id="btnSalir" style="padding:.35rem .7rem">Salir</button>
+  </header>
+
+  <main class="ancho">
+    <div class="aviso mal oculto" id="avisoPermiso">
+      <span>⛔</span>
+      <div>
+        <b>Entraste, pero este mail no está autorizado como barra.</b><br>
+        Agregalo en <code>firestore.rules</code> → <code>mailDeBarra()</code> y corré
+        <code>npm run deploy:rules</code>.
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabTablero" aria-selected="true">Pedidos</button>
+      <button role="tab" id="tabCartaBar" aria-selected="false">Carta y stock</button>
+    </div>
+
+    <section id="vistaTablero">
+      <div class="tablero" id="tablero"><div class="cargando">Cargando pedidos…</div></div>
+    </section>
+
+    <section id="vistaCartaBar" hidden>
+      <div id="cartaBar"><div class="cargando">Cargando carta…</div></div>
+    </section>
+  </main>
+</div>
+
+<script src="/config.js"></script>
+<script type="module" src="/bar.js"></script>
+</body>
+</html>

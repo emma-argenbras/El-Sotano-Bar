@@ -1,0 +1,270 @@
+/* El Sótano Bar — tema oscuro: el salón es un sótano, las pantallas no deben encandilar */
+:root {
+  --fondo: #0d0b10;
+  --panel: #17141c;
+  --panel-alto: #211d2a;
+  --borde: #322c3e;
+  --texto: #f1ecf5;
+  --suave: #a79fb4;
+  --oro: #e8b84b;
+  --oro-hover: #f3c963;
+  --verde: #46c08a;
+  --rojo: #e8655f;
+  --naranja: #e89b4b;
+  --azul: #6aa8e8;
+  --radio: 14px;
+  --sombra: 0 6px 24px rgba(0,0,0,.45);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  overscroll-behavior-y: contain;
+}
+
+h1, h2, h3 { margin: 0 0 .4rem; line-height: 1.2; font-weight: 650; letter-spacing: -.01em; }
+a { color: var(--oro); }
+
+/* ---------- barra superior ---------- */
+.tope {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; gap: .7rem;
+  padding: .85rem 1rem;
+  background: rgba(13,11,16,.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--borde);
+}
+.tope .marca { font-weight: 700; font-size: 1.1rem; letter-spacing: .01em; }
+.tope .marca span { color: var(--oro); }
+.tope .relleno { flex: 1; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .3rem .65rem; border-radius: 999px;
+  background: var(--panel-alto); border: 1px solid var(--borde);
+  font-size: .8rem; color: var(--suave); white-space: nowrap;
+}
+.chip.ok    { color: var(--verde);   border-color: rgba(70,192,138,.35); }
+.chip.alerta{ color: var(--naranja); border-color: rgba(232,155,75,.35); }
+.chip.mal   { color: var(--rojo);    border-color: rgba(232,101,95,.35); }
+
+/* ---------- layout ---------- */
+.envoltorio { max-width: 760px; margin: 0 auto; padding: 1rem 1rem 8.5rem; }
+.ancho      { max-width: 1500px; margin: 0 auto; padding: 1rem; }
+
+/* ---------- avisos ---------- */
+.aviso {
+  display: flex; gap: .6rem; align-items: flex-start;
+  padding: .8rem .9rem; margin-bottom: 1rem;
+  border-radius: var(--radio);
+  background: rgba(232,155,75,.1); border: 1px solid rgba(232,155,75,.35);
+  font-size: .9rem;
+}
+.aviso.mal { background: rgba(232,101,95,.1); border-color: rgba(232,101,95,.4); }
+.aviso.ok  { background: rgba(70,192,138,.1); border-color: rgba(70,192,138,.35); }
+
+/* ---------- categorías ---------- */
+.categorias {
+  display: flex; gap: .45rem; overflow-x: auto;
+  padding: .2rem 0 .7rem; margin: 0 -1rem; padding-inline: 1rem;
+  scrollbar-width: none;
+}
+.categorias::-webkit-scrollbar { display: none; }
+.categorias button {
+  flex: 0 0 auto;
+  padding: .45rem .9rem; border-radius: 999px;
+  background: var(--panel); color: var(--suave);
+  border: 1px solid var(--borde);
+  font: inherit; font-size: .88rem; cursor: pointer;
+  transition: .15s;
+}
+.categorias button[aria-selected="true"] {
+  background: var(--oro); color: #1a1410; border-color: var(--oro); font-weight: 600;
+}
+
+/* ---------- items de la carta ---------- */
+.grupo { margin: 1.4rem 0 .6rem; }
+.grupo h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .09em; color: var(--suave); }
+
+.item {
+  display: flex; align-items: center; gap: .9rem;
+  padding: .85rem; margin-bottom: .55rem;
+  background: var(--panel); border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+.item.agotado { opacity: .42; }
+.item .cuerpo { flex: 1; min-width: 0; }
+.item .nombre { font-weight: 600; }
+.item .desc   { font-size: .83rem; color: var(--suave); margin-top: .1rem; }
+.item .precio { font-variant-numeric: tabular-nums; font-weight: 650; color: var(--oro); white-space: nowrap; }
+
+/* control de cantidad */
+.cant { display: flex; align-items: center; gap: .1rem; }
+.cant button {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--panel-alto); color: var(--texto);
+  border: 1px solid var(--borde);
+  font-size: 1.15rem; line-height: 1; cursor: pointer;
+}
+.cant button:active { background: var(--oro); color: #1a1410; }
+.cant button:disabled { opacity: .3; cursor: not-allowed; }
+.cant .n { min-width: 26px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 650; }
+
+/* ---------- botones ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  padding: .72rem 1.1rem; border-radius: 12px;
+  background: var(--panel-alto); color: var(--texto);
+  border: 1px solid var(--borde);
+  font: inherit; font-weight: 600; cursor: pointer;
+  transition: .15s;
+}
+.btn:hover:not(:disabled) { background: var(--borde); }
+.btn.primario { background: var(--oro); color: #1a1410; border-color: var(--oro); }
+.btn.primario:hover:not(:disabled) { background: var(--oro-hover); }
+.btn.peligro  { color: var(--rojo); border-color: rgba(232,101,95,.4); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.ancho-full { width: 100%; }
+
+/* ---------- carrito fijo ---------- */
+.carrito {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  padding: .85rem 1rem calc(.85rem + var(--safe-b));
+  background: rgba(23,20,28,.97);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--borde);
+  transform: translateY(105%); transition: transform .22s ease;
+}
+.carrito.visible { transform: translateY(0); }
+.carrito .resumen { display: flex; align-items: center; gap: .8rem; max-width: 760px; margin: 0 auto .7rem; }
+.carrito .resumen .total { flex: 1; font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.carrito .resumen .total small { display: block; font-size: .75rem; font-weight: 500; color: var(--suave); }
+.carrito .acciones { display: flex; gap: .6rem; max-width: 760px; margin: 0 auto; }
+
+/* ---------- campos ---------- */
+label.campo { display: block; margin-bottom: .8rem; }
+label.campo > span { display: block; font-size: .82rem; color: var(--suave); margin-bottom: .3rem; }
+input, select, textarea {
+  width: 100%; padding: .7rem .8rem;
+  background: var(--panel); color: var(--texto);
+  border: 1px solid var(--borde); border-radius: 11px;
+  font: inherit;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--oro); outline-offset: -1px; }
+textarea { resize: vertical; min-height: 68px; }
+
+/* ---------- modal ---------- */
+dialog {
+  width: min(460px, calc(100vw - 2rem));
+  padding: 1.2rem; border: 1px solid var(--borde); border-radius: 18px;
+  background: var(--panel); color: var(--texto); box-shadow: var(--sombra);
+}
+dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
+
+/* ---------- estados de pedido ---------- */
+.estado {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .22rem .6rem; border-radius: 999px;
+  font-size: .76rem; font-weight: 650; text-transform: uppercase; letter-spacing: .05em;
+}
+.estado.nuevo          { background: rgba(106,168,232,.16); color: var(--azul); }
+.estado.en_preparacion { background: rgba(232,155,75,.16);  color: var(--naranja); }
+.estado.listo          { background: rgba(70,192,138,.16);  color: var(--verde); }
+.estado.entregado      { background: var(--panel-alto);     color: var(--suave); }
+.estado.cancelado      { background: rgba(232,101,95,.16);  color: var(--rojo); }
+
+/* ---------- mis pedidos ---------- */
+.pedido {
+  padding: .9rem; margin-bottom: .6rem;
+  background: var(--panel); border: 1px solid var(--borde); border-radius: var(--radio);
+}
+.pedido .fila { display: flex; align-items: center; gap: .6rem; margin-bottom: .45rem; }
+.pedido .fila .relleno { flex: 1; }
+.pedido ul { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .88rem; color: var(--suave); }
+
+/* ---------- panel de barra: tablero ---------- */
+.tablero {
+  display: grid; gap: .9rem;
+  grid-template-columns: repeat(auto-fit, minmax(265px, 1fr));
+  align-items: start;
+}
+.columna {
+  background: var(--panel); border: 1px solid var(--borde);
+  border-radius: var(--radio); padding: .75rem;
+  min-height: 130px;
+}
+.columna > header {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .76rem; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--suave); margin-bottom: .65rem;
+}
+.columna > header .cuenta {
+  margin-left: auto; padding: .1rem .5rem; border-radius: 999px;
+  background: var(--panel-alto); color: var(--texto);
+  font-size: .8rem; letter-spacing: 0; font-variant-numeric: tabular-nums;
+}
+
+.ticket {
+  background: var(--panel-alto); border: 1px solid var(--borde);
+  border-left: 3px solid var(--azul);
+  border-radius: 11px; padding: .7rem; margin-bottom: .55rem;
+}
+.ticket.demorado { border-left-color: var(--rojo); animation: latir 1.6s ease-in-out infinite; }
+@keyframes latir { 0%,100% { box-shadow: 0 0 0 0 rgba(232,101,95,0); } 50% { box-shadow: 0 0 0 3px rgba(232,101,95,.22); } }
+.ticket.en_preparacion { border-left-color: var(--naranja); }
+.ticket.listo          { border-left-color: var(--verde); }
+.ticket.entregado      { border-left-color: var(--borde); }
+.ticket.cancelado      { border-left-color: var(--rojo); opacity: .6; }
+
+.ticket .cabeza { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .4rem; }
+.ticket .mesa   { font-size: 1.05rem; font-weight: 750; }
+.ticket .reloj  { margin-left: auto; font-size: .8rem; color: var(--suave); font-variant-numeric: tabular-nums; }
+.ticket .reloj.tarde { color: var(--rojo); font-weight: 650; }
+.ticket ul { margin: 0; padding-left: 1.05rem; font-size: .89rem; }
+.ticket ul li { margin-bottom: .1rem; }
+.ticket ul li b { color: var(--oro); font-variant-numeric: tabular-nums; }
+.ticket .nota {
+  margin-top: .45rem; padding: .35rem .5rem; border-radius: 8px;
+  background: rgba(232,184,75,.1); border: 1px solid rgba(232,184,75,.3);
+  font-size: .83rem;
+}
+.ticket .pie { display: flex; align-items: center; gap: .45rem; margin-top: .6rem; }
+.ticket .pie .total { flex: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ticket .pie .btn { padding: .42rem .75rem; font-size: .84rem; }
+.ticket .sospecha {
+  margin-top: .4rem; font-size: .78rem; color: var(--rojo);
+  display: flex; gap: .3rem; align-items: center;
+}
+
+/* ---------- login barra ---------- */
+.login { max-width: 380px; margin: 14vh auto; padding: 1.5rem; }
+.login .caja { background: var(--panel); border: 1px solid var(--borde); border-radius: 18px; padding: 1.4rem; box-shadow: var(--sombra); }
+
+/* ---------- varios ---------- */
+.vacio { padding: 2.2rem 1rem; text-align: center; color: var(--suave); font-size: .92rem; }
+.cargando { padding: 2.2rem; text-align: center; color: var(--suave); }
+.oculto { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.tabs { display: flex; gap: .4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--borde); }
+.tabs button {
+  padding: .6rem .9rem; background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--suave); font: inherit; font-weight: 600; cursor: pointer;
+}
+.tabs button[aria-selected="true"] { color: var(--oro); border-bottom-color: var(--oro); }
+
+@media (max-width: 420px) {
+  .envoltorio { padding: .8rem .8rem 8.5rem; }
+  .item { padding: .7rem; gap: .6rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
