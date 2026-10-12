@@ -1,7 +1,7 @@
 // Service worker de El Sótano.
 // El local es un sótano: la señal se corta. El cascarón de la app tiene que
 // abrir igual, y Firestore ya resuelve sus datos con su propio cache.
-const VERSION = 'sotano-v1';
+const VERSION = 'sotano-54e243338836';
 const ESENCIALES = [
   '/', '/index.html', '/bar.html', '/estilos.css', '/app.js', '/bar.js',
   '/config.js', '/manifest.webmanifest', '/vendor/firebase.js',
@@ -11,7 +11,9 @@ const ESENCIALES = [
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(VERSION)
-      .then((c) => c.addAll(ESENCIALES).catch(() => {}))
+      // cache:'reload' saltea el cache HTTP del navegador (los .js van con
+      // max-age=3600). Sin esto el sw nuevo podría guardar los archivos viejos.
+      .then((c) => c.addAll(ESENCIALES.map((u) => new Request(u, { cache: 'reload' }))).catch(() => {}))
       .then(() => self.skipWaiting()),
   );
 });
