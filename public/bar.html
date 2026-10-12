@@ -48,10 +48,7 @@
     <div class="instalar oculto" data-instalar>
       <b>Instalá la barra en este aparato.</b>
       <span>Abre a pantalla completa, sin barra del navegador, y queda como una app más.</span>
-      <button class="btn primario ancho-full" data-instalar-btn>Instalar</button>
-      <small data-instalar-ios hidden>
-        En iPhone: tocá <b>Compartir</b> ⬆︎ abajo, y después <b>Agregar a inicio</b>.
-      </small>
+      <button class="btn primario ancho-full" data-instalar-btn>⬇ Instalar</button>
     </div>
   </div>
 </section>
@@ -65,7 +62,7 @@
     <span class="chip" id="chipConexion" hidden></span>
     <span class="chip" id="chipCaja">—</span>
     <button class="btn" id="btnSonido" title="Aviso sonoro al entrar un pedido" style="padding:.35rem .7rem">🔔</button>
-    <button class="btn" data-instalar-btn hidden style="padding:.35rem .7rem">Instalar</button>
+    <button class="btn" data-instalar-btn hidden style="padding:.35rem .7rem">⬇ Instalar</button>
     <button class="btn" id="btnSalir" style="padding:.35rem .7rem">Salir</button>
   </header>
 
@@ -93,6 +90,16 @@
     </section>
   </main>
 </div>
+
+<dialog id="dlgInstalar">
+  <h2 style="margin-top:0">Instalar la Barra</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin-top:0">
+    Queda como una app más: abre a pantalla completa, sin barra del navegador,
+    y entra directo al tablero.
+  </p>
+  <div id="pasosInstalar" style="font-size:.92rem;line-height:1.6"></div>
+  <button class="btn primario ancho-full" id="btnCerrarInstalar" style="margin-top:1.2rem">Listo</button>
+</dialog>
 
 <script src="/config.js"></script>
 <script type="module" src="/bar.js"></script>

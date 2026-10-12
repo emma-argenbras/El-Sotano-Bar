@@ -48,20 +48,54 @@ const estado = { pedidos: [], carta: [], sonido: localStorage.getItem('sotano:so
 let pedidoDeInstalar = null;
 const yaInstalada = () =>
   matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-const esIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
-  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+// Qué aparato es, para poder explicar el camino correcto. Chrome y Edge
+// disparan beforeinstallprompt; Safari y Firefox no, y hay que hacerlo a mano.
+function aparato() {
+  const ua = navigator.userAgent;
+  const tactil = navigator.maxTouchPoints > 1;
+  if (/iphone|ipod/i.test(ua) || (/ipad/i.test(ua)) || (navigator.platform === 'MacIntel' && tactil)) return 'ios';
+  if (/android/i.test(ua)) return 'android';
+  if (/firefox/i.test(ua)) return 'firefox';
+  if (/safari/i.test(ua) && !/chrome|chromium|edg/i.test(ua)) return 'safari';
+  return 'escritorio';
+}
+
+const PASOS = {
+  ios: `<ol style="padding-left:1.1rem;margin:0">
+      <li>Tocá <b>Compartir</b> <span style="font-size:1.1em">⬆︎</span>, abajo en el medio.</li>
+      <li>Bajá hasta <b>Agregar a inicio</b>.</li>
+      <li>Confirmá con <b>Agregar</b>.</li>
+    </ol>
+    <p style="color:var(--suave);font-size:.85rem;margin-bottom:0">
+      Tiene que ser desde <b>Safari</b>. Desde Chrome en iPhone no se puede: es una
+      restricción de Apple, no de la app.</p>`,
+  android: `<ol style="padding-left:1.1rem;margin:0">
+      <li>Tocá los <b>tres puntos</b> ⋮ arriba a la derecha.</li>
+      <li>Elegí <b>Instalar app</b> o <b>Agregar a pantalla principal</b>.</li>
+    </ol>`,
+  safari: `<ol style="padding-left:1.1rem;margin:0">
+      <li>En el menú <b>Archivo</b>, elegí <b>Agregar al Dock</b>.</li>
+    </ol>
+    <p style="color:var(--suave);font-size:.85rem;margin-bottom:0">
+      Necesitás macOS Sonoma o más nuevo. Si no lo ves, abrila en Chrome.</p>`,
+  firefox: `<p style="margin:0">Firefox en escritorio no instala aplicaciones web.
+      Abrí <b>${location.host}/bar.html</b> en Chrome, Edge o Safari y desde ahí sí se puede.</p>`,
+  escritorio: `<ol style="padding-left:1.1rem;margin:0">
+      <li>Mirá la <b>barra de direcciones</b>: a la derecha aparece un ícono de instalar
+          <span style="font-size:1.1em">⊕</span>.</li>
+      <li>Si no está, entrá a los <b>tres puntos</b> ⋮ → <b>Transmitir, guardar y compartir</b>
+          → <b>Instalar página como aplicación</b>.</li>
+    </ol>`,
+};
 
 function pintarInstalar() {
-  const caja = document.querySelector('.instalar');
-  const botones = document.querySelectorAll('[data-instalar-btn]');
   const listo = yaInstalada();
-  // En iOS no existe el prompt: solo se puede explicar el camino a mano.
-  const sePuede = !listo && (pedidoDeInstalar || esIOS());
-
-  if (caja) caja.classList.toggle('oculto', !sePuede);
-  const ayudaIOS = document.querySelector('[data-instalar-ios]');
-  if (ayudaIOS) ayudaIOS.hidden = !(sePuede && !pedidoDeInstalar);
-  botones.forEach((b) => { b.hidden = !(sePuede && pedidoDeInstalar); });
+  // El botón del encabezado va siempre que no esté instalada, haya prompt o no:
+  // si el navegador no lo ofrece, el diálogo explica cómo hacerlo a mano.
+  document.querySelectorAll('[data-instalar-btn]').forEach((b) => { b.hidden = listo; });
+  const caja = document.querySelector('.instalar');
+  if (caja) caja.classList.toggle('oculto', listo);
 }
 
 addEventListener('beforeinstallprompt', (e) => {
@@ -69,15 +103,29 @@ addEventListener('beforeinstallprompt', (e) => {
   pedidoDeInstalar = e;
   pintarInstalar();
 });
-addEventListener('appinstalled', () => { pedidoDeInstalar = null; pintarInstalar(); });
-
-document.querySelectorAll('[data-instalar-btn]').forEach((b) => b.onclick = async () => {
-  if (!pedidoDeInstalar) return;
-  pedidoDeInstalar.prompt();
-  await pedidoDeInstalar.userChoice;
+addEventListener('appinstalled', () => {
   pedidoDeInstalar = null;
+  $('#dlgInstalar').close();
   pintarInstalar();
 });
+
+async function lanzarInstalacion() {
+  if (pedidoDeInstalar) {
+    // El prompt del navegador se gasta de un solo uso, aunque diga que no.
+    const prompt = pedidoDeInstalar;
+    pedidoDeInstalar = null;
+    prompt.prompt();
+    await prompt.userChoice;
+    pintarInstalar();
+    return;
+  }
+  // Sin prompt: Safari, Firefox, o Chrome que ya lo gastó. Mostramos el camino.
+  $('#pasosInstalar').innerHTML = PASOS[aparato()];
+  $('#dlgInstalar').showModal();
+}
+
+document.querySelectorAll('[data-instalar-btn]').forEach((b) => b.onclick = lanzarInstalacion);
+$('#btnCerrarInstalar').onclick = () => $('#dlgInstalar').close();
 pintarInstalar();
 
 // ---------- conexión ----------

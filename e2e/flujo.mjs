@@ -171,6 +171,21 @@ await chequear(`entra al panel con ${MAIL_BARRA}`, async () => {
   await barra.click('#btnEntrar');
   await barra.waitForSelector('#vistaPanel:not([hidden])', { timeout: 15000 });
 });
+await chequear('adentro del panel se puede instalar, sin depender del navegador', async () => {
+  const boton = barra.locator('header.tope [data-instalar-btn]');
+  if (!(await boton.isVisible())) throw new Error('no hay botón de instalar estando logueado');
+
+  // Chromium headless no dispara beforeinstallprompt: cae al instructivo,
+  // que es justo el caso de Safari y iPhone.
+  await boton.click();
+  await barra.waitForSelector('#dlgInstalar[open]', { timeout: 5000 });
+  const pasos = await barra.textContent('#pasosInstalar');
+  if (!pasos.trim()) throw new Error('el instructivo quedó vacío');
+
+  await barra.click('#btnCerrarInstalar');
+  if (await barra.locator('#dlgInstalar').evaluate((d) => d.open)) throw new Error('no cerró');
+  if (await barra.locator('#vistaPanel').isHidden()) throw new Error('se perdió el panel');
+});
 await chequear('el pedido del cliente aparece en "Entraron"', async () => {
   await barra.waitForSelector('.ticket', { timeout: 15000 });
   const t = await barra.textContent('#tablero');
