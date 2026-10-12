@@ -6,11 +6,11 @@ import {
   getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator,
   initializeFirestore, persistentLocalCache, persistentSingleTabManager,
   connectFirestoreEmulator,
-  collection, doc, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
+  collection, doc, getDoc, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
 } from '/vendor/firebase.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
-const BAR = window.CONFIG_BAR || { moneda: '$', mesas: [], alertaDemoraMin: 8 };
+const BAR = window.CONFIG_BAR || { moneda: '$', alertaDemoraMin: 8 };
 const $ = (s) => document.querySelector(s);
 
 if (!CFG.apiKey || String(CFG.apiKey).startsWith('REEMPLAZAR')) {
@@ -48,16 +48,9 @@ const estado = {
   pedidos: [],
 };
 
-// Mesa desde el QR: /mesa/7 o ?mesa=7, y la recordamos por sesión.
-function mesaInicial() {
-  const porRuta = location.pathname.match(/^\/mesa\/([^/]+)/);
-  const porQuery = new URLSearchParams(location.search).get('mesa');
-  const guardada = sessionStorage.getItem('sotano:mesa');
-  const m = decodeURIComponent(porRuta?.[1] || porQuery || guardada || '');
-  if (m) sessionStorage.setItem('sotano:mesa', m);
-  return m;
-}
-let mesa = mesaInicial();
+// Quién pide. No hay mesas: cada pedido es de una persona, y se retira en la
+// barra. Si llegó con su pase, el nombre sale de ahí; si no, lo escribe.
+let quienSoy = localStorage.getItem('sotano:nombre') || '';
 
 // ---------- conexión ----------
 // Igual que en el panel: lo decide Firestore, no navigator.onLine.
@@ -83,42 +76,45 @@ const invitadoId = (() => {
   return porUrl || localStorage.getItem('sotano:invitado') || '';
 })();
 
-// ---------- pasar la carta a otro ----------
-// El que ya está adentro muestra el QR en su pantalla, el otro lo escanea con
-// la cámara y entra a la misma mesa. Es un diálogo: se cierra y el carrito,
-// la categoría y todo lo demás siguen igual.
-const archivoQr = (m) => `/qr/mesa-${String(m).toLowerCase().replace(/\s+/g, '-')}.png`;
-const linkDeMesa = (m) => (m ? `${location.origin}/mesa/${encodeURIComponent(m)}` : location.origin);
+// Con pase, el nombre sale de ahí y no se lo preguntamos de nuevo.
+if (invitadoId) {
+  getDoc(doc(db, 'invitados', invitadoId)).then((d) => {
+    const n = d.exists() ? d.data().nombre : '';
+    if (!n) return;
+    quienSoy = n;
+    localStorage.setItem('sotano:nombre', n);
+    pintarChipMesa();
+  }).catch(() => {});
+}
 
+// ---------- pasar la carta a otro ----------
+// Mostrar el QR en pantalla para que alguien que recién llega lo escanee y
+// entre a la carta. Es un diálogo: se cierra y el carrito sigue intacto.
 function pintarChipMesa() {
   const c = $('#chipMesa');
   c.hidden = false;
-  c.textContent = mesa ? `Mesa ${mesa} · QR` : 'Ver QR';
+  c.textContent = quienSoy ? `${quienSoy} · QR` : 'Ver QR';
   c.onclick = abrirQrMesa;
 }
 
 function abrirQrMesa() {
-  const url = linkDeMesa(mesa);
-  $('#dlgMesaAyuda').textContent = mesa
-    ? `Que la escaneen con la cámara: les abre la carta en la mesa ${mesa}, sin tipear nada.`
-    : 'Que la escaneen con la cámara: les abre la carta.';
-  $('#dlgMesaCual').textContent = mesa ? (/^\d+$/.test(mesa) ? 'MESA ' + mesa : String(mesa).toUpperCase()) : '';
-  $('#dlgMesaLink').textContent = url;
+  $('#dlgMesaAyuda').textContent =
+    'Que la escaneen con la cámara: les abre la carta para pedir desde su celular.';
+  $('#dlgMesaCual').textContent = '';
+  $('#dlgMesaLink').textContent = location.origin;
   const img = $('#imgMesaQr');
-  img.alt = mesa ? 'QR de la mesa ' + mesa : 'QR de la carta';
-  // Si todavía no se generó ese PNG, escondemos el recuadro pero dejamos el link.
+  img.alt = 'QR de la carta';
   img.onerror = () => { $('#dlgMesaQr').hidden = true; };
   img.onload = () => { $('#dlgMesaQr').hidden = false; };
-  img.src = mesa ? archivoQr(mesa) : '/qr/general.png';
+  img.src = '/qr/general.png';
   $('#dlgMesa').showModal();
 }
 
 $('#btnCerrarMesa').onclick = () => $('#dlgMesa').close();
 $('#btnCompartirMesa').onclick = async () => {
-  const url = linkDeMesa(mesa);
-  const texto = mesa ? `Pedí desde la mesa ${mesa} de El Sótano` : 'Pedí desde tu celular en El Sótano';
+  const url = location.origin;
   if (navigator.share) {
-    try { await navigator.share({ title: 'El Sótano', text: texto, url }); return; }
+    try { await navigator.share({ title: 'El Sótano', text: 'Pedí desde tu celular en El Sótano', url }); return; }
     catch (e) { if (e.name === 'AbortError') return; }
   }
   const b = $('#btnCompartirMesa');
@@ -275,7 +271,7 @@ function pintarCarrito() {
   $('#carrito').classList.toggle('visible', unidades > 0 && estado.tomandoPedidos);
   $('#totalCarrito').textContent = plata(totalCarrito());
   $('#detalleCarrito').textContent =
-    `${unidades} ${unidades === 1 ? 'item' : 'items'}` + (mesa ? ` · mesa ${mesa}` : '');
+    `${unidades} ${unidades === 1 ? 'item' : 'items'}` + (quienSoy ? ` · ${quienSoy}` : '');
 }
 
 $('#btnVaciar').onclick = () => { estado.carrito.clear(); pintarCarta(); pintarCarrito(); };
@@ -285,10 +281,7 @@ $('#btnConfirmar').onclick = () => {
     alert('Por ahora no se están tomando pedidos. Acercate a la barra.');
     return;
   }
-  const sel = $('#selMesa');
-  const opciones = (BAR.mesas || []).length ? BAR.mesas : ['1','2','3','4','5','Barra'];
-  sel.innerHTML = opciones.map((m) =>
-    `<option value="${esc(m)}" ${String(m) === String(mesa) ? 'selected' : ''}>${esc(m)}</option>`).join('');
+  $('#inpNombre').value = $('#inpNombre').value || quienSoy;
   $('#resumenPedido').innerHTML = lineas().map((l) =>
     `<div style="display:flex;gap:.5rem"><span style="flex:1">${l.cantidad}× ${esc(l.nombre)}</span>
      <b>${plata(l.precio * l.cantidad)}</b></div>`).join('')
@@ -311,10 +304,17 @@ $('#btnEnviar').onclick = async () => {
   try {
     const nombre = $('#inpNombre').value.trim();
     const nota = $('#inpNota').value.trim();
-    mesa = $('#selMesa').value;
-    sessionStorage.setItem('sotano:mesa', mesa);
+    // Sin nombre no hay a quién llamar: no hay mesa donde dejarlo.
+    if (nombre.length < 2) {
+      btn.disabled = false; btn.textContent = 'Mandar pedido';
+      $('#errorPedidoTexto').textContent = 'Poné tu nombre: te llamamos por ahí cuando esté listo.';
+      $('#errorPedido').classList.remove('oculto');
+      $('#inpNombre').focus();
+      return;
+    }
+    quienSoy = nombre;
+    localStorage.setItem('sotano:nombre', nombre);
     pintarChipMesa();
-    if (nombre) localStorage.setItem('sotano:nombre', nombre);
     pedirPermisoAviso();
 
     // Los campos deben coincidir exactamente con pedidoValido() en firestore.rules.
@@ -323,7 +323,6 @@ $('#btnEnviar').onclick = async () => {
       estado: 'nuevo',
       items,
       total: totalCarrito(),
-      mesa: String(mesa),
       creadoEn: serverTimestamp(),
     };
     if (nombre) pedido.nombreCliente = nombre;
@@ -376,7 +375,7 @@ function escucharMisPedidos() {
 
 const ETIQUETA = {
   nuevo: 'Tomado', en_preparacion: 'Preparando',
-  listo: 'Listo, va para tu mesa', entregado: 'Entregado', cancelado: 'Cancelado',
+  listo: 'Listo, retiralo en la barra', entregado: 'Entregado', cancelado: 'Cancelado',
 };
 
 // ---------- aviso de "tu pedido está listo" ----------
@@ -386,12 +385,11 @@ const ETIQUETA = {
 function avisarListo(pedidos) {
   estado.hayListo = true;
   const que = pedidos.flatMap((p) => (p.items || []).map((i) => `${i.cantidad}× ${i.nombre}`)).join(', ');
-  const mesa = pedidos[0]?.mesa;
 
   if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 220]);
   sonar();
 
-  const texto = `${que}${mesa ? ` · mesa ${mesa}` : ''}`;
+  const texto = que;
   $('#textoListo').textContent = texto;
   $('#avisoListo').classList.remove('oculto');
 
@@ -443,7 +441,7 @@ function pintarMisPedidos() {
       <div class="fila">
         <span class="estado ${p.estado}">${ETIQUETA[p.estado] || p.estado}</span>
         <span class="relleno"></span>
-        <small style="color:var(--suave)">${p.mesa ? 'Mesa ' + esc(p.mesa) + ' · ' : ''}${hora(p.creadoEn)}</small>
+        <small style="color:var(--suave)">${hora(p.creadoEn)}</small>
       </div>
       <ul>${(p.items || []).map((i) => `<li>${i.cantidad}× ${esc(i.nombre)}</li>`).join('')}</ul>
       <div class="fila" style="margin-top:.5rem">

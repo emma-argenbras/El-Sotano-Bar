@@ -51,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], invitados: [], registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], editandoEvento: null, accesos: [], invitados: [], registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -244,7 +244,14 @@ async function marcarTomandoPedidos(valor, evento) {
 
 
 function escucharEvento() {
-  onSnapshot(query(EVENTOS(), where('cerradoEn', '==', null), limit(1)), (snap) => {
+  // La agenda: lo que viene, por fecha. El registro de invitados puede estar
+  // abierto para una noche agendada sin que la noche haya empezado.
+  onSnapshot(query(EVENTOS(), where('estado', '==', 'agendado'), orderBy('fecha', 'asc')), (snap) => {
+    estado.agenda = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    pintarEvento();
+  }, fallo('#evento'));
+
+  onSnapshot(query(EVENTOS(), where('estado', '==', 'abierto'), limit(1)), (snap) => {
     estado.evento = snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
     // Siempre: escucharPedidos() no hace nada si el "desde" no cambió. Hace
     // falta llamarlo igual porque abiertoEn es un serverTimestamp y llega null
@@ -264,8 +271,8 @@ function escucharEvento() {
     pintarEvento();
   }, () => {});
 
-  onSnapshot(query(EVENTOS(), orderBy('abiertoEn', 'desc'), limit(20)), (snap) => {
-    estado.eventos = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.cerradoEn);
+  onSnapshot(query(EVENTOS(), where('estado', '==', 'cerrado'), orderBy('fecha', 'desc'), limit(30)), (snap) => {
+    estado.eventos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     pintarEventosPasados();
   }, fallo('#eventosPasados'));
 }
@@ -283,11 +290,16 @@ function desdeCuando() {
   return hoy;
 }
 
-function abrirEvento() {
-  const hoy = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
-  $('#inpEvento').value = hoy[0].toUpperCase() + hoy.slice(1);
-  $('#inpCapacidad').value = '';
-  pintarElegirBarman();
+function abrirEvento(editando = null) {
+  estado.editandoEvento = editando;
+  const d = editando ? editando.fecha?.toDate?.() : new Date();
+  const dia = (d || new Date()).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
+  $('#inpEvento').value = editando?.nombre || (dia[0].toUpperCase() + dia.slice(1));
+  $('#inpFecha').value = (d || new Date()).toISOString().slice(0, 10);
+  $('#inpCapacidad').value = editando?.capacidad || '';
+  $('#tituloEvento').textContent = editando ? 'Editar la noche' : 'Agendar una noche';
+  $('#btnConfirmarEvento').textContent = editando ? 'Guardar' : 'Agendar';
+  pintarElegirBarman(editando?.barmanes || []);
   $('#dlgEvento').showModal();
   $('#inpEvento').focus();
 }
@@ -309,22 +321,56 @@ $('#btnCancelarEvento').onclick = () => $('#dlgEvento').close();
 $('#btnConfirmarEvento').onclick = async () => {
   const nombre = $('#inpEvento').value.trim();
   if (!nombre) { $('#inpEvento').focus(); return; }
+  const fecha = new Date($('#inpFecha').value + 'T12:00:00');
+  if (isNaN(fecha)) { $('#inpFecha').focus(); return; }
+  const capacidad = Math.max(0, Math.floor(Number($('#inpCapacidad').value) || 0));
   const elegidos = barmanMarcados();
+  const editando = estado.editandoEvento;
   try {
-    const capacidad = Math.max(0, Math.floor(Number($('#inpCapacidad').value) || 0));
-    const ref = await addDoc(EVENTOS(), {
-      nombre, abiertoEn: serverTimestamp(), cerradoEn: null, cierre: null,
-      barmanes: elegidos, capacidad,
-    });
-    await marcarTurno(ref.id, elegidos);
-    // El registro de invitados abre solo si pusiste un cupo.
-    await setDoc(doc(db, 'publico', 'registro'), {
-      eventoId: ref.id, nombre, capacidad, registrados: 0, abierto: capacidad > 0,
-    });
-    await marcarTomandoPedidos(true, { id: ref.id, nombre });
+    if (editando) {
+      await updateDoc(doc(db, 'barra', 'eventos', 'items', editando.id),
+        { nombre, fecha: Timestamp.fromDate(fecha), capacidad, barmanes: elegidos });
+      // Si el registro estaba apuntando a esta noche, se actualiza con ella.
+      if (estado.registro?.eventoId === editando.id) {
+        await updateDoc(doc(db, 'publico', 'registro'),
+          { nombre, capacidad, abierto: capacidad > 0 });
+      }
+    } else {
+      const ref = await addDoc(EVENTOS(), {
+        nombre, fecha: Timestamp.fromDate(fecha), estado: 'agendado',
+        abiertoEn: null, cerradoEn: null, cierre: null, barmanes: elegidos, capacidad,
+      });
+      // El registro se abre al agendar: la gracia es que se anoten antes.
+      if (capacidad > 0) {
+        await setDoc(doc(db, 'publico', 'registro'),
+          { eventoId: ref.id, nombre, capacidad, registrados: 0, abierto: true });
+      }
+    }
     $('#dlgEvento').close();
-  } catch (e) { alert('No se pudo abrir: ' + (e.code || e.message)); }
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 };
+
+// Arrancar la noche: recién acá entran pedidos.
+async function empezarNoche(ev) {
+  if (!confirm(`¿Arrancar "${ev.nombre}"?\n\nDesde ahora entran pedidos y la caja cuenta.`)) return;
+  try {
+    await updateDoc(doc(db, 'barra', 'eventos', 'items', ev.id),
+      { estado: 'abierto', abiertoEn: serverTimestamp() });
+    await marcarTurno(ev.id, ev.barmanes || []);
+    await marcarTomandoPedidos(true, ev);
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+async function borrarAgendado(ev) {
+  if (!confirm(`¿Sacar "${ev.nombre}" de la agenda?`)) return;
+  try {
+    await updateDoc(doc(db, 'barra', 'eventos', 'items', ev.id), { estado: 'cancelado' });
+    if (estado.registro?.eventoId === ev.id) {
+      await setDoc(doc(db, 'publico', 'registro'),
+        { eventoId: null, nombre: null, capacidad: 0, registrados: 0, abierto: false });
+    }
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
 
 // Cambiar quién está de turno sin cerrar el evento: alguien entra más tarde,
 // otro se va antes.
@@ -386,7 +432,7 @@ async function cerrarEvento() {
     + `${r.entregados} entregados · ${plata(r.facturado)}${aviso}\n\nNo se puede reabrir.`)) return;
   try {
     await updateDoc(doc(db, 'barra', 'eventos', 'items', estado.evento.id),
-      { cerradoEn: serverTimestamp(), cierre: r });
+      { estado: 'cerrado', cerradoEn: serverTimestamp(), cierre: r });
     await marcarTurno(null, []);
     // Cerrada la noche no se registra nadie más.
     await setDoc(doc(db, 'publico', 'registro'),
@@ -398,42 +444,63 @@ async function cerrarEvento() {
 function pintarEvento() {
   const cont = $('#evento');
   if (!estado.evento) {
-    // La barra no puede abrir un evento: decirle qué pasa, no dejarla mirando
-    // una tarjeta vacía con botones que no existen.
     if (!estado.dueno && estado.rol !== 'admin') {
       cont.innerHTML = `<div class="aviso"><span>🎪</span><div>
-        <b>No hay ningún evento abierto.</b><br>
+        <b>No hay ninguna noche abierta.</b><br>
         ${estado.tomandoPedidos
           ? 'Igual se están tomando pedidos: lo que entre lo vas a ver en Pedidos.'
           : 'Y no se están tomando pedidos. Avisale a quien maneja la caja.'}
         </div></div>`;
       return;
     }
-    cont.innerHTML = `<div class="aviso"><span>🎪</span><div>
-      <b>No hay ningún evento abierto.</b><br>
-      Sin evento, el tablero muestra lo del día y se vacía a medianoche.
-      Abriendo uno, la noche sigue entera hasta que vos la cierres.
-      </div></div>
-      <div class="interruptor" style="margin-top:.9rem">
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    cont.innerHTML = `
+      <div class="interruptor">
         <div>
           <b>${estado.tomandoPedidos ? 'Tomando pedidos' : 'No se toman pedidos'}</b>
           <span>${estado.tomandoPedidos
-            ? 'Sin evento abierto, pero el QR deja pedir.'
-            : 'El QR sigue andando y nadie puede mandar un pedido.'}</span>
+            ? 'Sin noche abierta, pero el QR deja pedir.'
+            : 'El QR anda y nadie puede mandar un pedido.'}</span>
         </div>
         <button class="btn ${estado.tomandoPedidos ? 'peligro' : 'primario'} solo-gerente-inline" id="btnTomando">
           ${estado.tomandoPedidos ? 'Cortar' : 'Reabrir'}
         </button>
       </div>
+
+      <div class="grupo-personal">Agenda</div>
+      ${estado.agenda.length ? estado.agenda.map((e) => {
+        const f = e.fecha?.toDate?.();
+        const esHoy = f && f >= hoy && f < new Date(hoy.getTime() + 86400000);
+        const pasada = f && f < hoy;
+        return `<div class="item" style="flex-wrap:wrap">
+          <div class="cuerpo">
+            <div class="nombre">${esc(e.nombre)}${esHoy ? ' — <small>es hoy</small>' : ''}</div>
+            <div class="desc">${f ? f.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }) : 'sin fecha'}${
+              e.capacidad ? ` · cupo ${e.capacidad}` : ' · sin cupo'}${
+              pasada ? ' · ya pasó' : ''}</div>
+          </div>
+          <button class="btn" data-editar="${esc(e.id)}" style="padding:.35rem .6rem;font-size:.8rem">Editar</button>
+          <button class="btn peligro" data-quitar="${esc(e.id)}" style="padding:.35rem .6rem;font-size:.8rem">✕</button>
+          <button class="btn primario" data-empezar="${esc(e.id)}" style="padding:.35rem .7rem;font-size:.82rem">Arrancar</button>
+        </div>`;
+      }).join('')
+        : '<p style="color:var(--suave);font-size:.9rem;margin:0">No hay ninguna noche agendada.</p>'}
       <button class="btn primario ancho-full solo-gerente-inline" id="btnAbrirEvento"
-              style="margin-top:.9rem">Abrir evento</button>`;
-    if ($('#btnAbrirEvento')) $('#btnAbrirEvento').onclick = abrirEvento;
+              style="margin-top:.7rem">Agendar una noche</button>`;
+
+    if ($('#btnAbrirEvento')) $('#btnAbrirEvento').onclick = () => abrirEvento();
     if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
       const prender = !estado.tomandoPedidos;
       if (!prender && !confirm('¿Cortar los pedidos?')) return;
       try { await marcarTomandoPedidos(prender, null); }
       catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
     };
+    cont.querySelectorAll('[data-empezar]').forEach((b) => b.onclick = () =>
+      empezarNoche(estado.agenda.find((e) => e.id === b.dataset.empezar)));
+    cont.querySelectorAll('[data-editar]').forEach((b) => b.onclick = () =>
+      abrirEvento(estado.agenda.find((e) => e.id === b.dataset.editar)));
+    cont.querySelectorAll('[data-quitar]').forEach((b) => b.onclick = () =>
+      borrarAgendado(estado.agenda.find((e) => e.id === b.dataset.quitar)));
     return;
   }
   const desde = estado.evento.abiertoEn?.toDate?.();
@@ -978,6 +1045,14 @@ function pintarTablero() {
   });
 }
 
+// Quién pidió. El nombre del invitado manda sobre lo que haya escrito a mano:
+// es el que la puerta verificó.
+function quienPidio(p) {
+  return estado.invitados.find((i) => i.id === p.invitadoId)?.nombre
+    || p.nombreCliente
+    || (p.mesa ? 'Mesa ' + p.mesa : 'Sin nombre');
+}
+
 function ticket(p, col) {
   const ms = p.creadoEn?.toDate ? Date.now() - p.creadoEn.toDate().getTime() : 0;
   const min = Math.floor(ms / 60000);
@@ -1003,10 +1078,9 @@ function ticket(p, col) {
   return `
   <div class="ticket ${col.clave} ${tarde ? 'demorado' : ''}">
     <div class="cabeza">
-      <span class="mesa">${p.mesa ? 'Mesa ' + esc(p.mesa) : 'Sin mesa'}</span>
-      ${p.nombreCliente || p.invitadoId
-        ? `<small style="color:var(--suave)">${esc(p.nombreCliente
-            || estado.invitados.find((i) => i.id === p.invitadoId)?.nombre || 'invitado')}</small>` : ''}
+      <span class="mesa">${esc(quienPidio(p))}</span>
+      ${p.invitadoId ? '<small style="color:var(--oro)">invitado</small>' : ''}
+      ${p.mesa ? `<small style="color:var(--suave)">mesa ${esc(p.mesa)}</small>` : ''}
       <span class="reloj ${tarde ? 'tarde' : ''}">${min < 1 ? 'recién' : min + ' min'}</span>
     </div>
     <ul>${(p.items || []).map((i) =>

@@ -52,14 +52,14 @@ const cliente = await ctxCliente.newPage();
 cliente.on('pageerror', (e) => errores.push('cliente: ' + e.message));
 cliente.on('console', (m) => { if (m.type() === 'error') errores.push('cliente/console: ' + m.text()); });
 
-await cliente.goto(`${BASE}/mesa/7`, { waitUntil: 'domcontentloaded' });
+await cliente.goto(BASE, { waitUntil: 'domcontentloaded' });
 
 await chequear('la carta carga', async () => {
   await cliente.waitForSelector('text=Fernet con coca', { timeout: 15000 });
 });
-await chequear('el QR dejó la mesa 7 puesta', async () => {
+await chequear('sin mesas: arranca sin nombre puesto', async () => {
   const t = await cliente.textContent('#chipMesa');
-  if (!t.includes('7')) throw new Error('chip dice: ' + t);
+  if (!t.includes('Ver QR')) throw new Error('chip dice: ' + t);
 });
 await chequear('el item sin stock se muestra agotado y sin botones', async () => {
   const fila = cliente.locator('.item', { hasText: 'Rabas' });
@@ -79,7 +79,7 @@ await chequear('muestra el QR de la mesa y vuelve sin perder el carrito', async 
   await cliente.waitForSelector('#dlgMesa[open]', { timeout: 5000 });
 
   const src = await cliente.getAttribute('#imgMesaQr', 'src');
-  if (src !== '/qr/mesa-7.png') throw new Error('QR equivocado: ' + src);
+  if (src !== '/qr/general.png') throw new Error('QR equivocado: ' + src);
   // El PNG tiene que existir de verdad, no quedar como imagen rota.
   const cargo = await cliente.evaluate(() => {
     const i = document.querySelector('#imgMesaQr');
@@ -90,7 +90,7 @@ await chequear('muestra el QR de la mesa y vuelve sin perder el carrito', async 
   if (!cargo) throw new Error('el PNG del QR no cargó');
 
   const link = await cliente.textContent('#dlgMesaLink');
-  if (!link.endsWith('/mesa/7')) throw new Error('link equivocado: ' + link);
+  if (!link.startsWith('http')) throw new Error('link equivocado: ' + link);
 
   await cliente.click('#btnCerrarMesa');
   await cliente.waitForSelector('#dlgMesa[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
@@ -235,8 +235,7 @@ await chequear('adentro del panel se puede instalar, sin depender del navegador'
 await chequear('el pedido del cliente aparece en "Entraron"', async () => {
   await barra.waitForSelector('.ticket', { timeout: 15000 });
   const t = await barra.textContent('#tablero');
-  if (!t.includes('Mesa 7')) throw new Error('no muestra la mesa');
-  if (!t.includes('Emma')) throw new Error('no muestra el nombre');
+  if (!t.includes('Emma')) throw new Error('no muestra quién pidió');
   if (!t.includes('uno sin hielo')) throw new Error('no muestra la aclaración');
   if (!t.includes('14.500')) throw new Error('total mal: ' + t.match(/\$[\d.]+/g));
 });
@@ -250,7 +249,7 @@ await chequear('el cliente ve el cambio en vivo', async () => {
     document.querySelector('#misPedidos')?.textContent.includes('Preparando'), null, { timeout: 10000 });
 });
 await chequear('al pasar a Listo, al cliente le avisa en Mis pedidos', async () => {
-  await barra.locator('.ticket', { hasText: 'Mesa 7' }).locator('[data-avanzar]').click();
+  await barra.locator('.ticket', { hasText: 'Emma' }).locator('[data-avanzar]').click();
   // El cartel, el badge de la pestaña y la vibración: el cliente puede tener
   // la pantalla apagada o estar mirando la carta.
   await cliente.waitForFunction(() =>
@@ -304,7 +303,7 @@ await chequear('no avisa "sin conexión" si los datos están llegando', async ()
     Object.defineProperty(navigator, 'onLine', { get: () => false }));
   const pag = await ctxMentiroso.newPage();
   try {
-    await pag.goto(`${BASE}/mesa/7`, { waitUntil: 'domcontentloaded' });
+    await pag.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
     await pag.waitForSelector('text=Fernet con coca', { timeout: 15000 });
     await pag.waitForTimeout(1500);
     if (await pag.locator('#chipConexion').isVisible())
@@ -361,7 +360,11 @@ await chequear('asignarlo al turno le abre el panel', async () => {
   await barra.fill('#inpEvento', 'Noche de prueba');
   await barra.check('#elegirBarman input');
   await barra.click('#btnConfirmarEvento');
-  await barra.waitForSelector('#evento .caja-evento', { timeout: 10000 });
+  // Queda agendada; arrancarla es el segundo paso.
+  await barra.waitForSelector('[data-empezar]', { timeout: 10000 });
+  barra.once('dialog', (d) => d.accept());
+  await barra.locator('[data-empezar]').first().click();
+  await barra.waitForSelector('#evento .caja-evento', { timeout: 15000 });
   const t = await barra.textContent('#evento .caja-evento');
   if (!t.includes('barra-turno')) throw new Error('no muestra quién está de turno: ' + t.slice(0, 200));
 });
@@ -460,7 +463,10 @@ await chequear('abre un evento y la caja pasa a contar desde ahí', async () => 
   await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
   await barra.fill('#inpEvento', 'Prueba de noche');
   await barra.click('#btnConfirmarEvento');
-  await barra.waitForSelector('#evento .caja-evento', { timeout: 10000 });
+  await barra.waitForSelector('[data-empezar]', { timeout: 10000 });
+  barra.once('dialog', (d) => d.accept());
+  await barra.locator('[data-empezar]').first().click();
+  await barra.waitForSelector('#evento .caja-evento', { timeout: 15000 });
   const t = await barra.textContent('#evento .caja-evento');
   if (!t.includes('Prueba de noche')) throw new Error('no tomó el nombre: ' + t.slice(0, 120));
 
@@ -479,7 +485,7 @@ await chequear('un pedido nuevo entra al evento y suma a la caja al entregarlo',
   await db.collection('pedidos').add({
     clienteId: 'cliente-evento', estado: 'entregado',
     items: [{ id: 'papas', nombre: 'Papas bravas', precio: 5500, cantidad: 2 }],
-    total: 11000, mesa: '3', creadoEn: new Date(),
+    total: 11000, nombreCliente: 'Caja', creadoEn: new Date(),
   });
   await barra.waitForFunction(() =>
     document.querySelector('#evento .caja-evento .plata b')?.textContent.replace(/\D/g, '') === '11000',
@@ -497,10 +503,13 @@ await chequear('cerrar el evento congela la caja y lo manda al histórico', asyn
   await barra.waitForSelector('#btnAbrirEvento', { timeout: 10000 });
   // cerradoEn es un serverTimestamp: localmente llega null y recién al volver
   // del servidor el evento sale de "abierto" y entra al histórico.
+  // Esperamos la fila de la noche, no el texto suelto: "Prueba de noche"
+  // también aparece en la tarjeta de caja general, que se dibuja antes.
   await barra.waitForFunction(() =>
-    document.querySelector('#eventosPasados')?.textContent.includes('Prueba de noche'),
-    null, { timeout: 10000 });
-  const fila = await barra.textContent('#eventosPasados .item');
+    [...document.querySelectorAll('#eventosPasados .item')]
+      .some((x) => x.textContent.includes('Prueba de noche')),
+    null, { timeout: 15000 });
+  const fila = await barra.locator('#eventosPasados .item', { hasText: 'Prueba de noche' }).textContent();
   if (!fila.includes('11.000')) throw new Error('la caja no quedó congelada: ' + fila);
 });
 
@@ -546,7 +555,7 @@ await chequear('cerrado el evento, el cliente ve la carta pero no puede pedir', 
   const tarde = await ctxTarde.newPage();
   try {
     // Mismo QR de la mesa, el de siempre: lo que cambió es el permiso.
-    await tarde.goto(`${BASE}/mesa/7`, { waitUntil: 'domcontentloaded' });
+    await tarde.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
     await tarde.waitForSelector('text=Fernet con coca', { timeout: 15000 });
     await tarde.waitForFunction(() =>
       !document.querySelector('#avisoCerrado')?.classList.contains('oculto'),
@@ -554,7 +563,11 @@ await chequear('cerrado el evento, el cliente ve la carta pero no puede pedir', 
 
     // Suma al carrito (el Fernet lo dejó agotado un test anterior, uso otro):
     // la barra de Pedir no tiene que aparecer.
-    await tarde.locator('.item', { hasText: 'Papas bravas' }).locator('[data-mas]').click();
+    const fila = tarde.locator('.item', { hasText: 'Papas bravas' });
+    if (!(await fila.count())) throw new Error('no veo Papas bravas. Carta: ' + (await tarde.textContent('#carta')).slice(0, 300));
+    if (!(await fila.locator('[data-mas]').count()))
+      throw new Error('Papas sin botón de sumar: ' + (await fila.textContent()));
+    await fila.locator('[data-mas]').click();
     await tarde.waitForTimeout(800);
     if (await tarde.locator('#carrito.visible').count())
       throw new Error('deja pedir con el evento cerrado');
@@ -601,7 +614,8 @@ await chequear('el admin abre un evento con cupo y eso abre el registro', async 
   await barra.fill('#inpEvento', 'Noche con lista');
   await barra.fill('#inpCapacidad', '2');
   await barra.click('#btnConfirmarEvento');
-  await barra.waitForSelector('#evento .caja-evento', { timeout: 10000 });
+  // El registro abre al agendar: la gracia es que se anoten antes de la noche.
+  await barra.waitForSelector('[data-empezar]', { timeout: 10000 });
   // Abrir el evento son varias escrituras; la del registro puede llegar
   // un instante después de que la tarjeta ya se dibujó.
   let r;
@@ -707,7 +721,6 @@ await chequear('lo que pide el invitado queda a su nombre', async () => {
   await invitado.waitForSelector('text=Papas bravas', { timeout: 15000 });
   await invitado.locator('.item', { hasText: 'Papas bravas' }).locator('[data-mas]').click();
   await invitado.click('#btnConfirmar');
-  await invitado.selectOption('#selMesa', '4');
   await invitado.click('#btnEnviar');
   await invitado.waitForSelector('#dlgConfirmar:not([open])', { timeout: 15000 }).catch(() => {});
 
@@ -726,7 +739,7 @@ await chequear('la barra marca un pedido con total adulterado', async () => {
   await db.collection('pedidos').add({
     clienteId: 'atacante', estado: 'nuevo',
     items: [{ id: 'papas', nombre: 'Papas bravas', precio: 1, cantidad: 2 }],
-    total: 2, mesa: '9', creadoEn: new Date(),
+    total: 2, nombreCliente: 'Atacante', creadoEn: new Date(),
   });
   await barra.click('#tabTablero');
   await barra.waitForFunction(() =>
@@ -740,10 +753,10 @@ await chequear('también marca el pedido con un id que no existe en la carta', a
   await db.collection('pedidos').add({
     clienteId: 'atacante', estado: 'nuevo',
     items: [{ id: 'no-existe', nombre: 'Rabas', precio: 1, cantidad: 1 }],
-    total: 1, mesa: '10', creadoEn: new Date(),
+    total: 1, nombreCliente: 'Colado', creadoEn: new Date(),
   });
   const marcado = await barra.waitForFunction(() => {
-    const t = [...document.querySelectorAll('.ticket')].find((x) => x.textContent.includes('Mesa 10'));
+    const t = [...document.querySelectorAll('.ticket')].find((x) => x.textContent.includes('Rabas'));
     return t ? !!t.querySelector('.sospecha') : false;
   }, null, { timeout: 10000 }).then(() => true, () => false);
   if (!marcado) throw new Error('el pedido con id inventado pasó sin marcar');

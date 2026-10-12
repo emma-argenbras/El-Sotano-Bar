@@ -87,16 +87,12 @@
 <dialog id="dlgConfirmar">
   <h2>Confirmá tu pedido</h2>
   <p style="color:var(--suave);font-size:.9rem;margin-top:0">
-    Lo preparamos y te lo llevamos. Se paga en la barra.
+    Lo preparamos y te avisamos. Se retira y se paga en la barra.
   </p>
   <div id="resumenPedido" style="margin:.9rem 0;font-size:.92rem"></div>
   <label class="campo">
-    <span>Mesa</span>
-    <select id="selMesa"></select>
-  </label>
-  <label class="campo">
-    <span>Tu nombre <small>(opcional, ayuda a encontrarte)</small></span>
-    <input id="inpNombre" maxlength="60" placeholder="Ej: Emma" autocomplete="name">
+    <span>Tu nombre <small>(te llamamos por acá cuando esté listo)</small></span>
+    <input id="inpNombre" maxlength="60" placeholder="Ej: Emma" autocomplete="name" required>
   </label>
   <label class="campo">
     <span>Aclaración <small>(opcional)</small></span>
