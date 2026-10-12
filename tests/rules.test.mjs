@@ -52,7 +52,8 @@ before(async () => {
     });
     await setDoc(doc(db, 'barra/caja'), { abierta: true, totalNoche: 182000 });
     // Personal de turno: uno habilitado y uno apagado.
-    await setDoc(doc(db, 'accesosBarra/uid-turno-ok'), { usuario: 'barra-lunes', activo: true });
+    await setDoc(doc(db, 'accesosBarra/uid-turno-ok'), { usuario: 'barra-lunes', activo: true, rol: 'barra' });
+    await setDoc(doc(db, 'accesosBarra/uid-gerente'), { usuario: 'guille', activo: true, rol: 'gerente' });
     await setDoc(doc(db, 'accesosBarra/uid-turno-off'), { usuario: 'barra-viernes', activo: false });
   });
 });
@@ -75,6 +76,95 @@ const turnoOk = () => env.authenticatedContext('uid-turno-ok', {
 const turnoOff = () => env.authenticatedContext('uid-turno-off', {
   email: 'barra-viernes@barra.local', provider_id: 'password',
 }).firestore();
+
+const gerente = () => env.authenticatedContext('uid-gerente', {
+  email: 'guille@barra.local', provider_id: 'password',
+}).firestore();
+
+describe('tres niveles: dueño, gerente y barra', () => {
+  it('la barra mueve un pedido de estado', async () => {
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/pedido-de-ana'), { estado: 'listo' }));
+  });
+
+  it('la barra NO puede reescribir el total de un pedido', async () => {
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/pedido-de-ana'), { estado: 'listo', total: 1 }));
+  });
+
+  it('la barra marca agotado y ajusta stock', async () => {
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'carta/fernet'), { disponible: false, stock: 0 }));
+  });
+
+  it('la barra NO puede cambiar un precio', async () => {
+    await assertFails(updateDoc(doc(turnoOk(), 'carta/fernet'), { precio: 1 }));
+  });
+
+  it('la barra NO puede dar de alta un producto', async () => {
+    await assertFails(setDoc(doc(turnoOk(), 'carta/nuevo'), { nombre: 'X', precio: 1 }));
+  });
+
+  it('la barra VE la caja y los eventos', async () => {
+    await assertSucceeds(getDoc(doc(turnoOk(), 'barra/caja')));
+  });
+
+  it('la barra NO puede tocar la caja', async () => {
+    await assertFails(updateDoc(doc(turnoOk(), 'barra/caja'), { totalNoche: 0 }));
+  });
+
+  it('la barra NO puede cortar ni reabrir los pedidos', async () => {
+    await assertFails(setDoc(doc(turnoOk(), 'publico/estado'), { tomandoPedidos: false }));
+  });
+
+  it('la barra NO puede borrar un pedido', async () => {
+    await assertFails(deleteDoc(doc(turnoOk(), 'pedidos/pedido-de-ana')));
+  });
+
+  it('el gerente SÍ cambia precios', async () => {
+    await assertSucceeds(updateDoc(doc(gerente(), 'carta/fernet'), { precio: 4800 }));
+  });
+
+  it('el gerente SÍ abre y cierra la caja del evento', async () => {
+    await assertSucceeds(updateDoc(doc(gerente(), 'barra/caja'), { abierta: false }));
+  });
+
+  it('el gerente SÍ corta y reabre los pedidos', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'publico/estado'), { tomandoPedidos: true }));
+  });
+
+  it('el gerente NO puede borrar un pedido', async () => {
+    await assertFails(deleteDoc(doc(gerente(), 'pedidos/pedido-de-ana')));
+  });
+
+  it('el gerente NO puede borrar un producto', async () => {
+    await assertFails(deleteDoc(doc(gerente(), 'carta/fernet')));
+  });
+
+  it('el gerente SÍ da de alta gente de barra', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'accesosBarra/uid-barra-nuevo'),
+      { usuario: 'barra-martes', activo: true, rol: 'barra' }));
+  });
+
+  it('el gerente NO puede nombrar otro gerente', async () => {
+    await assertFails(setDoc(doc(gerente(), 'accesosBarra/uid-otro-jefe'),
+      { usuario: 'otro', activo: true, rol: 'gerente' }));
+  });
+
+  it('el gerente NO puede ascenderse solo', async () => {
+    await assertFails(updateDoc(doc(gerente(), 'accesosBarra/uid-gerente'), { rol: 'dueno' }));
+  });
+
+  it('el gerente NO puede borrar un acceso', async () => {
+    await assertFails(deleteDoc(doc(gerente(), 'accesosBarra/uid-barra-nuevo')));
+  });
+
+  it('la barra NO puede dar de alta a nadie', async () => {
+    await assertFails(setDoc(doc(turnoOk(), 'accesosBarra/uid-colado'),
+      { usuario: 'colado', activo: true, rol: 'barra' }));
+  });
+
+  it('el dueño SÍ borra', async () => {
+    await assertSucceeds(deleteDoc(doc(barra(), 'accesosBarra/uid-barra-nuevo')));
+  });
+});
 
 describe('vigencia: solo se pide con el evento abierto', () => {
   it('con el local abierto, el cliente PUEDE pedir', async () => {

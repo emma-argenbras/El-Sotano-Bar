@@ -38,19 +38,49 @@ service cloud.firestore {
       );
     }
 
-    // Personal de barra del turno: una cuenta usuario/contraseña que el dueño
-    // da de alta para un evento y apaga cuando termina. El permiso vive en
+    // Personal del turno: una cuenta usuario/contraseña que se da de alta para
+    // un evento y se apaga cuando termina. El permiso vive en
     // accesosBarra/{uid}, así que apagarlo corta el acceso en el momento, sin
     // tocar reglas ni redesplegar.
-    function accesoDeTurno() {
+    function miAcceso() {
+      return get(/databases/$(database)/documents/accesosBarra/$(request.auth.uid)).data;
+    }
+
+    function tengoTurno() {
       return logueado()
         && exists(/databases/$(database)/documents/accesosBarra/$(request.auth.uid))
-        && get(/databases/$(database)/documents/accesosBarra/$(request.auth.uid)).data.activo == true;
+        && miAcceso().activo == true;
+    }
+
+    // Tres niveles:
+    //   dueño    — todo, incluido borrar. Es el único que borra.
+    //   gerente  — todo salvo borrar y crear gerentes.
+    //   barra    — mueve pedidos y marca agotado. Ve precios, caja y eventos.
+    function miRol() {
+      return tengoTurno() ? miAcceso().get('rol', 'barra') : '';
     }
 
     // El dueño primero: resuelve con el token y no cuesta ninguna lectura.
+    function esGerente() {
+      return esElDueno() || miRol() == 'gerente';
+    }
+
     function esBarra() {
-      return esElDueno() || accesoDeTurno();
+      return esElDueno() || tengoTurno();
+    }
+
+    // Lo que la barra puede tocar de un producto: si se acabó y cuánto queda.
+    // Los precios, el nombre y la categoría son del gerente para arriba.
+    function soloStock() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['stock', 'disponible']);
+    }
+
+    // En un pedido, la barra mueve el estado y nada más. Sin esto, quien
+    // atiende podría reescribir el total de un pedido ya hecho.
+    function soloEstado() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['estado']);
     }
 
     function esDueno(uid) {
@@ -98,8 +128,12 @@ service cloud.firestore {
     match /carta/{itemId} {
       // La carta se ve sin loguearse: el QR de la mesa abre y muestra.
       allow read: if true;
-      // Precios, stock y disponibilidad: solo barra.
-      allow write: if esBarra();
+      // Precios, nombres y altas: gerente para arriba.
+      allow create: if esGerente();
+      // La barra solo marca agotado y ajusta el stock de lo que ya existe.
+      allow update: if esGerente() || (esBarra() && soloStock());
+      // Borrar es del dueño y de nadie más.
+      allow delete: if esElDueno();
     }
 
     // ---------- pedidos ----------
@@ -117,19 +151,27 @@ service cloud.firestore {
         && pedidoValido(request.resource.data)
         && (esBarra() || tomandoPedidos());
 
-      // Cambiar estado / anular: solo barra, y solo a un estado conocido.
+      // Mover el pedido por el tablero. La barra toca el estado y nada más:
+      // el total y los items de un pedido ya hecho no se reescriben.
+      // El cliente y la hora no se tocan nunca, ni el dueño: reasignarle un
+      // pedido a otra persona no es una operación legítima de nadie.
       allow update: if esBarra()
         && request.resource.data.estado in estadosValidos()
         && request.resource.data.clienteId == resource.data.clienteId
-        && request.resource.data.creadoEn == resource.data.creadoEn;
+        && request.resource.data.creadoEn == resource.data.creadoEn
+        && (esElDueno() || soloEstado());
 
-      allow delete: if esBarra();
+      // Borrar es del dueño y de nadie más.
+      allow delete: if esElDueno();
     }
 
     // ---------- barra (privado) ----------
 
     match /barra/{documento=**} {
-      allow read, write: if esBarra();
+      // La barra ve la caja y los eventos; abrirlos y cerrarlos es del gerente.
+      allow read: if esBarra();
+      allow create, update: if esGerente();
+      allow delete: if esElDueno();
     }
 
     // ---------- estado del local, público ----------
@@ -137,7 +179,9 @@ service cloud.firestore {
     // está tomando pedidos antes incluso de que el cliente entre.
     match /publico/{documento} {
       allow read: if true;
-      allow write: if esBarra();
+      // Cortar y reabrir los pedidos es del gerente.
+      allow create, update: if esGerente();
+      allow delete: if esElDueno();
     }
 
     // ---------- quién es personal de barra ----------
@@ -146,9 +190,13 @@ service cloud.firestore {
     // Solo el dueño da de alta, prende y apaga.
     match /accesosBarra/{uid} {
       // Cada uno puede ver el suyo: el panel avisa cuando lo apagaron.
-      allow get: if esElDueno() || esDueno(uid);
-      allow list: if esElDueno();
-      allow write: if esElDueno();
+      allow get: if esGerente() || esDueno(uid);
+      allow list: if esGerente();
+      // Un gerente da de alta y apaga gente de barra. Otro gerente lo nombra
+      // el dueño: si no, cualquiera con la cuenta de Guille se asciende solo.
+      allow create, update: if esElDueno()
+        || (esGerente() && request.resource.data.get('rol', 'barra') == 'barra');
+      allow delete: if esElDueno();
     }
 
     // ---------- todo lo demás ----------

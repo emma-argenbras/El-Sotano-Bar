@@ -51,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, rol: '', tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -323,6 +323,17 @@ async function cerrarEvento() {
 function pintarEvento() {
   const cont = $('#evento');
   if (!estado.evento) {
+    // La barra no puede abrir un evento: decirle qué pasa, no dejarla mirando
+    // una tarjeta vacía con botones que no existen.
+    if (!estado.dueno && estado.rol !== 'gerente') {
+      cont.innerHTML = `<div class="aviso"><span>🎪</span><div>
+        <b>No hay ningún evento abierto.</b><br>
+        ${estado.tomandoPedidos
+          ? 'Igual se están tomando pedidos: lo que entre lo vas a ver en Pedidos.'
+          : 'Y no se están tomando pedidos. Avisale a quien maneja la caja.'}
+        </div></div>`;
+      return;
+    }
     cont.innerHTML = `<div class="aviso"><span>🎪</span><div>
       <b>No hay ningún evento abierto.</b><br>
       Sin evento, el tablero muestra lo del día y se vacía a medianoche.
@@ -335,13 +346,14 @@ function pintarEvento() {
             ? 'Sin evento abierto, pero el QR deja pedir.'
             : 'El QR sigue andando y nadie puede mandar un pedido.'}</span>
         </div>
-        <button class="btn ${estado.tomandoPedidos ? 'peligro' : 'primario'}" id="btnTomando">
+        <button class="btn ${estado.tomandoPedidos ? 'peligro' : 'primario'} solo-gerente-inline" id="btnTomando">
           ${estado.tomandoPedidos ? 'Cortar' : 'Reabrir'}
         </button>
       </div>
-      <button class="btn primario ancho-full" id="btnAbrirEvento" style="margin-top:.9rem">Abrir evento</button>`;
-    $('#btnAbrirEvento').onclick = abrirEvento;
-    $('#btnTomando').onclick = async () => {
+      <button class="btn primario ancho-full solo-gerente-inline" id="btnAbrirEvento"
+              style="margin-top:.9rem">Abrir evento</button>`;
+    if ($('#btnAbrirEvento')) $('#btnAbrirEvento').onclick = abrirEvento;
+    if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
       const prender = !estado.tomandoPedidos;
       if (!prender && !confirm('¿Cortar los pedidos?')) return;
       try { await marcarTomandoPedidos(prender, null); }
@@ -379,10 +391,11 @@ function pintarEvento() {
       ${r.porItem.length ? `<table class="ranking"><tbody>${r.porItem.map((i) => `
         <tr><td>${esc(i.nombre)}</td><td class="n">${i.cantidad}</td><td class="n">${plata(i.importe)}</td></tr>`).join('')}
         </tbody></table>` : '<p style="color:var(--suave);font-size:.9rem">Todavía no se entregó nada.</p>'}
-      <button class="btn peligro ancho-full" id="btnCerrarEvento" style="margin-top:1rem">Cerrar evento y hacer la caja</button>
+      <button class="btn peligro ancho-full solo-gerente-inline" id="btnCerrarEvento"
+              style="margin-top:1rem">Cerrar evento y hacer la caja</button>
     </div>`;
-  $('#btnCerrarEvento').onclick = cerrarEvento;
-  $('#btnTomando').onclick = async () => {
+  if ($('#btnCerrarEvento')) $('#btnCerrarEvento').onclick = cerrarEvento;
+  if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
     const prender = !estado.tomandoPedidos;
     if (!prender && !confirm('¿Cortar los pedidos?\n\nEl QR sigue andando, pero el cliente no va a poder mandar nada hasta que lo reabras.')) return;
     try { await marcarTomandoPedidos(prender, estado.evento); }
@@ -416,7 +429,7 @@ function pintarEventosPasados() {
 function escucharAccesos() {
   onSnapshot(collection(db, 'accesosBarra'), (snap) => {
     estado.dueno = true;
-    document.body.classList.add('es-dueno');
+    aplicarRol();
     estado.accesos = snap.docs.map((d) => ({ uid: d.id, ...d.data() }))
       .sort((a, b) => Number(!!b.activo) - Number(!!a.activo)
         || String(a.usuario).localeCompare(String(b.usuario)));
@@ -425,7 +438,7 @@ function escucharAccesos() {
     // permission-denied acá es la respuesta esperada para el personal de
     // turno: no es dueño, no ve la administración y no pasa nada.
     estado.dueno = false;
-    document.body.classList.remove('es-dueno');
+    aplicarRol();
     if (e.code !== 'permission-denied') fallo('#accesos')(e);
   });
 }
@@ -434,12 +447,21 @@ function escucharAccesos() {
 // un listener ya abierto puede seguir recibiendo un rato: Firestore no vuelve
 // a evaluar la regla al instante. Así que cada cuenta mira su propio permiso
 // y se va sola cuando se lo apagan.
+// Mi rol: dueño (sin documento), gerente o barra.
+function aplicarRol() {
+  const b = document.body.classList;
+  b.toggle('es-dueno', estado.dueno);
+  b.toggle('es-gerente', estado.dueno || estado.rol === 'gerente');
+  b.toggle('es-barra', !estado.dueno && estado.rol === 'barra');
+}
+
 function vigilarMiAcceso(uid) {
   // El dueño no tiene documento de acceso, así que "no existe" no puede
   // significar echarlo. Solo se reacciona a un permiso que estuvo y se cayó.
   let loTuvo = false;
   let yendose = false;
   onSnapshot(doc(db, 'accesosBarra', uid), (d) => {
+    if (d.exists()) { estado.rol = d.data().rol || 'barra'; aplicarRol(); }
     if (d.exists() && d.data().activo === true) { loTuvo = true; return; }
     if (!d.exists() && !loTuvo) return;
     if (yendose) return;
@@ -460,6 +482,15 @@ async function altaUsuarioBarra() {
   const clave = (prompt(`Contraseña para "${usuario}" (mínimo 6)\n\nAnotala: no se puede recuperar, se cambia creando otra.`) || '');
   if (clave.length < 6) { if (clave) alert('Mínimo 6 caracteres.'); return; }
 
+  // El dueño puede nombrar un gerente; un gerente solo da de alta barra.
+  let rol = 'barra';
+  if (estado.dueno) {
+    rol = confirm(`¿"${usuario}" es gerente?\n\n`
+      + 'ACEPTAR = gerente: precios, caja, eventos y alta de barra. No borra nada.\n'
+      + 'CANCELAR = barra: mueve pedidos y marca agotado. Ve precios y caja.')
+      ? 'gerente' : 'barra';
+  }
+
   // Una app aparte para el alta: createUser deja logueada a la cuenta nueva,
   // y si usáramos la principal el dueño se quedaría afuera de su propio panel.
   const secundaria = initializeApp(CFG, 'alta-' + Date.now());
@@ -469,12 +500,14 @@ async function altaUsuarioBarra() {
     const cred = await createUserWithEmailAndPassword(authSec, aMail(usuario), clave);
     await setDoc(doc(db, 'accesosBarra', cred.user.uid), {
       usuario,
+      rol,
       activo: true,
       eventoId: estado.evento?.id || null,
       evento: estado.evento?.nombre || null,
       creadoEn: serverTimestamp(),
     });
-    alert(`Listo.\n\nUsuario: ${usuario}\nContraseña: la que pusiste\n\nEn el celular de la barra:\n${location.origin}/bar.html`);
+    alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${rol}\nContraseña: la que pusiste\n\n`
+      + `Que entre en:\n${location.origin}/bar.html`);
   } catch (e) {
     alert(e.code === 'auth/email-already-in-use'
       ? `Ya existe un usuario "${usuario}". Elegí otro nombre.`
@@ -505,7 +538,7 @@ function pintarAccesos() {
       <div class="item ${a.activo ? '' : 'agotado'}">
         <div class="cuerpo">
           <div class="nombre">${esc(a.usuario)}${a.activo ? '' : ' — <small>apagado</small>'}</div>
-          <div class="desc">${a.evento ? esc(a.evento) : 'sin evento'}</div>
+          <div class="desc">${a.rol === 'gerente' ? 'gerente · ' : 'barra · '}${a.evento ? esc(a.evento) : 'sin evento'}</div>
         </div>
         <button class="btn ${a.activo ? 'peligro' : 'primario'}" data-acceso="${esc(a.uid)}"
                 style="padding:.4rem .7rem;font-size:.82rem">${a.activo ? 'Apagar' : 'Prender'}</button>
@@ -661,7 +694,7 @@ function pintarCartaBar() {
       <button class="btn" data-toggle="${i.id}" style="padding:.4rem .7rem;font-size:.82rem" ${fuera ? 'disabled' : ''}>
         ${i.disponible === false ? 'Activar' : 'Agotar'}
       </button>
-      <button class="btn" data-carta="${i.id}" style="padding:.4rem .7rem;font-size:.82rem">
+      <button class="btn solo-gerente-inline" data-carta="${i.id}" style="padding:.4rem .7rem;font-size:.82rem">
         ${fuera ? 'Poner en carta' : 'Sacar'}
       </button>
     </div>`;

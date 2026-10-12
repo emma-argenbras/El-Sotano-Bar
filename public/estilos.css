@@ -315,9 +315,15 @@ dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
 .caja-evento .ranking tr td:last-child { color: var(--texto); font-variant-numeric: tabular-nums; }
 #eventosPasados .item .total { font-weight: 700; color: var(--oro); white-space: nowrap; }
 
-/* Lo que solo ve el dueño: el personal de turno entra al mismo panel. */
-.solo-dueno { display: none; }
-body.es-dueno .solo-dueno { display: block; }
+/* Tres niveles en el mismo panel. Lo que la barra no puede hacer, no lo ve:
+   las reglas igual lo rechazan, pero un botón que siempre falla es peor que
+   no tenerlo. */
+.solo-dueno, .solo-gerente { display: none; }
+body.es-dueno .solo-dueno,
+body.es-gerente .solo-gerente { display: block; }
+.solo-gerente-inline { display: none !important; }
+body.es-gerente .solo-gerente-inline { display: inline-flex !important; }
+body.es-gerente .ancho-full.solo-gerente-inline { display: block !important; width: 100%; }
 
 /* ---------- encabezado en pantalla de celular ----------
    En un teléfono entran pocas cosas por fila. Lo que no aporta se achica o

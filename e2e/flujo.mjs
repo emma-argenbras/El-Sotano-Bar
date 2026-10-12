@@ -248,6 +248,8 @@ await chequear('el dueño crea un usuario de barra sin mail y sin perder su sesi
   const respuestas = ['barra-turno', 'clave-de-prueba'];
   barra.on('dialog', async (d) => {
     if (d.type() === 'prompt') await d.accept(respuestas.shift() ?? '');
+    // El confirm es "¿es gerente?": que no, queremos probar el nivel barra.
+    else if (d.type() === 'confirm') await d.dismiss();
     else await d.accept();
   });
   await barra.click('#btnAltaBarra');
@@ -271,11 +273,47 @@ await chequear('entra con usuario y contraseña, sin escribir ningún mail', asy
   await turno.waitForSelector('.ticket', { timeout: 15000 });
 });
 
-await chequear('el de la barra NO ve la administración de usuarios', async () => {
+await chequear('el de la barra ve lo suyo y nada mas', async () => {
   await turno.click('#tabEvento');
-  await turno.waitForTimeout(600);
+  await turno.waitForTimeout(800);
   if (await turno.locator('#btnAltaBarra').isVisible()) throw new Error('puede crear usuarios');
-  if (await turno.locator('.solo-dueno').isVisible()) throw new Error('ve la sección del dueño');
+  if (await turno.locator('.solo-gerente').isVisible()) throw new Error('ve la administración');
+  if (await turno.locator('#btnCerrarEvento').isVisible()) throw new Error('puede cerrar el evento');
+  if (await turno.locator('#btnTomando').isVisible()) throw new Error('puede cortar los pedidos');
+  // Sin evento abierto le explicamos qué pasa, no le dejamos una tarjeta muda.
+  if (!(await turno.textContent('#evento')).includes('No hay ningún evento abierto'))
+    throw new Error('no le dice nada sobre el evento');
+
+  await turno.click('#tabCartaBar');
+  await turno.waitForTimeout(500);
+  const sacar = await turno.locator('[data-carta]').first();
+  if (await sacar.isVisible()) throw new Error('puede sacar productos de la carta');
+  if (!(await turno.locator('[data-toggle]').first().isVisible()))
+    throw new Error('no puede marcar agotado, que sí es lo suyo');
+});
+
+await chequear('la barra marca agotado pero el servidor le rechaza un precio', async () => {
+  await turno.locator('.item', { hasText: 'Papas bravas' }).locator('[data-toggle]').click();
+  await turno.waitForFunction(() => {
+    const f = [...document.querySelectorAll('#cartaBar .item')]
+      .find((x) => x.textContent.includes('Papas bravas'));
+    return f?.querySelector('[data-toggle]')?.textContent.includes('Activar');
+  }, null, { timeout: 10000 });
+
+  const codigo = await turno.evaluate(async () => {
+    const { getFirestore, doc, updateDoc } = await import('/vendor/firebase.js');
+    try { await updateDoc(doc(getFirestore(), 'carta', 'papas'), { precio: 1 }); return null; }
+    catch (e) { return e.code || e.message; }
+  });
+  if (codigo !== 'permission-denied') throw new Error('le dejó cambiar el precio: ' + codigo);
+
+  // Lo dejamos disponible otra vez: los casos que siguen lo necesitan.
+  await turno.locator('.item', { hasText: 'Papas bravas' }).locator('[data-toggle]').click();
+  await turno.waitForFunction(() => {
+    const f = [...document.querySelectorAll('#cartaBar .item')]
+      .find((x) => x.textContent.includes('Papas bravas'));
+    return f?.querySelector('[data-toggle]')?.textContent.includes('Agotar');
+  }, null, { timeout: 10000 });
 });
 
 await chequear('apagarlo le corta el acceso al toque', async () => {
