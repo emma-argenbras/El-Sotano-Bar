@@ -76,6 +76,50 @@ const turnoOff = () => env.authenticatedContext('uid-turno-off', {
   email: 'barra-viernes@barra.local', provider_id: 'password',
 }).firestore();
 
+describe('vigencia: solo se pide con el evento abierto', () => {
+  it('con el local abierto, el cliente PUEDE pedir', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/estado'), { tomandoPedidos: true }));
+    await assertSucceeds(setDoc(doc(anon(), 'pedidos/con-evento'), pedidoDe('cliente-anon-1')));
+  });
+
+  it('cerrado el evento, el mismo pedido se rechaza', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/estado'), { tomandoPedidos: false }));
+    await assertFails(setDoc(doc(anon(), 'pedidos/sin-evento'), pedidoDe('cliente-anon-1')));
+  });
+
+  it('cerrado el evento, el cliente igual puede ver la carta', async () => {
+    await assertSucceeds(getDoc(doc(anon(), 'carta/fernet')));
+  });
+
+  it('cerrado el evento, el cliente igual ve sus pedidos de antes', async () => {
+    await assertSucceeds(getDoc(doc(anon(), 'pedidos/con-evento')));
+  });
+
+  it('cerrado el evento, la barra SÍ puede cargar un pedido a mano', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'pedidos/a-mano'), pedidoDe('uid-barra')));
+  });
+
+  it('el cliente NO puede volver a abrir el local', async () => {
+    await assertFails(setDoc(doc(anon(), 'publico/estado'), { tomandoPedidos: true }));
+  });
+
+  it('cualquiera puede leer si está abierto, incluso sin loguearse', async () => {
+    await assertSucceeds(getDoc(doc(sinLoguear(), 'publico/estado')));
+  });
+
+  it('la barra SÍ lo prende y lo apaga', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'publico/estado'), { tomandoPedidos: true }));
+  });
+
+  it('sin el documento, se siguen tomando pedidos: un borrado no deja el bar mudo', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      deleteDoc(doc(ctx.firestore(), 'publico/estado')));
+    await assertSucceeds(setDoc(doc(anon(), 'pedidos/sin-documento'), pedidoDe('cliente-anon-1')));
+  });
+});
+
 describe('personal de barra por turno', () => {
   it('con el acceso prendido PUEDE ver todos los pedidos', async () => {
     await assertSucceeds(getDoc(doc(turnoOk(), 'pedidos/pedido-de-ana')));

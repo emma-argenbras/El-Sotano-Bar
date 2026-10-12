@@ -337,3 +337,12 @@ body.es-dueno .solo-dueno { display: block; }
   padding-left: calc(1rem + var(--safe-l));
   padding-right: calc(1rem + var(--safe-r));
 }
+
+.interruptor {
+  display: flex; align-items: center; gap: .8rem; margin-top: 1rem;
+  padding: .8rem; border-radius: 12px;
+  background: var(--panel-alto); border: 1px solid var(--borde);
+}
+.interruptor > div { flex: 1; }
+.interruptor span { display: block; font-size: .8rem; color: var(--suave); margin-top: .1rem; }
+.interruptor .btn { white-space: nowrap; }

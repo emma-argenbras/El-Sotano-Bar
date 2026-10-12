@@ -6,7 +6,7 @@ import {
   getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator,
   initializeFirestore, persistentLocalCache, persistentSingleTabManager,
   connectFirestoreEmulator,
-  collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
+  collection, doc, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
 } from '/vendor/firebase.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
@@ -38,6 +38,7 @@ const plata = (n) => BAR.moneda + Number(n || 0).toLocaleString('es-AR');
 // ---------- estado ----------
 const estado = {
   desdeCache: false,
+  tomandoPedidos: true,
   uid: null,
   carta: [],
   categoria: null,
@@ -120,6 +121,7 @@ pintarChipMesa();
 onAuthStateChanged(auth, (u) => {
   if (!u) { signInAnonymously(auth).catch(mostrarFalloAuth); return; }
   estado.uid = u.uid;
+  escucharEstadoLocal();
   escucharCarta();
   escucharMisPedidos();
 });
@@ -129,6 +131,24 @@ function mostrarFalloAuth(e) {
   $('#carta').innerHTML =
     `<div class="aviso mal"><span>⚠</span><div><b>No se pudo entrar.</b><br>${e.code || e.message}
      <br><small>Revisá que el acceso anónimo esté habilitado en Firebase Authentication.</small></div></div>`;
+}
+
+// ---------- vigencia: ¿el local está tomando pedidos? ----------
+// El QR pegado en la mesa no vence nunca: lo que vence es el permiso de
+// pedir. Cerrado el evento, la carta se sigue viendo pero no entra nada.
+// Las reglas lo rechazan igual: esto es para avisarlo, no para custodiarlo.
+function escucharEstadoLocal() {
+  onSnapshot(doc(db, 'publico', 'estado'), (d) => {
+    estado.tomandoPedidos = d.exists() ? d.data().tomandoPedidos !== false : true;
+    pintarEstadoLocal();
+    pintarCarta();
+    pintarCarrito();
+  }, () => {});
+}
+
+function pintarEstadoLocal() {
+  const a = $('#avisoCerrado');
+  a.classList.toggle('oculto', estado.tomandoPedidos);
 }
 
 // ---------- carta ----------
@@ -240,7 +260,7 @@ const totalCarrito = () => lineas().reduce((s, l) => s + l.precio * l.cantidad, 
 function pintarCarrito() {
   const ls = lineas();
   const unidades = ls.reduce((s, l) => s + l.cantidad, 0);
-  $('#carrito').classList.toggle('visible', unidades > 0);
+  $('#carrito').classList.toggle('visible', unidades > 0 && estado.tomandoPedidos);
   $('#totalCarrito').textContent = plata(totalCarrito());
   $('#detalleCarrito').textContent =
     `${unidades} ${unidades === 1 ? 'item' : 'items'}` + (mesa ? ` · mesa ${mesa}` : '');
@@ -249,6 +269,10 @@ function pintarCarrito() {
 $('#btnVaciar').onclick = () => { estado.carrito.clear(); pintarCarta(); pintarCarrito(); };
 
 $('#btnConfirmar').onclick = () => {
+  if (!estado.tomandoPedidos) {
+    alert('Por ahora no se están tomando pedidos. Acercate a la barra.');
+    return;
+  }
   const sel = $('#selMesa');
   const opciones = (BAR.mesas || []).length ? BAR.mesas : ['1','2','3','4','5','Barra'];
   sel.innerHTML = opciones.map((m) =>

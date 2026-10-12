@@ -323,6 +323,10 @@ await chequear('un pedido nuevo entra al evento y suma a la caja al entregarlo',
   const t = await barra.textContent('.caja-evento .ranking');
   if (!t.includes('Papas bravas')) throw new Error('el ranking no lo listó');
 });
+await chequear('con el evento abierto, el cliente puede pedir', async () => {
+  const d = await db.doc('publico/estado').get();
+  if (d.data()?.tomandoPedidos !== true) throw new Error('abrir el evento no habilitó los pedidos');
+});
 await chequear('cerrar el evento congela la caja y lo manda al histórico', async () => {
   barra.once('dialog', (d) => d.accept());
   await barra.click('#btnCerrarEvento');
@@ -335,6 +339,55 @@ await chequear('cerrar el evento congela la caja y lo manda al histórico', asyn
   const fila = await barra.textContent('#eventosPasados .item');
   if (!fila.includes('11.000')) throw new Error('la caja no quedó congelada: ' + fila);
 });
+
+console.log('\nVIGENCIA: el QR sigue, el permiso de pedir no');
+await chequear('cerrado el evento, el cliente ve la carta pero no puede pedir', async () => {
+  const ctxTarde = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const tarde = await ctxTarde.newPage();
+  try {
+    // Mismo QR de la mesa, el de siempre: lo que cambió es el permiso.
+    await tarde.goto(`${BASE}/mesa/7`, { waitUntil: 'domcontentloaded' });
+    await tarde.waitForSelector('text=Fernet con coca', { timeout: 15000 });
+    await tarde.waitForFunction(() =>
+      !document.querySelector('#avisoCerrado')?.classList.contains('oculto'),
+      null, { timeout: 10000 });
+
+    // Suma al carrito (el Fernet lo dejó agotado un test anterior, uso otro):
+    // la barra de Pedir no tiene que aparecer.
+    await tarde.locator('.item', { hasText: 'Papas bravas' }).locator('[data-mas]').click();
+    await tarde.waitForTimeout(800);
+    if (await tarde.locator('#carrito.visible').count())
+      throw new Error('deja pedir con el evento cerrado');
+
+    // Y lo que importa: aunque se saltee la pantalla, las reglas lo rechazan.
+    const rechazado = await tarde.evaluate(async () => {
+      const { getFirestore, collection, addDoc, serverTimestamp, getAuth } =
+        await import('/vendor/firebase.js');
+      try {
+        await addDoc(collection(getFirestore(), 'pedidos'), {
+          clienteId: getAuth().currentUser.uid, estado: 'nuevo',
+          items: [{ id: 'papas', nombre: 'Papas bravas', precio: 5500, cantidad: 1 }],
+          total: 5500, mesa: '7', creadoEn: serverTimestamp(),
+        });
+        return null;
+      } catch (e) { return e.code || e.message; }
+    });
+    if (rechazado !== 'permission-denied')
+      throw new Error('las reglas lo dejaron pasar: ' + rechazado);
+  } finally { await ctxTarde.close(); }
+});
+
+await chequear('reabrir vuelve a habilitar los pedidos', async () => {
+  await barra.click('#tabEvento');
+  await barra.waitForSelector('#btnTomando', { timeout: 10000 });
+  await barra.click('#btnTomando');
+  await barra.waitForFunction(() =>
+    document.querySelector('#btnTomando')?.textContent.includes('Cortar'), null, { timeout: 10000 });
+  const d = await (await import('node:timers/promises')).setTimeout(500)
+    .then(() => db.doc('publico/estado').get());
+  if (d.data()?.tomandoPedidos !== true) throw new Error('no reabrió');
+});
+
 await barra.click('#tabTablero');
 
 // Detección de total adulterado: un cliente malicioso manda precios truchos.

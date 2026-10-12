@@ -57,6 +57,17 @@ service cloud.firestore {
       return logueado() && request.auth.uid == uid;
     }
 
+    // ¿El local está tomando pedidos? Lo marca publico/estado, que la barra
+    // prende al abrir un evento y apaga al cerrarlo. Así el QR pegado en la
+    // mesa sigue sirviendo siempre, pero fuera del evento no entra nada.
+    //
+    // Si el documento no existe, se toman pedidos: un borrado accidental deja
+    // el bar funcionando, no mudo. Apagarlo es un acto explícito de la barra.
+    function tomandoPedidos() {
+      return !exists(/databases/$(database)/documents/publico/estado)
+        || get(/databases/$(database)/documents/publico/estado).data.get('tomandoPedidos', true) == true;
+    }
+
     // Estados válidos del ciclo de vida de un pedido
     function estadosValidos() {
       return ['nuevo', 'en_preparacion', 'listo', 'entregado', 'cancelado'];
@@ -98,11 +109,13 @@ service cloud.firestore {
       // En list, el cliente DEBE filtrar where('clienteId','==',uid) o la query falla entera.
       allow get, list: if esBarra() || (logueado() && esDueno(resource.data.clienteId));
 
-      // Crear: a su propio nombre y siempre arrancando en "nuevo".
+      // Crear: a su propio nombre, arrancando en "nuevo", y solo mientras el
+      // local esté tomando pedidos. La barra puede cargar uno a mano siempre.
       allow create: if logueado()
         && esDueno(request.resource.data.clienteId)
         && request.resource.data.estado == 'nuevo'
-        && pedidoValido(request.resource.data);
+        && pedidoValido(request.resource.data)
+        && (esBarra() || tomandoPedidos());
 
       // Cambiar estado / anular: solo barra, y solo a un estado conocido.
       allow update: if esBarra()
@@ -117,6 +130,14 @@ service cloud.firestore {
 
     match /barra/{documento=**} {
       allow read, write: if esBarra();
+    }
+
+    // ---------- estado del local, público ----------
+    // Lo lee cualquiera sin loguearse: el QR de la mesa necesita saber si se
+    // está tomando pedidos antes incluso de que el cliente entre.
+    match /publico/{documento} {
+      allow read: if true;
+      allow write: if esBarra();
     }
 
     // ---------- quién es personal de barra ----------

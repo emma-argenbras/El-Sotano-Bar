@@ -51,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], accesos: [], dueno: false, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -221,6 +221,18 @@ onAuthStateChanged(auth, async (u) => {
 // caja queda congelada ahí. No se corta a medianoche como el día calendario,
 // que es justo cuando un bar está lleno.
 const EVENTOS = () => collection(db, 'barra', 'eventos', 'items');
+// Lo lee cualquiera sin loguearse: el QR de la mesa necesita saberlo antes
+// de que el cliente entre. Las reglas rechazan pedidos nuevos si está en no.
+const ESTADO_LOCAL = () => doc(db, 'publico', 'estado');
+
+async function marcarTomandoPedidos(valor, evento) {
+  await setDoc(ESTADO_LOCAL(), {
+    tomandoPedidos: valor,
+    evento: valor ? (evento?.nombre ?? null) : null,
+    eventoId: valor ? (evento?.id ?? null) : null,
+    cambiadoEn: serverTimestamp(),
+  });
+}
 
 
 function escucharEvento() {
@@ -233,6 +245,11 @@ function escucharEvento() {
     pintarEvento();
     pintarCaja();
   }, fallo('#evento'));
+
+  onSnapshot(ESTADO_LOCAL(), (d) => {
+    estado.tomandoPedidos = d.exists() ? d.data().tomandoPedidos !== false : true;
+    pintarEvento();
+  }, () => {});
 
   onSnapshot(query(EVENTOS(), orderBy('abiertoEn', 'desc'), limit(20)), (snap) => {
     estado.eventos = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.cerradoEn);
@@ -258,7 +275,8 @@ async function abrirEvento() {
   const nombre = (prompt('Nombre del evento', sugerido[0].toUpperCase() + sugerido.slice(1)) || '').trim();
   if (!nombre) return;
   try {
-    await addDoc(EVENTOS(), { nombre, abiertoEn: serverTimestamp(), cerradoEn: null, cierre: null });
+    const ref = await addDoc(EVENTOS(), { nombre, abiertoEn: serverTimestamp(), cerradoEn: null, cierre: null });
+    await marcarTomandoPedidos(true, { id: ref.id, nombre });
   } catch (e) { alert('No se pudo abrir: ' + (e.code || e.message)); }
 }
 
@@ -298,6 +316,7 @@ async function cerrarEvento() {
   try {
     await updateDoc(doc(db, 'barra', 'eventos', 'items', estado.evento.id),
       { cerradoEn: serverTimestamp(), cierre: r });
+    await marcarTomandoPedidos(false);
   } catch (e) { alert('No se pudo cerrar: ' + (e.code || e.message)); }
 }
 
@@ -309,8 +328,25 @@ function pintarEvento() {
       Sin evento, el tablero muestra lo del día y se vacía a medianoche.
       Abriendo uno, la noche sigue entera hasta que vos la cierres.
       </div></div>
+      <div class="interruptor" style="margin-top:.9rem">
+        <div>
+          <b>${estado.tomandoPedidos ? 'Tomando pedidos' : 'No se toman pedidos'}</b>
+          <span>${estado.tomandoPedidos
+            ? 'Sin evento abierto, pero el QR deja pedir.'
+            : 'El QR sigue andando y nadie puede mandar un pedido.'}</span>
+        </div>
+        <button class="btn ${estado.tomandoPedidos ? 'peligro' : 'primario'}" id="btnTomando">
+          ${estado.tomandoPedidos ? 'Cortar' : 'Reabrir'}
+        </button>
+      </div>
       <button class="btn primario ancho-full" id="btnAbrirEvento" style="margin-top:.9rem">Abrir evento</button>`;
     $('#btnAbrirEvento').onclick = abrirEvento;
+    $('#btnTomando').onclick = async () => {
+      const prender = !estado.tomandoPedidos;
+      if (!prender && !confirm('¿Cortar los pedidos?')) return;
+      try { await marcarTomandoPedidos(prender, null); }
+      catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+    };
     return;
   }
   const desde = estado.evento.abiertoEn?.toDate?.();
@@ -329,12 +365,29 @@ function pintarEvento() {
       </div>
       ${r.sinCerrar ? `<div class="aviso mal" style="margin-top:.8rem"><span>⚠</span><div>
         Hay ${r.sinCerrar} pedidos sin entregar. <b>No suman a la caja</b> hasta que los marques.</div></div>` : ''}
+      <div class="interruptor">
+        <div>
+          <b>${estado.tomandoPedidos ? 'Tomando pedidos' : 'No se toman pedidos'}</b>
+          <span>${estado.tomandoPedidos
+            ? 'El QR de la mesa abre la carta y deja pedir.'
+            : 'El QR sigue andando, pero nadie puede mandar un pedido.'}</span>
+        </div>
+        <button class="btn ${estado.tomandoPedidos ? 'peligro' : 'primario'}" id="btnTomando">
+          ${estado.tomandoPedidos ? 'Cortar' : 'Reabrir'}
+        </button>
+      </div>
       ${r.porItem.length ? `<table class="ranking"><tbody>${r.porItem.map((i) => `
         <tr><td>${esc(i.nombre)}</td><td class="n">${i.cantidad}</td><td class="n">${plata(i.importe)}</td></tr>`).join('')}
         </tbody></table>` : '<p style="color:var(--suave);font-size:.9rem">Todavía no se entregó nada.</p>'}
       <button class="btn peligro ancho-full" id="btnCerrarEvento" style="margin-top:1rem">Cerrar evento y hacer la caja</button>
     </div>`;
   $('#btnCerrarEvento').onclick = cerrarEvento;
+  $('#btnTomando').onclick = async () => {
+    const prender = !estado.tomandoPedidos;
+    if (!prender && !confirm('¿Cortar los pedidos?\n\nEl QR sigue andando, pero el cliente no va a poder mandar nada hasta que lo reabras.')) return;
+    try { await marcarTomandoPedidos(prender, estado.evento); }
+    catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+  };
 }
 
 function pintarEventosPasados() {
