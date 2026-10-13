@@ -891,6 +891,50 @@ await chequear('la casa ve la lista y marca el ingreso', async () => {
     document.querySelector('.lienzo-pase')?.classList.contains('usado'), null, { timeout: 15000 });
 });
 
+await chequear('la lista de la puerta va plegada: faltan abierto, ya entraron cerrado', async () => {
+  const faltan = barra.locator('details[data-pliegue="faltan"]');
+  const adentro = barra.locator('details[data-pliegue="adentro"]');
+  if (!(await faltan.count()) || !(await adentro.count()))
+    throw new Error('la lista quedó plana, sin plegables');
+  if (!(await faltan.evaluate((d) => d.open))) throw new Error('"Faltan entrar" tiene que abrir solo');
+  if (await adentro.evaluate((d) => d.open)) throw new Error('"Ya entraron" tiene que arrancar cerrado');
+  if (!(await adentro.locator('summary').textContent()).includes('1'))
+    throw new Error('el grupo no dice cuántos hay');
+  // Ana ya entró: está adentro del grupo cerrado y se ve al abrirlo.
+  await adentro.locator('summary').click();
+  await barra.waitForSelector('details[data-pliegue="adentro"] .invitado', { timeout: 10000 });
+  if (!(await adentro.textContent()).includes('Ana Prueba'))
+    throw new Error('no la muestra al abrir');
+  await adentro.locator('summary').click();
+
+  // Y buscando no se pliega nada: lo que importa es el resultado.
+  await barra.fill('#inpBuscaInv', 'Ana');
+  await barra.waitForFunction(() =>
+    !document.querySelector('details[data-pliegue]'), null, { timeout: 10000 });
+  if (!(await barra.textContent('#puerta')).includes('Ana Prueba'))
+    throw new Error('la búsqueda no la encuentra');
+  await barra.fill('#inpBuscaInv', '');
+  await barra.waitForSelector('details[data-pliegue="faltan"], details[data-pliegue="adentro"]',
+    { timeout: 10000 });
+});
+
+await chequear('desde la noche se ve quiénes se anotaron', async () => {
+  await barra.click('#tabCalendario');
+  await barra.locator('.item', { hasText: 'Noche con lista' }).locator('[data-invitar]').click();
+  await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
+  const pliegue = barra.locator('#dlgInvitar details[data-pliegue="anotados"]');
+  await pliegue.waitFor({ timeout: 10000 });
+  if (await pliegue.evaluate((d) => d.open)) throw new Error('tiene que arrancar plegado');
+  await pliegue.locator('summary').click();
+  await barra.waitForSelector('#dlgInvitar details[data-pliegue="anotados"] .invitado',
+    { timeout: 10000 });
+  const dice = await pliegue.textContent();
+  for (const quien of ['Ana Prueba', 'Beto Prueba'])
+    if (!dice.includes(quien)) throw new Error('falta ' + quien + ' en la lista: ' + dice);
+  await barra.click('#btnCerrarInvitar');
+  await barra.click('#tabPuerta');
+});
+
 await chequear('la casa anota un invitado de último momento, con la lista llena', async () => {
   // El cupo era 2 y ya se llenó: por el link no entra nadie más, pero la casa
   // sí puede anotar a alguien que aparece en la puerta.

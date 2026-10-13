@@ -440,6 +440,32 @@ body.es-puerta #tabTablero, body.es-puerta #tabCartaBar, body.es-puerta #tabEven
 #temasAyuda .cuerpo-tema p { margin: .6rem 0; color: var(--suave); }
 #temasAyuda .cuerpo-tema b { color: var(--texto); }
 
+/* El renglón de una noche: el texto manda en su propia fila y los botones van
+   abajo. Apretados al costado, la fecha se partía en una palabra por renglón. */
+.fila-noche { flex-wrap: wrap; align-items: flex-start; gap: .5rem; }
+.fila-noche .cuerpo { flex: 1 0 100%; }
+.fila-noche .acciones-noche { display: flex; flex-wrap: wrap; gap: .4rem; width: 100%; }
+.fila-noche .acciones-noche .btn { padding: .35rem .7rem; font-size: .8rem; }
+.fila-noche .acciones-noche .btn[data-empezar] { margin-left: auto; }
+
+/* ---------- plegables: listas que no se comen la pantalla ---------- */
+.plegable {
+  border: 1px solid var(--borde); border-radius: 12px;
+  background: var(--panel-alto); margin: .7rem 0; overflow: hidden;
+}
+.plegable > summary {
+  padding: .7rem .85rem; cursor: pointer; font-weight: 650; font-size: .92rem;
+  list-style: none; display: flex; align-items: center; gap: .5rem;
+}
+.plegable > summary::-webkit-details-marker { display: none; }
+.plegable > summary .cuantos { color: var(--suave); font-weight: 500; }
+.plegable > summary::after { content: '+'; margin-left: auto; color: var(--suave); }
+.plegable[open] > summary::after { content: '−'; }
+.plegable[open] > summary { border-bottom: 1px solid var(--borde); }
+.plegable .adentro-plegable { padding: .6rem .6rem .75rem; }
+.plegable .item { margin-bottom: .45rem; }
+.plegable .item:last-child { margin-bottom: 0; }
+
 /* ---------- calendario ---------- */
 .mes-cabeza { display: flex; align-items: center; gap: .6rem; margin-bottom: .8rem; }
 .mes-cabeza .nombre-mes { flex: 1; text-align: center; font-weight: 700; font-size: 1.05rem; text-transform: capitalize; }

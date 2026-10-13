@@ -87,8 +87,14 @@
         formulario. Al anotar de último momento, si el número ya está en la lista
         te avisa de quién es y vos decidís si lo anotás igual: hay parejas que
         comparten teléfono.</p>
-        <p>En <b>Puerta</b> ves la lista completa, quién entró, a qué hora y
-        <b>cuánto consumió cada uno</b>.</p>
+        <p>En <b>Puerta</b> ves la lista, quién entró, a qué hora y <b>cuánto
+        consumió cada uno</b>. Va en dos grupos que se abren y se cierran:
+        <b>Faltan entrar</b> abierto y <b>Ya entraron</b> cerrado, así con sesenta
+        anotados no tenés que scrollear sin fin. Cada grupo muestra los primeros
+        veinte y el resto con <b>Ver los otros</b>. Si buscás por nombre, la
+        búsqueda manda y no se pliega nada.</p>
+        <p>Para ver quiénes se anotaron a una noche que todavía no arrancó, está
+        adentro de sus <b>Invitaciones</b>, en <b>Quiénes se anotaron</b>.</p>
         <p>Si alguien aparece sin anotarse: <b>+ Invitado de último momento</b>.
         Entra aunque la lista esté llena. Le podés mandar su pase ahí mismo.</p>`,
     },
@@ -172,6 +178,9 @@
         <p>Te equivocaste: <b>Deshacer</b> lo saca.</p>
         <p>Arriba ves <b>cuántos entraron contra el cupo</b>. Cuando se llena,
         avisa en rojo.</p>
+        <p>La lista va en dos grupos: <b>Faltan entrar</b> abierto y <b>Ya
+        entraron</b> cerrado. Al marcar a alguien pasa de uno al otro, por eso
+        la lista se va achicando sola a medida que entra la gente.</p>
         <p>Alguien que no está en la lista: avisale a la casa. La lista no se
         agranda desde la puerta.</p>`,
     },

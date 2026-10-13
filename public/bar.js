@@ -52,7 +52,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -443,6 +443,11 @@ async function pintarInvitar() {
     return;
   }
 
+  // Los anotados de esta noche, no los de la lista que esté mirando la puerta.
+  const dela = (estado.invitadosTodos || [])
+    .filter((i) => i.eventoId === ev.id)
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+
   const img = await qrRegistro();
   if (estado.invitandoA !== ev || !$('#dlgInvitar').open) return;  // cambió mientras cargaba
 
@@ -471,10 +476,12 @@ async function pintarInvitar() {
       <button class="btn primario" id="btnMandarLink" style="flex:1">Mandar el link</button>
       <button class="btn" id="btnBajarQr" style="flex:1">Bajar el QR</button>
     </div>
+    ${plegable('anotados', 'Quiénes se anotaron', dela, { abierto: estado.pliegues.anotados })}
     <p style="font-size:.74rem;color:var(--suave);margin:.7rem 0 0">
       El link y el QR son siempre los mismos. La app no manda nada sola: elegís vos
       por dónde compartirlo.</p>`;
 
+  engancharPliegues($('#cuerpoInvitar'));
   if ($('#btnActivarRegistro')) $('#btnActivarRegistro').onclick = (e) => activarRegistro(ev, e.currentTarget);
   $('#btnMandarLink').onclick = (e) => compartirRegistro(ev, e.currentTarget);
   $('#btnBajarQr').onclick = async () => {
@@ -886,7 +893,9 @@ function pintarCalendario() {
 function filaNoche(e, hoy) {
   const pasada = e._f < hoy;
   const etiqueta = { abierto: 'en curso', cerrado: 'cerrada' }[e.estado] || (pasada ? 'ya pasó' : 'agendada');
-  return `<div class="item" style="flex-wrap:wrap">
+  // El renglón va en dos filas: el nombre y la fecha arriba, los botones abajo.
+  // Con cuatro botones al lado, el texto quedaba en una columna de una palabra.
+  return `<div class="item fila-noche">
     <div class="cuerpo">
       <div class="nombre">${esc(e.nombre)}</div>
       <div class="desc">${e._f.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -894,14 +903,14 @@ function filaNoche(e, hoy) {
         estado.registro?.eventoId === e.id ? ` · ${Number(estado.registro.registrados || 0)} anotados` : ''}${
         e.estado === 'cerrado' ? ` · ${plata(e.cierre?.facturado || 0)}` : ''}</div>
     </div>
-    ${Number(e.capacidad || 0) > 0 && e.estado !== 'cerrado' ? `
-      <button class="btn" data-invitar="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">
-        Invitaciones</button>` : ''}
-    ${e.estado === 'agendado' ? `
-      <button class="btn" data-editar="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">Editar</button>
-      <button class="btn peligro" data-quitar="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">✕</button>
-      <button class="btn primario" data-empezar="${esc(e.id)}" style="padding:.3rem .7rem;font-size:.8rem">Arrancar</button>
-    ` : ''}
+    <div class="acciones-noche">
+      ${Number(e.capacidad || 0) > 0 && e.estado !== 'cerrado'
+        ? `<button class="btn" data-invitar="${esc(e.id)}">Invitaciones</button>` : ''}
+      ${e.estado === 'agendado' ? `
+        <button class="btn" data-editar="${esc(e.id)}">Editar</button>
+        <button class="btn peligro" data-quitar="${esc(e.id)}">✕</button>
+        <button class="btn primario" data-empezar="${esc(e.id)}">Arrancar</button>` : ''}
+    </div>
   </div>`;
 }
 
@@ -1101,6 +1110,53 @@ function resolverEscaneo(texto) {
   $('#btnSeguir').onclick = () => { $('#escaneo').innerHTML = ''; abrirCamara(); };
 }
 
+// ---------- la lista de invitados, plegada ----------
+// Con sesenta anotados una lista plana no se puede usar en un celular: se
+// scrollea para siempre. Van en grupos que se abren y se cierran, y cada uno
+// muestra los primeros y el resto a pedido.
+const TOPE_LISTA = 20;
+
+function renglonInvitado(i, conBoton) {
+  const gastó = consumoDe(i.id);
+  return `<div class="item invitado ${i.ingresadoEn ? 'adentro' : ''}">
+    <div class="cuerpo">
+      <div class="nombre">${esc(i.nombre)}</div>
+      <div class="desc">${esc(i.telefono)}${i.ingresadoEn ? ' · entró ' + hora(i.ingresadoEn) : ''}${
+        gastó ? ' · consumió ' + plata(gastó) : ''}</div>
+    </div>
+    ${conBoton ? `<button class="btn ${i.ingresadoEn ? '' : 'primario'}" data-ingreso="${esc(i.id)}"
+            style="padding:.4rem .7rem;font-size:.82rem">
+      ${i.ingresadoEn ? 'Deshacer' : 'Entró'}</button>` : ''}
+  </div>`;
+}
+
+function plegable(clave, titulo, gente, { abierto = false, conBoton = false } = {}) {
+  if (!gente.length) return '';
+  const todos = estado.verTodos[clave];
+  const muestra = todos ? gente : gente.slice(0, TOPE_LISTA);
+  const faltan = gente.length - muestra.length;
+  return `<details class="plegable" data-pliegue="${esc(clave)}" ${abierto ? 'open' : ''}>
+    <summary>${esc(titulo)} <span class="cuantos">${gente.length}</span></summary>
+    <div class="adentro-plegable">
+      ${muestra.map((i) => renglonInvitado(i, conBoton)).join('')}
+      ${faltan ? `<button class="btn ancho-full" data-vertodos="${esc(clave)}"
+        style="margin-top:.4rem">Ver los otros ${faltan}</button>` : ''}
+    </div>
+  </details>`;
+}
+
+// Abrir, cerrar y "ver todos" se recuerdan: el panel se repinta con cada
+// cambio en la base y sería insoportable que se cerrara solo todo el tiempo.
+function engancharPliegues(cont) {
+  cont.querySelectorAll('[data-pliegue]').forEach((d) => d.ontoggle = () => {
+    estado.pliegues[d.dataset.pliegue] = d.open;
+  });
+  cont.querySelectorAll('[data-vertodos]').forEach((b) => b.onclick = () => {
+    estado.verTodos[b.dataset.vertodos] = true;
+    if (cont.id === 'puerta') pintarPuerta(); else pintarInvitar();
+  });
+}
+
 function pintarPuerta() {
   const cont = $('#puerta');
   if (!cont) return;
@@ -1136,21 +1192,17 @@ function pintarPuerta() {
       <input id="inpBuscaInv" value="${esc(estado.buscaInvitado || '')}" autocomplete="off">
     </label>
 
-    ${visibles.length ? visibles.map((i) => `
-      <div class="item invitado ${i.ingresadoEn ? 'adentro' : ''}">
-        <div class="cuerpo">
-          <div class="nombre">${esc(i.nombre)}</div>
-          <div class="desc">${esc(i.telefono)}${i.ingresadoEn ? ' · entró ' + hora(i.ingresadoEn) : ''}${
-            consumoDe(i.id) ? ' · consumió ' + plata(consumoDe(i.id)) : ''}</div>
-        </div>
-        <button class="btn ${i.ingresadoEn ? '' : 'primario'}" data-ingreso="${esc(i.id)}"
-                style="padding:.4rem .7rem;font-size:.82rem">
-          ${i.ingresadoEn ? 'Deshacer' : 'Entró'}
-        </button>
-      </div>`).join('')
-      : `<p style="color:var(--suave);font-size:.9rem">${invs.length
-          ? 'Nadie con ese nombre.'
-          : 'Todavía no se registró nadie para esta noche.'}</p>`}`;
+    ${!invs.length
+      ? '<p style="color:var(--suave);font-size:.9rem">Todavía no se registró nadie para esta noche.</p>'
+      : busca
+        // Buscando no se pliega nada: lo que importa es ver el resultado.
+        ? (visibles.length
+            ? visibles.map((i) => renglonInvitado(i, true)).join('')
+            : '<p style="color:var(--suave);font-size:.9rem">Nadie con ese nombre.</p>')
+        : plegable('faltan', 'Faltan entrar', visibles.filter((i) => !i.ingresadoEn),
+            { abierto: estado.pliegues.faltan, conBoton: true })
+          + plegable('adentro', 'Ya entraron', visibles.filter((i) => i.ingresadoEn),
+            { abierto: estado.pliegues.adentro, conBoton: true })}`;
 
   if ($('#btnAltaInvitado')) $('#btnAltaInvitado').onclick = abrirAltaInvitado;
   $('#btnEscanear').onclick = () => {
@@ -1176,6 +1228,7 @@ function pintarPuerta() {
     const i = estado.invitados.find((x) => x.id === b.dataset.ingreso);
     marcarIngreso(i.id, !i.ingresadoEn);
   });
+  engancharPliegues(cont);
 }
 
 // Lo que lleva gastado un invitado: la suma de sus pedidos entregados. Sale
