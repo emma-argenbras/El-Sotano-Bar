@@ -52,7 +52,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -335,6 +335,14 @@ const barmanMarcados = () =>
 
 $('#btnCancelarEvento').onclick = () => $('#dlgEvento').close();
 $('#btnCerrarInvitar').onclick = () => { estado.invitandoA = null; $('#dlgInvitar').close(); };
+$('#btnQuienAtiende').onclick = elegirQuienAtiende;
+$('#btnVentaBarra').onclick = abrirVenta;
+$('#btnEfectivo').onclick = () => cerrarCobro('efectivo');
+$('#btnVirtual').onclick = () => cerrarCobro('virtual');
+$('#btnCancelarCobro').onclick = () => { cobrando = null; $('#dlgCobro').close(); };
+$('#btnCancelarVenta').onclick = () => $('#dlgVenta').close();
+$('#btnCancelarEgreso').onclick = () => $('#dlgEgreso').close();
+$('#btnGuardarEgreso').onclick = guardarEgreso;
 $('#btnConfirmarEvento').onclick = async () => {
   const nombre = $('#inpEvento').value.trim();
   if (!nombre) { $('#inpEvento').focus(); return; }
@@ -1375,6 +1383,11 @@ function aplicarRol() {
   b.toggle('es-dueno', estado.dueno);
   b.toggle('es-gerente', estado.dueno || estado.rol === 'admin');
   b.toggle('es-barra', !estado.dueno && estado.rol === 'barman');
+  // El celular de la barra: no es una persona, es el aparato del local.
+  estado.esAparato = !estado.dueno && estado.rol === 'barra';
+  b.toggle('es-aparato', estado.esAparato);
+  pintarQuienAtiende();
+  $('#tabCaja').hidden = !(estado.dueno || estado.rol === 'admin');
   // La puerta no trabaja pedidos ni carta: se le deja su pantalla y nada más.
   $('#tabCalendario').hidden = !(estado.dueno || estado.rol === 'admin');
   const soloPuerta = !estado.dueno && estado.rol === 'puerta';
@@ -1399,7 +1412,8 @@ function vigilarMiAcceso(uid) {
 }
 
 async function altaPersona(rol) {
-  const que = { admin: 'administrador', barman: 'barman', puerta: 'puerta' }[rol];
+  const que = { admin: 'administrador', barman: 'barman', puerta: 'puerta',
+                barra: 'celular de la barra' }[rol];
   const usuario = (prompt(`Usuario del ${que} (sin espacios ni acentos)`) || '').trim().toLowerCase();
   if (!usuario) return;
   if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(usuario)) {
@@ -1421,7 +1435,7 @@ async function altaPersona(rol) {
       usuario, rol, activo: true, creadoEn: serverTimestamp(),
     });
     alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${que}\n\n`
-      + (rol === 'admin' ? ''
+      + (rol === 'admin' || rol === 'barra' ? ''
         : 'Para que entre, asignalo al evento desde "De turno".\n\n')
       + `Que entre en:\n${location.origin}/bar.html`);
   } catch (e) {
@@ -1449,6 +1463,7 @@ function pintarAccesos() {
   const admins = estado.accesos.filter((a) => a.rol === 'admin');
   const barmanes = estado.accesos.filter((a) => (a.rol || 'barman') === 'barman');
   const puertas = estado.accesos.filter((a) => a.rol === 'puerta');
+  const aparatos = estado.accesos.filter((a) => a.rol === 'barra');
 
   const fila = (a) => `
     <div class="item ${a.activo ? '' : 'agotado'}">
@@ -1456,7 +1471,9 @@ function pintarAccesos() {
         <div class="nombre">${esc(a.usuario)}${a.activo ? '' : ' — <small>dado de baja</small>'}</div>
         <div class="desc">${a.rol === 'admin'
           ? 'administra todo menos borrar'
-          : (estado.evento?.barmanes || []).includes(a.uid) ? 'trabaja esta noche' : 'sin turno asignado'}</div>
+          : a.rol === 'barra'
+            ? 'el aparato del local: entra siempre'
+            : (estado.evento?.barmanes || []).includes(a.uid) ? 'trabaja esta noche' : 'sin turno asignado'}</div>
       </div>
       <button class="btn ${a.activo ? 'peligro' : 'primario'}" data-acceso="${esc(a.uid)}"
               style="padding:.4rem .7rem;font-size:.82rem">${a.activo ? 'Dar de baja' : 'Reactivar'}</button>
@@ -1473,6 +1490,13 @@ function pintarAccesos() {
       : '<p style="color:var(--suave);font-size:.88rem;margin:0">Todavía no registraste ninguno.</p>'}
     <button class="btn primario ancho-full" id="btnAltaBarman" style="margin-top:.6rem">Registrar barman</button>
 
+    <div class="grupo-personal">Celular de la barra</div>
+    ${aparatos.length ? aparatos.map(fila).join('')
+      : `<p style="color:var(--suave);font-size:.88rem;margin:0">
+         Todavía no hay. Es la cuenta del celular que queda en la barra: entra
+         siempre, sin depender del turno.</p>`}
+    <button class="btn ancho-full" id="btnAltaAparato" style="margin-top:.6rem">Registrar celular de barra</button>
+
     <div class="grupo-personal">Puerta</div>
     ${puertas.length ? puertas.map(fila).join('')
       : '<p style="color:var(--suave);font-size:.88rem;margin:0">Todavía no registraste ninguno.</p>'}
@@ -1480,6 +1504,7 @@ function pintarAccesos() {
 
   $('#btnAltaAdmin').onclick = () => altaPersona('admin');
   $('#btnAltaBarman').onclick = () => altaPersona('barman');
+  $('#btnAltaAparato').onclick = () => altaPersona('barra');
   $('#btnAltaPuerta').onclick = () => altaPersona('puerta');
   cont.querySelectorAll('[data-acceso]').forEach((b) =>
     b.onclick = () => alternarAcceso(b.dataset.acceso));
@@ -1601,7 +1626,362 @@ function ticket(p, col) {
   </div>`;
 }
 
+// ---------- quién atiende y a qué caja entra ----------
+//
+// El celular de la barra vive logueado con la cuenta del aparato. Quién está
+// atendiendo se elige adentro: es una etiqueta para saber quién vendió, no una
+// contraseña. Alcanza para el ranking y para preguntar; no para acusar a nadie.
+function quienAtiende() {
+  if (!estado.esAparato) return estado.usuario || 'casa';
+  return localStorage.getItem('sotano:atiende') || '';
+}
+
+function pintarQuienAtiende() {
+  const btn = $('#btnQuienAtiende');
+  if (!btn) return;
+  btn.hidden = !estado.esAparato;
+  $('#quienAtiende').textContent = quienAtiende() || 'Elegir';
+  btn.classList.toggle('alerta', estado.esAparato && !quienAtiende());
+}
+
+// Los que pueden estar atendiendo: los asignados a la noche, y si no hay
+// noche abierta, todos los barmanes activos. El bar vende igual.
+function barmanesPosibles() {
+  const activos = estado.accesos.filter((a) => a.activo && a.rol !== 'puerta');
+  const delTurno = estado.evento?.barmanes || [];
+  const deLaNoche = activos.filter((a) => delTurno.includes(a.uid));
+  return (deLaNoche.length ? deLaNoche : activos).map((a) => a.usuario);
+}
+
+function elegirQuienAtiende() {
+  const gente = barmanesPosibles();
+  const lista = gente.length
+    ? gente.map((g, i) => `${i + 1}. ${g}`).join('\n')
+    : '(todavía no hay barmanes registrados)';
+  const r = (prompt(`¿Quién está atendiendo?\n\n${lista}\n\n`
+    + 'Escribí el número o el nombre.') || '').trim();
+  if (!r) return;
+  const porNumero = gente[Number(r) - 1];
+  localStorage.setItem('sotano:atiende', porNumero || r);
+  pintarQuienAtiende();
+}
+
+// La caja a la que entra lo que se vende: la del evento abierto, o la del día.
+// La noche de bar cruza la medianoche, así que el día corta a las 6 de la
+// mañana: lo que se vende a las 3 AM es de la noche anterior.
+function cajaDeHoy() {
+  const d = new Date(Date.now() - 6 * 3600 * 1000);
+  return `dia-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const cajaActual = () => estado.evento?.id || cajaDeHoy();
+
+// ---------- la caja de Sótano ----------
+//
+// Acá va toda la plata: la de los eventos y la de los días comunes, lo que
+// entra y lo que sale. El número que importa no es lo facturado: es lo que
+// debería haber en el cajón.
+function desdeDelRango() {
+  const ahora = new Date();
+  if (estado.rangoCaja === 'hoy') {
+    // El día del bar corta a las 6: lo de las 3 AM es de la noche anterior.
+    const d = new Date(ahora.getTime() - 6 * 3600 * 1000);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 6, 0, 0);
+  }
+  if (estado.rangoCaja === 'mes') return new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+  return new Date(ahora.getFullYear() - 2, 0, 1);
+}
+
+let mirandoCaja = null;
+function escucharCaja() {
+  const desde = desdeDelRango();
+  const clave = `${estado.rangoCaja}:${desde.getTime()}`;
+  if (mirandoCaja === clave) return;
+  mirandoCaja = clave;
+  if (estado.cortarCaja) estado.cortarCaja();
+
+  const q = query(collection(db, 'pedidos'),
+    where('estado', '==', 'entregado'),
+    where('creadoEn', '>=', Timestamp.fromDate(desde)),
+    orderBy('creadoEn', 'desc'));
+  const cortarPedidos = onSnapshot(q, (snap) => {
+    estado.pedidosCaja = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    pintarCajaGeneral();
+  }, fallo('#caja'));
+
+  const cortarEgresos = onSnapshot(
+    query(collection(db, 'egresos'), where('fecha', '>=', Timestamp.fromDate(desde))),
+    (snap) => {
+      estado.egresos = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0));
+      pintarCajaGeneral();
+    }, () => {});
+
+  estado.cortarCaja = () => { cortarPedidos(); cortarEgresos(); };
+}
+
+function resumirPlata() {
+  const ventas = estado.pedidosCaja || [];
+  const suma = (lista, como) => lista
+    .filter((x) => !como || x.pago === como)
+    .reduce((a, x) => a + Number(x.total ?? x.monto ?? 0), 0);
+
+  const entra = suma(ventas);
+  const entraEfectivo = suma(ventas, 'efectivo');
+  const entraVirtual = suma(ventas, 'virtual');
+  // Lo viejo no tiene forma de pago: se dice aparte en vez de inventarla.
+  const sinForma = entra - entraEfectivo - entraVirtual;
+
+  const sale = suma(estado.egresos);
+  const saleEfectivo = suma(estado.egresos, 'efectivo');
+
+  return {
+    entra, entraEfectivo, entraVirtual, sinForma,
+    sale, saleEfectivo,
+    saldo: entra - sale,
+    enCajon: entraEfectivo - saleEfectivo,
+    ventas: ventas.length,
+  };
+}
+
+// Quién vendió cuánto. Solo sirve si la barra eligió quién atiende, así que
+// cuando falta se dice en vez de mostrar un ranking mentiroso.
+function porBarman(ventas) {
+  const m = new Map();
+  for (const v of ventas) {
+    const quien = v.vendidoPor || '—';
+    const a = m.get(quien) || { cantidad: 0, importe: 0 };
+    a.cantidad += 1;
+    a.importe += Number(v.total || 0);
+    m.set(quien, a);
+  }
+  return [...m].sort((a, b) => b[1].importe - a[1].importe);
+}
+
+function pintarCajaGeneral() {
+  const cont = $('#caja');
+  if (!cont || $('#vistaCaja').hidden) return;
+  escucharCaja();
+  const r = resumirPlata();
+  const rangos = { hoy: 'Hoy', mes: 'Este mes', todo: 'Todo' };
+  const gente = porBarman(estado.pedidosCaja || []);
+
+  cont.innerHTML = `
+    <div class="tabs chicas">
+      ${Object.entries(rangos).map(([k, t]) => `
+        <button data-rango="${k}" aria-selected="${estado.rangoCaja === k}">${t}</button>`).join('')}
+    </div>
+
+    <div class="caja-evento">
+      <div class="titulo">${rangos[estado.rangoCaja]}</div>
+      <div class="desde">${r.ventas} venta${r.ventas === 1 ? '' : 's'} cobrada${r.ventas === 1 ? '' : 's'}</div>
+      <div class="numeros">
+        <div class="plata"><b>${plata(r.entra)}</b><span>entró</span></div>
+        <div><b>${plata(r.sale)}</b><span>salió</span></div>
+        <div class="plata"><b>${plata(r.saldo)}</b><span>queda</span></div>
+      </div>
+      <table class="ranking" style="margin-top:.8rem"><tbody>
+        <tr><td>💵 Efectivo</td><td class="n">${plata(r.entraEfectivo)}</td></tr>
+        <tr><td>📲 Virtual</td><td class="n">${plata(r.entraVirtual)}</td></tr>
+        ${r.sinForma ? `<tr><td>Sin forma de pago <small>(antes de que se pidiera)</small></td>
+          <td class="n">${plata(r.sinForma)}</td></tr>` : ''}
+      </tbody></table>
+      <div class="interruptor" style="margin-top:.9rem">
+        <div>
+          <b>En el cajón debería haber ${plata(r.enCajon)}</b>
+          <span>Efectivo cobrado menos los gastos pagados en efectivo.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grupo-personal" style="display:flex;align-items:center;gap:.6rem">
+      <span style="flex:1">Gastos</span>
+      <button class="btn" id="btnNuevoEgreso" style="padding:.25rem .6rem;font-size:.72rem;text-transform:none;letter-spacing:0">
+        + Cargar gasto</button>
+    </div>
+    ${estado.egresos.length ? estado.egresos.map((e) => `
+      <div class="item">
+        <div class="cuerpo">
+          <div class="nombre">${esc(e.concepto)}</div>
+          <div class="desc">${e.fecha?.toDate?.()?.toLocaleDateString('es-AR') || ''}
+            · ${esc(e.categoria)} · ${e.pago === 'efectivo' ? '💵' : '📲'}
+            ${e.cargadoPor ? ' · ' + esc(e.cargadoPor) : ''}</div>
+        </div>
+        <div class="total">−${plata(e.monto)}</div>
+        <button class="btn peligro" data-borrar-egreso="${esc(e.id)}"
+                style="padding:.3rem .6rem;font-size:.78rem">✕</button>
+      </div>`).join('')
+      : '<p style="color:var(--suave);font-size:.9rem">Sin gastos cargados en este período.</p>'}
+
+    ${gente.length ? `
+      <div class="grupo-personal">Quién vendió</div>
+      <table class="ranking"><tbody>${gente.map(([quien, g]) => `
+        <tr><td>${quien === '—' ? '<i>sin registrar</i>' : esc(quien)}</td>
+            <td class="n">${g.cantidad}</td><td class="n">${plata(g.importe)}</td></tr>`).join('')}
+      </tbody></table>` : ''}`;
+
+  cont.querySelectorAll('[data-rango]').forEach((b) => b.onclick = () => {
+    estado.rangoCaja = b.dataset.rango;
+    pintarCajaGeneral();
+  });
+  $('#btnNuevoEgreso').onclick = abrirEgreso;
+  cont.querySelectorAll('[data-borrar-egreso]').forEach((b) => b.onclick = async () => {
+    const e = estado.egresos.find((x) => x.id === b.dataset.borrarEgreso);
+    if (!e || !confirm(`¿Borrar el gasto "${e.concepto}" de ${plata(e.monto)}?`)) return;
+    try { await deleteDoc(doc(db, 'egresos', e.id)); }
+    catch (err) { alert('No se pudo: ' + (err.code || err.message)); }
+  });
+}
+
+// ---------- venta de mostrador ----------
+// El que compra en la barra no usa la app del cliente: la carga quien atiende,
+// con la forma de pago, y nace entregada. Es la venta de todos los días.
+function abrirVenta() {
+  estado.venta = {};
+  $('#dlgVenta').showModal();
+  pintarVenta();
+}
+
+function totalVenta() {
+  return Object.entries(estado.venta).reduce((s, [id, cant]) => {
+    const c = estado.carta.find((x) => x.id === id);
+    return s + Number(c?.precio || 0) * cant;
+  }, 0);
+}
+
+function pintarVenta() {
+  const vendibles = estado.carta.filter((i) => i.enCarta !== false);
+  const total = totalVenta();
+  const quien = quienAtiende();
+  $('#cuerpoVenta').innerHTML = `
+    ${estado.esAparato && !quien ? `<div class="aviso mal"><span>⚠</span><div>
+      <b>Elegí quién está atendiendo</b> arriba, antes de cobrar.</div></div>` : ''}
+    <div class="lista-venta">
+      ${vendibles.map((i) => `
+        <div class="item ${i.disponible === false ? 'agotado' : ''}">
+          <div class="cuerpo">
+            <div class="nombre">${esc(i.nombre || i.id)}</div>
+            <div class="desc">${plata(i.precio)}${i.disponible === false ? ' · agotado' : ''}</div>
+          </div>
+          <div class="cant">
+            <button data-venta="${i.id}" data-d="-1" aria-label="Quitar">−</button>
+            <span class="n">${estado.venta[i.id] || 0}</span>
+            <button data-venta="${i.id}" data-d="1" aria-label="Agregar"
+                    ${i.disponible === false ? 'disabled' : ''}>+</button>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="total-venta">
+      <span>Total</span><b>${plata(total)}</b>
+    </div>
+    <div style="display:flex;gap:.6rem;margin-top:.6rem">
+      <button class="btn primario" id="btnVentaEfectivo" style="flex:1;padding:.9rem"
+              ${!total ? 'disabled' : ''}>💵 Efectivo</button>
+      <button class="btn primario" id="btnVentaVirtual" style="flex:1;padding:.9rem"
+              ${!total ? 'disabled' : ''}>📲 Virtual</button>
+    </div>`;
+
+  $('#cuerpoVenta').querySelectorAll('[data-venta]').forEach((b) => b.onclick = () => {
+    const id = b.dataset.venta;
+    const cuanto = (estado.venta[id] || 0) + Number(b.dataset.d);
+    if (cuanto <= 0) delete estado.venta[id]; else estado.venta[id] = cuanto;
+    pintarVenta();
+  });
+  if ($('#btnVentaEfectivo')) $('#btnVentaEfectivo').onclick = () => cobrarVenta('efectivo');
+  if ($('#btnVentaVirtual')) $('#btnVentaVirtual').onclick = () => cobrarVenta('virtual');
+}
+
+async function cobrarVenta(pago) {
+  const items = Object.entries(estado.venta).map(([id, cantidad]) => {
+    const c = estado.carta.find((x) => x.id === id) || {};
+    return { id, nombre: c.nombre || id, precio: Number(c.precio || 0), cantidad };
+  });
+  if (!items.length) return;
+  const quien = quienAtiende();
+  if (estado.esAparato && !quien) { elegirQuienAtiende(); return; }
+
+  const btn = $(pago === 'efectivo' ? '#btnVentaEfectivo' : '#btnVentaVirtual');
+  if (btn) { btn.disabled = true; btn.textContent = 'Cobrando…'; }
+  try {
+    await addDoc(collection(db, 'pedidos'), {
+      clienteId: auth.currentUser.uid,
+      estado: 'entregado', origen: 'barra',
+      items, total: totalVenta(), pago,
+      vendidoPor: quien || estado.usuario || 'casa',
+      cajaId: cajaActual(),
+      nombreCliente: 'Mostrador',
+      creadoEn: serverTimestamp(),
+    });
+    if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
+    estado.venta = {};
+    $('#dlgVenta').close();
+  } catch (e) {
+    pintarVenta();
+    alert('No se pudo cobrar: ' + (e.code || e.message));
+  }
+}
+
+// ---------- la plata que sale ----------
+function abrirEgreso() {
+  $('#inpEgrConcepto').value = '';
+  $('#inpEgrMonto').value = '';
+  $('#inpEgrCategoria').value = 'insumo';
+  $('#dlgEgreso').showModal();
+  $('#inpEgrConcepto').focus();
+}
+
+async function guardarEgreso() {
+  const concepto = $('#inpEgrConcepto').value.trim();
+  const monto = Math.round(Number($('#inpEgrMonto').value) || 0);
+  if (concepto.length < 2) { $('#inpEgrConcepto').focus(); return; }
+  if (monto <= 0) { $('#inpEgrMonto').focus(); return; }
+  const btn = $('#btnGuardarEgreso');
+  btn.disabled = true; btn.textContent = 'Cargando…';
+  try {
+    await addDoc(collection(db, 'egresos'), {
+      concepto, monto,
+      categoria: $('#inpEgrCategoria').value,
+      pago: document.querySelector('input[name="egrPago"]:checked').value,
+      fecha: Timestamp.fromDate(new Date()),
+      cajaId: cajaActual(),
+      cargadoPor: estado.usuario || 'casa',
+      creadoEn: serverTimestamp(),
+    });
+    $('#dlgEgreso').close();
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+  btn.disabled = false; btn.textContent = 'Cargar';
+}
+
+// ---------- cobrar ----------
+// Al entregar hay que decir cómo pagó: un toque, y la caja queda cerrada en el
+// momento. Si se deja para después, no se hace nunca.
+let cobrando = null;
+function pedirPago(pedido) {
+  cobrando = pedido;
+  $('#detalleCobro').textContent =
+    `${quienPidio(pedido)} · ${plata(pedido.total)}`;
+  $('#dlgCobro').showModal();
+}
+
+async function cerrarCobro(pago) {
+  const p = cobrando;
+  cobrando = null;
+  $('#dlgCobro').close();
+  if (!p) return;
+  try {
+    await updateDoc(doc(db, 'pedidos', p.id), {
+      estado: 'entregado', pago, vendidoPor: quienAtiende() || estado.usuario || 'casa',
+    });
+    if (navigator.vibrate) navigator.vibrate(12);
+  } catch (e) { alert('No se pudo cobrar: ' + (e.code || e.message)); }
+}
+
 async function cambiarEstado(id, nuevo) {
+  // Entregar es cobrar: no se pasa de largo.
+  if (nuevo === 'entregado') {
+    const p = estado.pedidos.find((x) => x.id === id);
+    if (p) return pedirPago(p);
+  }
   try {
     await updateDoc(doc(db, 'pedidos', id), { estado: nuevo });
     if (navigator.vibrate) navigator.vibrate(12);
@@ -1713,9 +2093,11 @@ $('#btnSonido').onclick = () => {
 // ---------- pestañas ----------
 function irA(cual) {
   const vistas = { tablero: '#vistaTablero', carta: '#vistaCartaBar',
-                   evento: '#vistaEvento', calendario: '#vistaCalendario', puerta: '#vistaPuerta' };
+                   evento: '#vistaEvento', caja: '#vistaCaja',
+                   calendario: '#vistaCalendario', puerta: '#vistaPuerta' };
   const tabs = { tablero: '#tabTablero', carta: '#tabCartaBar',
-                 evento: '#tabEvento', calendario: '#tabCalendario', puerta: '#tabPuerta' };
+                 evento: '#tabEvento', caja: '#tabCaja',
+                 calendario: '#tabCalendario', puerta: '#tabPuerta' };
   // La cámara se apaga al salir de Puerta: no se deja prendida de fondo.
   if (cual !== 'puerta') cerrarCamara();
   for (const k of Object.keys(vistas)) {
@@ -1726,6 +2108,7 @@ function irA(cual) {
 $('#tabTablero').onclick = () => irA('tablero');
 $('#tabCartaBar').onclick = () => irA('carta');
 $('#tabEvento').onclick = () => irA('evento');
+$('#tabCaja').onclick = () => { irA('caja'); pintarCajaGeneral(); };
 $('#tabCalendario').onclick = () => irA('calendario');
 $('#tabPuerta').onclick = () => irA('puerta');
 

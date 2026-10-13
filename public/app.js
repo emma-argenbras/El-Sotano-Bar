@@ -145,9 +145,17 @@ function mostrarFalloAuth(e) {
 // El QR pegado en la mesa no vence nunca: lo que vence es el permiso de
 // pedir. Cerrado el evento, la carta se sigue viendo pero no entra nada.
 // Las reglas lo rechazan igual: esto es para avisarlo, no para custodiarlo.
+// Igual que en el panel: lo que se vende a las 3 AM es de la noche anterior.
+function cajaDelDia() {
+  const d = new Date(Date.now() - 6 * 3600 * 1000);
+  return `dia-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function escucharEstadoLocal() {
   onSnapshot(doc(db, 'publico', 'estado'), (d) => {
     estado.tomandoPedidos = d.exists() ? d.data().tomandoPedidos !== false : true;
+    // A qué caja entra lo que se pida: la del evento abierto, o la del día.
+    estado.eventoId = d.exists() ? (d.data().eventoId || '') : '';
     pintarEstadoLocal();
     pintarCarta();
     pintarCarrito();
@@ -323,6 +331,9 @@ $('#btnEnviar').onclick = async () => {
       estado: 'nuevo',
       items,
       total: totalCarrito(),
+      origen: 'cliente',
+      // La noche de bar cruza la medianoche: el día corta a las 6 de la mañana.
+      cajaId: estado.eventoId || cajaDelDia(),
       creadoEn: serverTimestamp(),
     };
     if (nombre) pedido.nombreCliente = nombre;

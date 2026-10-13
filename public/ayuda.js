@@ -110,6 +110,24 @@
     },
     {
       quien: ['admin'],
+      titulo: 'La plata de Sótano',
+      cuerpo: `
+        <p>La pestaña <b>Caja</b> junta todo: lo de los eventos y lo de los días
+        comunes, lo que entra y lo que sale. Arriba elegís <b>Hoy</b>,
+        <b>Este mes</b> o <b>Todo</b>.</p>
+        <p>Lo que entra se parte en <b>efectivo</b> y <b>virtual</b>. Lo que
+        salió son los <b>gastos</b> que cargás vos o Guille: proveedor, sueldo,
+        insumo, retiro de plata. La barra no los puede cargar ni ver.</p>
+        <p>El número que más sirve es <b>“en el cajón debería haber”</b>: el
+        efectivo cobrado menos los gastos pagados en efectivo. Si no coincide
+        con lo que hay, falta plata o falta cargar un gasto.</p>
+        <p><b>Quién vendió</b> muestra el ranking por barman. Solo sirve si en
+        la barra eligieron quién atiende; si no, cae en “sin registrar”.</p>
+        <p>Abajo, <b>noche por noche</b>: el histórico de eventos cerrados, que
+        podés ordenar por fecha o por facturación.</p>`,
+    },
+    {
+      quien: ['admin'],
       titulo: 'La caja',
       cuerpo: `
         <p>La caja de la noche suma <b>solo los pedidos entregados</b>. Un pedido
@@ -133,7 +151,14 @@
         <p><b>Administrador</b> — todo lo que podés vos menos borrar. Cuenta
         permanente, no depende del evento.</p>
         <p><b>Barman</b> — mueve pedidos y marca agotado. Ve precios y caja.
-        <b>Solo entra la noche en que está asignado.</b></p>
+        <b>Solo entra la noche en que está asignado.</b> Es para el celular
+        propio de cada uno.</p>
+        <p><b>Celular de la barra</b> — la cuenta del aparato que vive en el
+        local, siempre prendida: el bar vende todos los días, no solo las
+        noches de evento. No depende del turno. Adentro se elige <b>quién
+        atiende</b>, y eso queda en cada venta. Ojo: eso es una etiqueta, no
+        una contraseña — cualquiera que agarre ese celular puede tocar otro
+        nombre.</p>
         <p><b>Puerta</b> — solo la pantalla de puerta. No ve caja, pedidos ni
         carta. También solo la noche que trabaja.</p>
         <p><b>Dar de baja</b> le corta el acceso al toque, aunque tenga la app
@@ -152,6 +177,23 @@
         es alguien que la puerta verificó.</p>
         <p>Un ticket que lleva mucho tiempo se marca en rojo.</p>
         <p>La <b>✕</b> cancela un pedido.</p>`,
+    },
+    {
+      quien: ['admin', 'barman'],
+      titulo: 'Cobrar y vender en la barra',
+      cuerpo: `
+        <p>Al pasar un pedido a <b>Entregado</b> pregunta cómo pagó:
+        <b>Efectivo</b> o <b>Virtual</b>. Un toque, y no se puede saltear: esa
+        es toda la contabilidad del bar.</p>
+        <p>El que compra en el mostrador no usa la app. Para eso está
+        <b>+ Venta en la barra</b>, arriba de los pedidos: tocás los productos,
+        ves el total y cobrás. Entra a la caja como cualquier venta.</p>
+        <p>Si el bar vende un día que no es de evento, va a la <b>caja del
+        día</b>. El día corta a las 6 de la mañana: lo que se vende a las 3 AM
+        es de la noche anterior.</p>
+        <p class="solo-admin-ayuda">En el celular de la barra, arriba está
+        <b>👤 quién atiende</b>. Elegilo al empezar el turno: es lo que queda
+        guardado en cada venta.</p>`,
     },
     {
       quien: ['admin', 'barman'],

@@ -59,6 +59,7 @@ before(async () => {
     // Esta noche trabaja nico. Franco está registrado pero no asignado.
     await setDoc(doc(db, 'barra/turno'), { eventoId: 'ev-1', barmanes: ['uid-turno-ok', 'uid-puerta'] });
     await setDoc(doc(db, 'accesosBarra/uid-puerta'), { usuario: 'puerta', activo: true, rol: 'puerta' });
+    await setDoc(doc(db, 'accesosBarra/uid-aparato'), { usuario: 'barra', activo: true, rol: 'barra' });
     await setDoc(doc(db, 'publico/registro'), { eventoId: 'ev-1', nombre: 'Noche' });
     await setDoc(doc(db, 'registros/ev-1'), {
       eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 1, abierto: true,
@@ -101,9 +102,140 @@ const puerta = () => env.authenticatedContext('uid-puerta', {
   email: 'puerta@barra.local', provider_id: 'password',
 }).firestore();
 
+// El celular que vive en la barra: cuenta propia, siempre prendida.
+const aparato = () => env.authenticatedContext('uid-aparato', {
+  email: 'barra@barra.local', provider_id: 'password',
+}).firestore();
+
 const invitadoNuevo = (extra = {}) => ({
   eventoId: 'ev-1', nombre: 'Beto', telefono: '1155551111',
   creadoEn: serverTimestamp(), ...extra,
+});
+
+describe('alta del celular de la barra', () => {
+  it('la casa lo registra como un rol más', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'accesosBarra/uid-aparato-2'),
+      { usuario: 'barra2', activo: true, rol: 'barra' }));
+  });
+
+  it('un rol inventado sigue sin entrar', async () => {
+    await assertFails(setDoc(doc(gerente(), 'accesosBarra/uid-raro'),
+      { usuario: 'raro', activo: true, rol: 'dueño' }));
+  });
+
+  it('y el aparato no puede darse permisos a sí mismo', async () => {
+    await assertFails(setDoc(doc(aparato(), 'accesosBarra/uid-aparato'),
+      { usuario: 'barra', activo: true, rol: 'admin' }));
+  });
+});
+
+describe('el celular de la barra', () => {
+  const ventaDeMostrador = (extra = {}) => ({
+    clienteId: 'uid-aparato', estado: 'entregado', origen: 'barra',
+    items: [{ id: 'fernet', nombre: 'Fernet con coca', precio: 4500, cantidad: 1 }],
+    total: 4500, pago: 'efectivo', vendidoPor: 'nico',
+    cajaId: 'dia-2026-10-13', creadoEn: serverTimestamp(), ...extra,
+  });
+
+  // El bar vende todos los días, no solo las noches de evento: este aparato
+  // no depende del turno.
+  it('ve los pedidos sin estar asignado a ninguna noche', async () => {
+    await assertSucceeds(getDocs(collection(aparato(), 'pedidos')));
+  });
+
+  it('marca agotado como cualquier barman', async () => {
+    await assertSucceeds(updateDoc(doc(aparato(), 'carta/fernet'), { disponible: false }));
+  });
+
+  it('carga una venta de mostrador, cobrada y entregada', async () => {
+    await assertSucceeds(setDoc(doc(aparato(), 'pedidos/venta-mostrador-1'), ventaDeMostrador()));
+  });
+
+  it('pero NO una venta sin forma de pago', async () => {
+    await assertFails(setDoc(doc(aparato(), 'pedidos/venta-sin-pago'),
+      ventaDeMostrador({ pago: 'fiado' })));
+    const { pago, ...sinPago } = ventaDeMostrador();
+    await assertFails(setDoc(doc(aparato(), 'pedidos/venta-sin-pago-2'), sinPago));
+  });
+
+  it('un cliente NO puede hacerse pasar por una venta de barra', async () => {
+    await assertFails(setDoc(doc(anon(), 'pedidos/venta-trucha'),
+      ventaDeMostrador({ clienteId: 'cliente-anon-1' })));
+  });
+
+  it('al entregar deja la forma de pago y quién despachó', async () => {
+    await assertSucceeds(updateDoc(doc(aparato(), 'pedidos/pedido-de-ana'), {
+      estado: 'entregado', pago: 'virtual', vendidoPor: 'nico',
+    }));
+  });
+
+  it('pero NO puede reescribir el total ni los items al cobrar', async () => {
+    await assertFails(updateDoc(doc(aparato(), 'pedidos/pedido-de-ana'),
+      { estado: 'entregado', total: 1 }));
+    await assertFails(updateDoc(doc(aparato(), 'pedidos/pedido-de-ana'),
+      { estado: 'entregado', items: [] }));
+  });
+
+  it('NO ve ni carga la plata que sale', async () => {
+    await assertFails(getDocs(collection(aparato(), 'egresos')));
+    await assertFails(setDoc(doc(aparato(), 'egresos/trucho'), {
+      concepto: 'Retiro', categoria: 'retiro', monto: 50000,
+      pago: 'efectivo', fecha: new Date(),
+    }));
+  });
+
+  it('tampoco toca precios ni eventos', async () => {
+    await assertFails(updateDoc(doc(aparato(), 'carta/fernet'), { precio: 1 }));
+    await assertFails(setDoc(doc(aparato(), 'barra/eventos/items/inventado'), { nombre: 'Mía' }));
+  });
+
+  it('dado de baja, se queda afuera al toque', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'accesosBarra/uid-aparato'),
+        { usuario: 'barra', activo: false, rol: 'barra' }));
+    await assertFails(getDocs(collection(aparato(), 'pedidos')));
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'accesosBarra/uid-aparato'),
+        { usuario: 'barra', activo: true, rol: 'barra' }));
+  });
+});
+
+describe('la plata que sale', () => {
+  const egreso = (extra = {}) => ({
+    concepto: 'Hielo', categoria: 'insumo', monto: 12000,
+    pago: 'efectivo', fecha: new Date(), cargadoPor: 'emma',
+    creadoEn: serverTimestamp(), ...extra,
+  });
+
+  it('la casa carga un egreso', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'egresos/egreso-1'), egreso()));
+    await assertSucceeds(setDoc(doc(gerente(), 'egresos/egreso-2'), egreso({ cargadoPor: 'guille' })));
+  });
+
+  it('sin concepto, con monto cero o en negativo NO', async () => {
+    await assertFails(setDoc(doc(barra(), 'egresos/egreso-malo-1'), egreso({ concepto: '' })));
+    await assertFails(setDoc(doc(barra(), 'egresos/egreso-malo-2'), egreso({ monto: 0 })));
+    await assertFails(setDoc(doc(barra(), 'egresos/egreso-malo-3'), egreso({ monto: -5000 })));
+  });
+
+  it('con una categoría inventada tampoco', async () => {
+    await assertFails(setDoc(doc(barra(), 'egresos/egreso-malo-4'),
+      egreso({ categoria: 'cualquiera' })));
+  });
+
+  it('el barman no los ve: es plata, no servicio', async () => {
+    await assertFails(getDocs(collection(turnoOk(), 'egresos')));
+    await assertFails(setDoc(doc(turnoOk(), 'egresos/trucho-2'), egreso()));
+  });
+
+  it('un cliente menos todavía', async () => {
+    await assertFails(getDocs(collection(anon(), 'egresos')));
+  });
+
+  it('la casa puede corregirlo y borrarlo', async () => {
+    await assertSucceeds(updateDoc(doc(gerente(), 'egresos/egreso-1'), { monto: 13000 }));
+    await assertSucceeds(deleteDoc(doc(gerente(), 'egresos/egreso-2')));
+  });
 });
 
 describe('registro de invitados', () => {

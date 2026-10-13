@@ -67,6 +67,8 @@
     <div class="relleno"></div>
     <span class="chip" id="chipConexion" hidden></span>
     <span class="chip" id="chipCaja">—</span>
+    <button class="btn solo-aparato" id="btnQuienAtiende" hidden
+            title="Quién está atendiendo" style="padding:.35rem .7rem">👤 <span id="quienAtiende">Elegir</span></button>
     <button class="btn" id="btnSonido" title="Aviso sonoro al entrar un pedido" style="padding:.35rem .7rem">🔔</button>
     <button class="btn" data-instalar-btn hidden title="Instalar la app"
             style="padding:.35rem .7rem">⬇<span class="solo-ancho"> Instalar</span></button>
@@ -95,16 +97,25 @@
       <button role="tab" id="tabTablero" aria-selected="true">Pedidos</button>
       <button role="tab" id="tabCartaBar" aria-selected="false">Carta</button>
       <button role="tab" id="tabEvento" aria-selected="false">Noche</button>
+      <button role="tab" id="tabCaja" aria-selected="false">Caja</button>
       <button role="tab" id="tabCalendario" aria-selected="false">Calendario</button>
       <button role="tab" id="tabPuerta" aria-selected="false">Puerta</button>
     </div>
 
     <section id="vistaTablero">
+      <button class="btn primario ancho-full" id="btnVentaBarra" style="margin-bottom:.9rem">
+        + Venta en la barra</button>
       <div class="tablero" id="tablero"><div class="cargando">Cargando pedidos…</div></div>
     </section>
 
     <section id="vistaCartaBar" hidden>
       <div id="cartaBar"><div class="cargando">Cargando carta…</div></div>
+    </section>
+
+    <section id="vistaCaja" hidden>
+      <div id="caja"><div class="cargando">Haciendo números…</div></div>
+      <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Noche por noche</h2>
+      <div id="eventosPasados"><div class="cargando">Buscando…</div></div>
     </section>
 
     <section id="vistaCalendario" hidden>
@@ -126,8 +137,6 @@
         <div id="accesos"><div class="cargando">Buscando…</div></div>
       </div>
 
-      <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Eventos cerrados</h2>
-      <div id="eventosPasados"><div class="cargando">Buscando…</div></div>
     </section>
   </main>
 </div>
@@ -195,6 +204,62 @@
 
 <!-- Invitaciones: el link y el QR de una noche ya creada, para volver a
      mandarlos cuando haga falta. -->
+<!-- Venta de mostrador: el que compra en la barra no usa la app. -->
+<dialog id="dlgVenta">
+  <h2 style="margin-top:0">Venta en la barra</h2>
+  <div id="cuerpoVenta"></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarVenta" style="flex:1">Volver</button>
+  </div>
+</dialog>
+
+<!-- Cómo pagó: un toque, al entregar. -->
+<dialog id="dlgCobro">
+  <h2 style="margin-top:0" id="tituloCobro">¿Cómo pagó?</h2>
+  <p style="color:var(--suave);margin:.2rem 0 1rem" id="detalleCobro"></p>
+  <div style="display:flex;gap:.6rem">
+    <button class="btn primario" id="btnEfectivo" style="flex:1;padding:1rem">💵 Efectivo</button>
+    <button class="btn primario" id="btnVirtual" style="flex:1;padding:1rem">📲 Virtual</button>
+  </div>
+  <button class="btn ancho-full" id="btnCancelarCobro" style="margin-top:.8rem">Volver</button>
+</dialog>
+
+<!-- Plata que sale: solo administradores. -->
+<dialog id="dlgEgreso">
+  <h2 style="margin-top:0">Cargar un gasto</h2>
+  <label class="campo">
+    <span>Concepto</span>
+    <input id="inpEgrConcepto" maxlength="80" autocomplete="off" placeholder="Hielo, sueldo de Nico, proveedor…">
+  </label>
+  <label class="campo">
+    <span>Monto</span>
+    <input id="inpEgrMonto" type="number" min="1" inputmode="numeric" autocomplete="off">
+  </label>
+  <label class="campo">
+    <span>Categoría</span>
+    <select id="inpEgrCategoria">
+      <option value="insumo">Insumo</option>
+      <option value="proveedor">Proveedor</option>
+      <option value="sueldo">Sueldo</option>
+      <option value="retiro">Retiro de plata</option>
+      <option value="otro">Otro</option>
+    </select>
+  </label>
+  <div class="campo">
+    <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">Cómo se pagó</span>
+    <div style="display:flex;gap:.6rem">
+      <label style="flex:1;display:flex;align-items:center;gap:.4rem">
+        <input type="radio" name="egrPago" value="efectivo" checked> Efectivo</label>
+      <label style="flex:1;display:flex;align-items:center;gap:.4rem">
+        <input type="radio" name="egrPago" value="virtual"> Virtual</label>
+    </div>
+  </div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarEgreso" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnGuardarEgreso" style="flex:1.4">Cargar</button>
+  </div>
+</dialog>
+
 <dialog id="dlgInvitar">
   <h2 style="margin-top:0" id="tituloInvitar">Invitaciones</h2>
   <div id="cuerpoInvitar"></div>

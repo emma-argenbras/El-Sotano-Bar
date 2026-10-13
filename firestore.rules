@@ -70,6 +70,13 @@ service cloud.firestore {
       return esElDueno() || miRol() == 'admin';
     }
 
+    // El celular que vive en la barra tiene su propia cuenta, siempre prendida:
+    // el bar vende todos los días, no solo las noches de evento. No depende del
+    // turno. Si hay que cortarle el acceso, se da de baja como a cualquiera.
+    function esAparatoDeBarra() {
+      return miRol() == 'barra';
+    }
+
     // Quién trabaja esta noche. barra/turno lo escriben los administradores al
     // abrir el evento; al cerrarlo queda vacío y ningún barman entra.
     function barmanDeTurno() {
@@ -80,7 +87,7 @@ service cloud.firestore {
     }
 
     function esBarra() {
-      return esAdmin() || barmanDeTurno();
+      return esAdmin() || barmanDeTurno() || esAparatoDeBarra();
     }
 
     // La puerta solo trabaja la noche en que está asignada, igual que el barman.
@@ -96,13 +103,6 @@ service cloud.firestore {
     function soloStock() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['stock', 'disponible']);
-    }
-
-    // En un pedido, la barra mueve el estado y nada más. Sin esto, quien
-    // atiende podría reescribir el total de un pedido ya hecho.
-    function soloEstado() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['estado']);
     }
 
     function esDueno(uid) {
@@ -131,7 +131,8 @@ service cloud.firestore {
     function pedidoValido(d) {
       return d.keys().hasAll(['clienteId', 'estado', 'items', 'total', 'creadoEn'])
         && d.keys().hasOnly(['clienteId', 'estado', 'items', 'total', 'mesa', 'nota',
-                             'nombreCliente', 'invitadoId', 'creadoEn'])
+                             'nombreCliente', 'invitadoId', 'creadoEn',
+                             'cajaId', 'origen', 'pago', 'vendidoPor', 'cobradoEn'])
         && d.clienteId is string
         && d.estado is string
         && d.items is list
@@ -145,7 +146,42 @@ service cloud.firestore {
         && (!('nota' in d.keys()) || (d.nota is string && d.nota.size() <= 300))
         && (!('nombreCliente' in d.keys()) || (d.nombreCliente is string && d.nombreCliente.size() <= 60))
         // Ata el pedido al invitado para poder ver el consumo de cada uno.
-        && (!('invitadoId' in d.keys()) || (d.invitadoId is string && d.invitadoId.size() <= 40));
+        && (!('invitadoId' in d.keys()) || (d.invitadoId is string && d.invitadoId.size() <= 40))
+        // A qué caja entra: el id del evento, o "dia-AAAA-MM-DD" cuando no hay
+        // evento abierto. Sin esto la venta diaria no suma en ningún lado.
+        && (!('cajaId' in d.keys()) || (d.cajaId is string && d.cajaId.size() <= 60))
+        && (!('origen' in d.keys()) || d.origen in ['cliente', 'barra'])
+        && (!('pago' in d.keys()) || d.pago in ['efectivo', 'virtual'])
+        && (!('vendidoPor' in d.keys()) || (d.vendidoPor is string && d.vendidoPor.size() <= 40))
+        && (!('cobradoEn' in d.keys()) || d.cobradoEn == request.time);
+    }
+
+    // Lo que la barra puede tocar de un pedido ya hecho: moverlo de columna y,
+    // al entregarlo, decir cómo se pagó y quién lo despachó. Nunca los items ni
+    // el total: eso quedó fijado cuando se hizo.
+    function soloCobro() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['estado', 'pago', 'vendidoPor', 'cobradoEn']);
+    }
+
+    // Una venta cargada desde la barra: sale cobrada y entregada, con quién la
+    // hizo. El cliente del mostrador no usa la app, así que la carga la barra.
+    function ventaDeBarra(d) {
+      return d.get('origen', '') == 'barra'
+        && d.estado == 'entregado'
+        && d.get('pago', '') in ['efectivo', 'virtual']
+        && d.get('vendidoPor', '') is string;
+    }
+
+    function egresoValido(d) {
+      return d.keys().hasAll(['concepto', 'categoria', 'monto', 'pago', 'fecha'])
+        && d.keys().hasOnly(['concepto', 'categoria', 'monto', 'pago', 'fecha',
+                             'cajaId', 'cargadoPor', 'creadoEn'])
+        && d.concepto is string && d.concepto.size() >= 2 && d.concepto.size() <= 80
+        && d.categoria in ['proveedor', 'sueldo', 'insumo', 'retiro', 'otro']
+        && d.monto is number && d.monto > 0 && d.monto <= 5000000
+        && d.pago in ['efectivo', 'virtual']
+        && d.fecha is timestamp;
     }
 
     // ---------- carta ----------
@@ -172,9 +208,15 @@ service cloud.firestore {
       // local esté tomando pedidos. La barra puede cargar uno a mano siempre.
       allow create: if logueado()
         && esDueno(request.resource.data.clienteId)
-        && request.resource.data.estado == 'nuevo'
         && pedidoValido(request.resource.data)
-        && (esBarra() || tomandoPedidos());
+        && (
+          // El cliente, desde su celular: arranca en "nuevo" y solo si el local
+          // está tomando pedidos.
+          (request.resource.data.estado == 'nuevo'
+            && (esBarra() || tomandoPedidos()))
+          // O la barra cargando una venta de mostrador, que nace cobrada.
+          || (esBarra() && ventaDeBarra(request.resource.data))
+        );
 
       // Mover el pedido por el tablero. La barra toca el estado y nada más:
       // el total y los items de un pedido ya hecho no se reescriben.
@@ -184,7 +226,7 @@ service cloud.firestore {
         && request.resource.data.estado in estadosValidos()
         && request.resource.data.clienteId == resource.data.clienteId
         && request.resource.data.creadoEn == resource.data.creadoEn
-        && (esElDueno() || soloEstado());
+        && (esElDueno() || soloCobro());
 
       // Borrar es del dueño y de nadie más.
       allow delete: if esElDueno();
@@ -335,6 +377,17 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // ---------- la plata que sale ----------
+    // Un egreso baja la caja, así que lo cargan los dueños y nadie más: si lo
+    // pudiera cargar el celular de la barra, el efectivo que la app dice que
+    // hay en el cajón dejaría de servir para controlar nada.
+    match /egresos/{id} {
+      allow read: if esAdmin();
+      allow create: if esAdmin() && egresoValido(request.resource.data);
+      allow update: if esAdmin() && egresoValido(request.resource.data);
+      allow delete: if esAdmin();
+    }
+
     // ---------- el padrón: quién puede entrar al panel ----------
     // Va fuera de barra/ a propósito: si estuviera adentro, la regla de arriba
     // dejaría que el personal se editara su propio permiso.
@@ -351,7 +404,7 @@ service cloud.firestore {
       // Los roles son estos dos y nada más: con uno inventado la cuenta queda
       // sin acceso y sin forma de arreglarse sola.
       allow create, update: if esAdmin()
-        && request.resource.data.get('rol', 'barman') in ['admin', 'barman', 'puerta'];
+        && request.resource.data.get('rol', 'barman') in ['admin', 'barman', 'puerta', 'barra'];
       allow delete: if esElDueno();
     }
 

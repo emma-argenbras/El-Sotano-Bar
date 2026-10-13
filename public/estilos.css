@@ -461,6 +461,24 @@ body.es-puerta #tabTablero, body.es-puerta #tabCartaBar, body.es-puerta #tabEven
 .pista.bien { color: var(--verde); }
 .pista.mal  { color: var(--rojo); }
 
+/* ---------- venta de mostrador y caja ---------- */
+.lista-venta { max-height: 45vh; overflow-y: auto; margin: .2rem 0 .8rem; }
+.lista-venta .item { margin-bottom: .4rem; }
+.total-venta {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .7rem .9rem; border-radius: 12px; background: var(--panel-alto);
+  border: 1px solid var(--borde);
+}
+.total-venta b { color: var(--oro); font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+
+/* Pestañas chicas, adentro de una pantalla: Hoy / Este mes / Todo. */
+.tabs.chicas { margin-bottom: .9rem; }
+.tabs.chicas button { padding: .45rem .8rem; font-size: .86rem; }
+
+/* El aparato de la barra elige quién atiende; si no lo eligió, se nota. */
+.btn.alerta { border-color: var(--oro); color: var(--oro); }
+body:not(.es-aparato) .solo-aparato { display: none !important; }
+
 /* ---------- plegables: listas que no se comen la pantalla ---------- */
 .plegable {
   border: 1px solid var(--borde); border-radius: 12px;

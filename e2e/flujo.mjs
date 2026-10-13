@@ -276,15 +276,60 @@ await chequear('reabrir la app con un pedido ya listo NO dispara el aviso', asyn
     throw new Error('avisó de nuevo al reabrir');
 });
 
-await chequear('la barra lo pasa a Entregado', async () => {
+await chequear('entregar es cobrar: pregunta efectivo o virtual', async () => {
   // A Listo ya lo movió el caso del aviso, acá se cierra el ciclo.
   await barra.locator('.ticket.listo [data-avanzar]').click();
+  await barra.waitForSelector('#dlgCobro[open]', { timeout: 10000 });
+  await barra.click('#btnEfectivo');
   await barra.waitForSelector('.ticket.entregado', { timeout: 10000 });
+
+  // Y queda guardado cómo pagó: sin eso la caja no se puede partir.
+  let p;
+  for (let i = 0; i < 40; i++) {
+    const q = await db.collection('pedidos').where('estado', '==', 'entregado').get();
+    p = q.docs.map((d) => d.data()).find((x) => x.pago);
+    if (p) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (p?.pago !== 'efectivo') throw new Error('no guardó la forma de pago: ' + JSON.stringify(p));
+  if (!p?.vendidoPor) throw new Error('no guardó quién lo despachó');
 });
 await chequear('la caja del día suma el pedido entregado', async () => {
   await barra.waitForFunction(() =>
     document.querySelector('#chipCaja')?.textContent.includes('14.500'), null, { timeout: 10000 });
 });
+await chequear('la barra carga una venta de mostrador y entra a la caja', async () => {
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Papas bravas' })
+    .locator('[data-venta][data-d="1"]').click();
+  await barra.waitForFunction(() =>
+    document.querySelector('.total-venta b')?.textContent.replace(/\D/g, '') !== '0',
+    null, { timeout: 5000 });
+  await barra.click('#btnVentaVirtual');
+  await barra.waitForSelector('#dlgVenta[open]', { state: 'detached', timeout: 10000 })
+    .catch(() => {});   // el diálogo se cierra solo al cobrar
+
+  let v;
+  for (let i = 0; i < 40; i++) {
+    const q = await db.collection('pedidos').where('origen', '==', 'barra').get();
+    v = q.docs[0]?.data();
+    if (v) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!v) throw new Error('no quedó la venta');
+  if (v.pago !== 'virtual') throw new Error('no guardó la forma de pago: ' + v.pago);
+  if (v.estado !== 'entregado') throw new Error('la venta de mostrador nace cobrada');
+  if (!v.cajaId) throw new Error('no dice a qué caja entra');
+  if (!v.vendidoPor) throw new Error('no dice quién vendió');
+});
+
+await chequear('la venta de mostrador suma al chip de la caja', async () => {
+  await barra.waitForFunction(() =>
+    document.querySelector('#chipCaja')?.textContent.includes('20.000'), null, { timeout: 10000 });
+});
+
 await chequear('la barra puede agotar un item y el cliente lo ve', async () => {
   await barra.click('#tabCartaBar');
   await barra.locator('.item', { hasText: 'Fernet con coca' }).locator('[data-toggle]').click();
@@ -526,6 +571,7 @@ await chequear('cerrar el evento congela la caja y lo manda al histórico', asyn
   barra.once('dialog', (d) => d.accept());
   await barra.click('#btnCerrarEvento');
   await barra.waitForSelector('#btnIrCalendario', { timeout: 10000 });
+  await barra.click('#tabCaja');
   // cerradoEn es un serverTimestamp: localmente llega null y recién al volver
   // del servidor el evento sale de "abierto" y entra al histórico.
   // Esperamos la fila de la noche, no el texto suelto: "Prueba de noche"
@@ -576,7 +622,7 @@ await chequear('el calendario muestra el mes y deja elegir un día', async () =>
 });
 
 await chequear('la caja general suma los eventos cerrados y los rankea', async () => {
-  await barra.click('#tabEvento');
+  await barra.click('#tabCaja');
   await barra.waitForFunction(() =>
     document.querySelector('#eventosPasados')?.textContent.includes('Caja general'),
     null, { timeout: 10000 });
@@ -598,6 +644,51 @@ await chequear('la caja general suma los eventos cerrados y los rankea', async (
   await barra.waitForSelector('#eventosPasados .ranking', { timeout: 5000 });
   const detalle = await barra.textContent('#eventosPasados');
   if (!detalle.includes('Papas bravas')) throw new Error('el detalle no lista lo vendido');
+});
+
+await chequear('la caja junta lo que entra y lo que sale', async () => {
+  await barra.click('#tabCaja');
+  await barra.waitForSelector('#caja .caja-evento', { timeout: 10000 });
+  // Por defecto mira el mes: tiene que haber plata de las ventas de la corrida.
+  const antes = await barra.textContent('#caja');
+  if (!antes.includes('entró')) throw new Error('no muestra lo que entró');
+  if (!antes.includes('En el cajón debería haber'))
+    throw new Error('no dice cuánto efectivo debería haber');
+  if (!antes.includes('Efectivo') || !antes.includes('Virtual'))
+    throw new Error('no parte la plata por forma de pago');
+});
+
+await chequear('un gasto baja la caja y el efectivo del cajón', async () => {
+  const enCajon = () => barra.evaluate(() =>
+    Number((document.querySelector('#caja .interruptor b')?.textContent || '')
+      .replace(/\D/g, '')));
+  const antes = await enCajon();
+
+  await barra.click('#btnNuevoEgreso');
+  await barra.waitForSelector('#dlgEgreso[open]', { timeout: 5000 });
+  await barra.fill('#inpEgrConcepto', 'Hielo de la noche');
+  await barra.fill('#inpEgrMonto', '3000');
+  await barra.selectOption('#inpEgrCategoria', 'insumo');
+  await barra.click('#btnGuardarEgreso');
+
+  await barra.waitForFunction(() =>
+    document.querySelector('#caja')?.textContent.includes('Hielo de la noche'),
+    null, { timeout: 10000 });
+  const despues = await enCajon();
+  if (despues !== antes - 3000)
+    throw new Error(`el efectivo del cajón no bajó: ${antes} -> ${despues}`);
+
+  // Y queda en la base con quién lo cargó.
+  const q = await db.collection('egresos').get();
+  const e = q.docs[0]?.data();
+  if (!e || e.monto !== 3000) throw new Error('no se guardó el gasto');
+  if (e.pago !== 'efectivo') throw new Error('no guardó cómo se pagó');
+  if (!e.cargadoPor) throw new Error('no dice quién lo cargó');
+});
+
+await chequear('la caja dice quién vendió', async () => {
+  const t = await barra.textContent('#caja');
+  if (!t.includes('Quién vendió')) throw new Error('no muestra el ranking por barman');
 });
 
 await chequear('un entregado por error se puede corregir', async () => {
