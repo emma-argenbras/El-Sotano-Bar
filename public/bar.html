@@ -25,7 +25,7 @@
     <img src="/iconos/logo.svg" alt="El Sótano" width="714" height="594"
          style="display:block;width:170px;height:auto;margin:0 auto .4rem;border-radius:12px">
     <h1 style="font-size:1.1rem;text-align:center;margin:0">Barra</h1>
-    <p style="color:var(--suave);font-size:.9rem;text-align:center">Entrá con el mail del local.</p>
+    <p style="color:var(--suave);font-size:.9rem;text-align:center">Entrá con tu usuario y contraseña.</p>
 
     <div class="aviso mal oculto" id="avisoConfig">
       <span>⚠</span><div><b>Falta configurar Firebase</b> en <code>public/config.js</code>.</div>
@@ -40,7 +40,11 @@
       </label>
       <label class="campo">
         <span>Contraseña</span>
-        <input type="password" id="inpPass" autocomplete="current-password" required>
+        <div class="con-ojo">
+          <input type="password" id="inpPass" autocomplete="current-password" required>
+          <button type="button" class="ojo" id="btnVerPass"
+                  aria-label="Mostrar la contraseña" title="Mostrar la contraseña">👁</button>
+        </div>
       </label>
       <div class="aviso mal oculto" id="errorLogin"><span>⚠</span><div id="errorLoginTexto"></div></div>
       <button class="btn primario ancho-full" id="btnEntrar" type="submit">Entrar</button>

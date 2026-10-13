@@ -338,6 +338,17 @@ const barmanMarcados = () =>
 
 $('#btnCancelarEvento').onclick = () => $('#dlgEvento').close();
 $('#btnCerrarInvitar').onclick = () => { estado.invitandoA = null; $('#dlgInvitar').close(); };
+// Ver lo que se escribe: la contraseña de la barra la comparte gente que la
+// tipea en un celular, y a ciegas se equivoca y no sabe por qué no entra.
+$('#btnVerPass').onclick = () => {
+  const i = $('#inpPass');
+  const verla = i.type === 'password';
+  i.type = verla ? 'text' : 'password';
+  $('#btnVerPass').setAttribute('aria-pressed', String(verla));
+  $('#btnVerPass').textContent = verla ? '🙈' : '👁';
+  i.focus();
+};
+
 $('#btnQuienAtiende').onclick = elegirQuienAtiende;
 $('#btnCancelarPersona').onclick = () => $('#dlgPersona').close();
 $('#btnConfirmarPersona').onclick = crearPersona;

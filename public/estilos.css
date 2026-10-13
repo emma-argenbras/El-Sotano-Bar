@@ -461,6 +461,17 @@ body.es-puerta #tabTablero, body.es-puerta #tabCartaBar, body.es-puerta #tabEven
 .pista.bien { color: var(--verde); }
 .pista.mal  { color: var(--rojo); }
 
+/* El ojo de la contraseña: escribirla a ciegas en un celular, con la de la
+   barra que es larga y compartida, es la forma más rápida de no entrar. */
+.con-ojo { position: relative; display: block; }
+.con-ojo input { width: 100%; padding-right: 3rem; }
+.con-ojo .ojo {
+  position: absolute; right: .35rem; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; font-size: 1.15rem;
+  padding: .4rem .55rem; line-height: 1; opacity: .65;
+}
+.con-ojo .ojo:hover, .con-ojo .ojo[aria-pressed="true"] { opacity: 1; }
+
 /* ---------- venta de mostrador y caja ---------- */
 .lista-venta { max-height: 45vh; overflow-y: auto; margin: .2rem 0 .8rem; }
 .lista-venta .item { margin-bottom: .4rem; }

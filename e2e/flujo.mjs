@@ -206,6 +206,21 @@ await chequear('la barra se puede instalar como app aparte', async () => {
     navigator.serviceWorker.ready.then(() => true, () => false));
   if (!conSw) throw new Error('/bar.html no registra el service worker');
 });
+await chequear('el ojo deja ver la contraseña antes de entrar', async () => {
+  await barra.fill('#inpPass', 'lo-que-escribi');
+  if ((await barra.getAttribute('#inpPass', 'type')) !== 'password')
+    throw new Error('arranca mostrando la contraseña');
+  await barra.click('#btnVerPass');
+  if ((await barra.getAttribute('#inpPass', 'type')) !== 'text')
+    throw new Error('el ojo no la muestra');
+  if ((await barra.inputValue('#inpPass')) !== 'lo-que-escribi')
+    throw new Error('se perdió lo escrito');
+  await barra.click('#btnVerPass');
+  if ((await barra.getAttribute('#inpPass', 'type')) !== 'password')
+    throw new Error('el ojo no la vuelve a tapar');
+  await barra.fill('#inpPass', '');
+});
+
 await chequear('rechaza una contraseña incorrecta', async () => {
   await barra.fill('#inpMail', MAIL_BARRA);
   await barra.fill('#inpPass', 'equivocada');
