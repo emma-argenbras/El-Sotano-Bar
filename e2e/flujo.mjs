@@ -516,6 +516,19 @@ await chequear('el celular de la barra se registra y entra sin turno', async () 
     await cel.waitForFunction(() =>
       document.querySelector('#quienAtiende')?.textContent === 'barra-turno',
       null, { timeout: 5000 });
+
+    // Y lee SU ayuda, no la del barman: lo de "quién atiende" es suyo.
+    // Hay un botón de ayuda en el login y otro en el panel: el del panel.
+    await cel.click('#vistaPanel [data-ayuda]');
+    await cel.waitForSelector('#dlgAyuda[open]', { timeout: 10000 });
+    const suAyuda = await cel.textContent('#dlgAyuda');
+    if (!suAyuda.includes('Celular de la barra'))
+      throw new Error('no se reconoce como el aparato del local');
+    if (!suAyuda.includes('quién está atendiendo'))
+      throw new Error('no le explica lo de quién atiende');
+    if (suAyuda.includes('Caja general') || suAyuda.includes('ticket promedio'))
+      throw new Error('le muestra la ayuda de la caja, que no es suya');
+    await cel.click('#btnCerrarAyuda');
   } finally { await ctxAparato.close(); }
 });
 

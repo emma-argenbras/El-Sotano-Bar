@@ -11,7 +11,7 @@
   // quien: en qué roles aparece cada tema.
   const TEMAS = [
     {
-      quien: ['admin', 'barman', 'puerta'],
+      quien: ['admin', 'barman', 'barra', 'puerta'],
       titulo: 'Entrar e instalar',
       cuerpo: `
         <p>Entrás con <b>usuario y contraseña</b>, sin mail. El usuario te lo dio
@@ -166,7 +166,23 @@
         <b>De turno → Cambiar</b>.</p>`,
     },
     {
-      quien: ['admin', 'barman'],
+      quien: ['barra'],
+      titulo: 'Este celular es el del local',
+      cuerpo: `
+        <p>Esta cuenta es del <b>aparato</b>, no de una persona: queda prendida
+        siempre y no depende de ninguna noche, porque el bar vende todos los
+        días.</p>
+        <p>Por eso, antes de arrancar el turno tocá <b>👤</b> arriba y elegí
+        <b>quién está atendiendo</b>. Eso queda guardado en cada venta y es lo
+        que después muestra el ranking de la casa.</p>
+        <p>De acá se ven <b>Pedidos</b>, <b>Carta</b> (con el stock y el conteo)
+        y <b>Noche</b>. La caja general, el calendario y la puerta son de otras
+        cuentas.</p>
+        <p><b>No toques Salir</b> salvo que la casa te lo pida: para volver a
+        entrar hace falta la contraseña del local.</p>`,
+    },
+    {
+      quien: ['admin', 'barman', 'barra'],
       titulo: 'El tablero de pedidos',
       cuerpo: `
         <p>Los pedidos entran en <b>Entraron</b> y se mueven con un toque:
@@ -179,7 +195,7 @@
         <p>La <b>✕</b> cancela un pedido.</p>`,
     },
     {
-      quien: ['admin', 'barman'],
+      quien: ['admin', 'barman', 'barra'],
       titulo: 'Cobrar y vender en la barra',
       cuerpo: `
         <p>Al pasar un pedido a <b>Entregado</b> pregunta cómo pagó:
@@ -191,12 +207,12 @@
         <p>Si el bar vende un día que no es de evento, va a la <b>caja del
         día</b>. El día corta a las 6 de la mañana: lo que se vende a las 3 AM
         es de la noche anterior.</p>
-        <p class="solo-admin-ayuda">En el celular de la barra, arriba está
-        <b>👤 quién atiende</b>. Elegilo al empezar el turno: es lo que queda
-        guardado en cada venta.</p>`,
+        <p>En el celular de la barra, arriba está <b>👤 quién atiende</b>.
+        Elegilo al empezar el turno, de la lista: es lo que queda guardado en
+        cada venta. Si cambia la gente en la barra, cambialo.</p>`,
     },
     {
-      quien: ['admin', 'barman'],
+      quien: ['admin', 'barman', 'barra'],
       titulo: 'Cuando el ticket se pone rojo con un aviso',
       cuerpo: `
         <p>Dice <b>"Total informado ≠ carta"</b>: el precio que mandó el celular
@@ -208,7 +224,7 @@
         pueden falsear. Por eso el panel los recalcula siempre.</p>`,
     },
     {
-      quien: ['admin', 'barman'],
+      quien: ['admin', 'barman', 'barra'],
       titulo: 'Carta y stock',
       cuerpo: `
         <p><b>Agotar</b> marca que se acabó. El cliente lo sigue viendo pero no lo
@@ -249,7 +265,7 @@
         agranda desde la puerta.</p>`,
     },
     {
-      quien: ['admin', 'barman', 'puerta'],
+      quien: ['admin', 'barman', 'barra', 'puerta'],
       titulo: 'Si algo no anda',
       cuerpo: `
         <p><b>"sin conexión"</b> en rojo: se cortó internet. Lo que ves es lo
@@ -272,6 +288,7 @@
     $('#quienAyuda').textContent = {
       admin: 'Administrador — tenés todo',
       barman: 'Barman',
+      barra: 'Celular de la barra',
       puerta: 'Puerta',
     }[rol] || '';
     // Dentro de la ayuda del barman, lo que es solo de admin no va.
@@ -285,6 +302,9 @@
     const c = document.body.classList;
     if (c.contains('es-dueno') || c.contains('es-gerente')) return 'admin';
     if (c.contains('es-puerta')) return 'puerta';
+    // El celular del local: lo suyo se parece a lo del barman, pero tiene su
+    // propia pantalla de "quién atiende" y no depende de ningún turno.
+    if (c.contains('es-aparato')) return 'barra';
     return 'barman';
   }
 
