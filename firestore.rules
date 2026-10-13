@@ -173,6 +173,41 @@ service cloud.firestore {
         && d.get('vendidoPor', '') is string;
     }
 
+    // El depósito: lo que se compra y se guarda. El stock se lleva en MEDIDAS,
+    // no en unidades: una botella de 750 con medidas de 70 son 10 medidas, y
+    // un trago descuenta una. Para lo cerrado (lata, paquete) medidas es 1 y
+    // una medida es una unidad.
+    function insumoValido(d) {
+      return d.keys().hasOnly(['nombre', 'unidad', 'medidas', 'stock', 'costo',
+                               'proveedorId', 'minimo', 'creadoEn'])
+        && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60
+        && d.get('unidad', '') is string
+        && d.medidas is int && d.medidas >= 1 && d.medidas <= 1000
+        && d.stock is number && d.stock >= 0
+        && d.get('costo', 0) is number && d.get('costo', 0) >= 0
+        && d.get('minimo', 0) is number && d.get('minimo', 0) >= 0;
+    }
+
+    // Lo único que la barra toca de un insumo es cuánto queda: el descuento al
+    // entregar. Precios, medidas y nombres son del administrador.
+    function soloStockInsumo() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']);
+    }
+
+    // Un ingreso de mercadería. 'inicial' es la carga de arranque: suma stock y
+    // no es plata que salió. 'contado' se paga en el acto y además queda como
+    // gasto; 'cuenta' no toca la caja hasta que se le pague al proveedor.
+    function compraValida(d) {
+      return d.keys().hasOnly(['proveedorId', 'proveedor', 'fecha', 'items', 'total',
+                               'condicion', 'pago', 'cargadoPor', 'creadoEn'])
+        && d.items is list && d.items.size() > 0 && d.items.size() <= 60
+        && d.total is number && d.total >= 0 && d.total <= 50000000
+        && d.condicion in ['contado', 'cuenta', 'inicial']
+        && d.fecha is timestamp
+        && (!('pago' in d.keys()) || d.pago in ['efectivo', 'virtual'])
+        && d.get('proveedor', '') is string;
+    }
+
     function conteoValido(d) {
       return d.keys().hasOnly(['cajaId', 'nombre', 'apertura', 'cierre',
                               'aperturaEn', 'cierreEn', 'aperturaPor', 'cierrePor'])
@@ -184,7 +219,10 @@ service cloud.firestore {
     function egresoValido(d) {
       return d.keys().hasAll(['concepto', 'categoria', 'monto', 'pago', 'fecha'])
         && d.keys().hasOnly(['concepto', 'categoria', 'monto', 'pago', 'fecha',
-                             'cajaId', 'cargadoPor', 'creadoEn'])
+                             'cajaId', 'cargadoPor', 'creadoEn',
+                             // Un gasto con proveedor es un pago a cuenta: es lo
+                             // que baja la deuda en la cuenta corriente.
+                             'proveedorId', 'compraId'])
         && d.concepto is string && d.concepto.size() >= 2 && d.concepto.size() <= 80
         && d.categoria in ['proveedor', 'sueldo', 'insumo', 'retiro', 'otro']
         && d.monto is number && d.monto > 0 && d.monto <= 5000000
@@ -382,6 +420,37 @@ service cloud.firestore {
       // Pisarlo seria desarmar el candado.
       allow update: if false;
       // La casa lo libera si anoto mal un numero.
+      allow delete: if esAdmin();
+    }
+
+    // ---------- el depósito ----------
+    // Lo ve toda la barra: necesita saber qué hay. Lo da de alta y le pone
+    // precio el administrador; la barra solo descuenta al entregar.
+    match /insumos/{id} {
+      allow read: if esBarra();
+      allow create: if esAdmin() && insumoValido(request.resource.data);
+      allow update: if (esAdmin() && insumoValido(request.resource.data))
+        || (esBarra() && soloStockInsumo());
+      allow delete: if esAdmin();
+    }
+
+    // ---------- ingresos de mercadería ----------
+    // La compra suma stock. Si fue al contado, ademas queda un gasto en la
+    // caja; si fue a cuenta, queda como deuda con el proveedor hasta que se
+    // le pague. La plata es de la casa: esto no lo carga la barra.
+    match /compras/{id} {
+      allow read: if esAdmin();
+      allow create, update: if esAdmin() && compraValida(request.resource.data);
+      allow delete: if esAdmin();
+    }
+
+    match /proveedores/{id} {
+      // La barra lo lee para saber de quién es cada cosa; la cuenta no.
+      allow read: if esBarra();
+      allow create, update: if esAdmin()
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() >= 2
+        && request.resource.data.nombre.size() <= 60;
       allow delete: if esAdmin();
     }
 

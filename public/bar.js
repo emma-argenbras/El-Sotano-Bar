@@ -60,7 +60,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -221,9 +221,10 @@ onAuthStateChanged(auth, async (u) => {
   pintarConexion(); pintarSonido(); escucharEvento(); escucharCarta();
   escucharInvitados();
   vigilarMiAcceso(u.uid);
-  // Quién es dueño lo deciden las reglas, no el cliente: si puede listar los
-  // accesos, es dueño. Así no hay una segunda lista de mails que mantener.
   escucharAccesos();
+  // El depósito lo necesita hasta la barra: el descuento al entregar sale de
+  // los insumos, no de la carta, para los productos que tienen receta.
+  escucharDeposito();
 });
 
 // ---------- eventos ----------
@@ -359,6 +360,11 @@ $('#btnVerPass').onclick = () => {
 
 $('#btnQuienAtiende').onclick = elegirQuienAtiende;
 $('#btnConteo').onclick = abrirConteo;
+$('#btnCancelarInsumo').onclick = () => $('#dlgInsumo').close();
+$('#btnGuardarInsumo').onclick = guardarInsumo;
+$('#btnCancelarCompra').onclick = () => $('#dlgCompra').close();
+$('#btnCancelarReceta').onclick = () => $('#dlgReceta').close();
+$('#btnGuardarReceta').onclick = guardarReceta;
 $('#btnCerrarConteo').onclick = () => $('#dlgConteo').close();
 $('#btnCerrarAtiende').onclick = () => $('#dlgAtiende').close();
 $('#btnCancelarPersona').onclick = () => $('#dlgPersona').close();
@@ -1429,6 +1435,7 @@ function aplicarRol() {
   b.toggle('es-aparato', estado.esAparato);
   pintarQuienAtiende();
   $('#tabCaja').hidden = !(estado.dueno || estado.rol === 'admin');
+  $('#tabDeposito').hidden = !(estado.dueno || estado.rol === 'admin');
   // El celular de la barra atiende la barra: pedidos, carta y la noche. La
   // puerta es de la gente de la puerta, con su propia cuenta.
   $('#tabPuerta').hidden = estado.esAparato;
@@ -2059,6 +2066,12 @@ function abrirEgreso() {
   $('#inpEgrConcepto').value = '';
   $('#inpEgrMonto').value = '';
   $('#inpEgrCategoria').value = 'insumo';
+  // Elegir proveedor es lo que convierte un gasto en un pago a cuenta.
+  $('#inpEgrProveedor').innerHTML = '<option value="">— ninguno —</option>'
+    + estado.proveedores.map((p) => {
+        const s = saldoProveedor(p.id);
+        return `<option value="${esc(p.id)}">${esc(p.nombre)}${s ? ` — debe ${plata(s)}` : ''}</option>`;
+      }).join('');
   $('#dlgEgreso').showModal();
   $('#inpEgrConcepto').focus();
 }
@@ -2071,8 +2084,10 @@ async function guardarEgreso() {
   const btn = $('#btnGuardarEgreso');
   btn.disabled = true; btn.textContent = 'Cargando…';
   try {
+    const proveedorId = $('#inpEgrProveedor').value;
     await addDoc(collection(db, 'egresos'), {
       concepto, monto,
+      ...(proveedorId ? { proveedorId } : {}),
       categoria: $('#inpEgrCategoria').value,
       pago: document.querySelector('input[name="egrPago"]:checked').value,
       fecha: Timestamp.fromDate(new Date()),
@@ -2083,6 +2098,362 @@ async function guardarEgreso() {
     $('#dlgEgreso').close();
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
   btn.disabled = false; btn.textContent = 'Cargar';
+}
+
+// ---------- el depósito ----------
+//
+// Lo que se compra y lo que se guarda, que no es lo mismo que lo que se vende.
+// Una botella de fernet es un insumo; "Fernet con coca" es un producto de la
+// carta que se lleva una medida de esa botella. El stock se lleva en MEDIDAS:
+// así una botella que da 10 baja de a una y recién se gasta a la décima.
+const unidadesDe = (ins) => Math.floor(Number(ins.stock || 0) / Math.max(1, Number(ins.medidas || 1)));
+const sueltasDe = (ins) => Number(ins.stock || 0) % Math.max(1, Number(ins.medidas || 1));
+
+function comoSeDice(ins) {
+  const m = Math.max(1, Number(ins.medidas || 1));
+  const u = unidadesDe(ins), sueltas = sueltasDe(ins);
+  const unidad = ins.unidad || 'unidad';
+  if (m === 1) return `${u} ${unidad}${u === 1 ? '' : 's'}`;
+  return `${u} ${unidad}${u === 1 ? '' : 's'}`
+    + (sueltas ? ` y ${sueltas} medida${sueltas === 1 ? '' : 's'}` : '');
+}
+
+function escucharDeposito() {
+  // Los gastos con proveedor apuntado son los pagos a cuenta: hacen falta
+  // completos, no solo los del rango que esté mirando la caja.
+  onSnapshot(collection(db, 'egresos'), (snap) => {
+    estado.egresosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    pintarDeposito();
+  }, () => {});
+
+  onSnapshot(collection(db, 'insumos'), (snap) => {
+    estado.insumos = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    pintarDeposito(); pintarConteo();
+  }, fallo('#deposito'));
+  onSnapshot(collection(db, 'proveedores'), (snap) => {
+    estado.proveedores = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    pintarDeposito();
+  }, () => {});
+  onSnapshot(collection(db, 'compras'), (snap) => {
+    estado.compras = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0));
+    pintarDeposito();
+  }, () => {});
+}
+
+// La cuenta corriente sale de dos cosas que ya existen: lo que se compró a
+// cuenta y lo que se le pagó (un gasto con ese proveedor apuntado).
+function saldoProveedor(id) {
+  const debe = estado.compras
+    .filter((c) => c.proveedorId === id && c.condicion === 'cuenta')
+    .reduce((a, c) => a + Number(c.total || 0), 0);
+  const pagado = (estado.egresosTodos || [])
+    .filter((e) => e.proveedorId === id)
+    .reduce((a, e) => a + Number(e.monto || 0), 0);
+  return debe - pagado;
+}
+
+function pintarDeposito() {
+  const cont = $('#deposito');
+  if (!cont || $('#vistaDeposito').hidden) return;
+  const bajos = estado.insumos.filter((i) =>
+    Number(i.minimo || 0) > 0 && unidadesDe(i) < Number(i.minimo));
+  const conDeuda = estado.proveedores
+    .map((p) => ({ ...p, saldo: saldoProveedor(p.id) }))
+    .filter((p) => Math.abs(p.saldo) > 0.5);
+  const deuda = conDeuda.reduce((a, p) => a + p.saldo, 0);
+
+  cont.innerHTML = `
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem">
+      <button class="btn primario" id="btnNuevaCompra" style="flex:1">+ Ingreso de mercadería</button>
+      <button class="btn" id="btnNuevoInsumo" style="flex:1">+ Insumo</button>
+    </div>
+
+    ${bajos.length ? `<div class="aviso mal"><span>⚠</span><div>
+      <b>Se está por acabar:</b> ${bajos.map((i) => esc(i.nombre)).join(', ')}.</div></div>` : ''}
+
+    ${deuda ? `<div class="caja-evento" style="margin-bottom:.9rem">
+      <div class="titulo">Deuda con proveedores</div>
+      <div class="numeros"><div class="plata"><b>${plata(deuda)}</b><span>se debe</span></div></div>
+      <table class="ranking"><tbody>${conDeuda.map((p) => `
+        <tr><td>${esc(p.nombre)}</td><td class="n">${plata(p.saldo)}</td></tr>`).join('')}
+      </tbody></table>
+      <p style="font-size:.76rem;color:var(--suave);margin:.7rem 0 0">
+        Para bajarla, cargá el pago en <b>Caja → + Cargar gasto</b> eligiendo al proveedor.</p>
+    </div>` : ''}
+
+    ${estado.insumos.length ? estado.insumos.map((i) => {
+      const bajo = Number(i.minimo || 0) > 0 && unidadesDe(i) < Number(i.minimo);
+      return `
+      <div class="item ${bajo ? 'agotado' : ''}">
+        <div class="cuerpo">
+          <div class="nombre">${esc(i.nombre)}</div>
+          <div class="desc">${comoSeDice(i)}${
+            Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}${
+            i.costo ? ` · ${plata(i.costo)} c/u` : ''}</div>
+        </div>
+        <button class="btn" data-editar-insumo="${esc(i.id)}"
+                style="padding:.3rem .6rem;font-size:.78rem">Editar</button>
+      </div>`;
+    }).join('')
+      : `<div class="vacio">El depósito está vacío.<br>
+         <small>Cargá los insumos y después, con <b>Ingreso de mercadería</b>, lo que compraste.</small></div>`}
+
+    ${estado.compras.length ? `
+      <div class="grupo-personal">Últimos ingresos</div>
+      ${estado.compras.slice(0, 8).map((c) => `
+        <div class="item">
+          <div class="cuerpo">
+            <div class="nombre">${esc(c.proveedor || 'Compra suelta')}</div>
+            <div class="desc">${c.fecha?.toDate?.()?.toLocaleDateString('es-AR') || ''}
+              · ${(c.items || []).length} producto${(c.items || []).length === 1 ? '' : 's'}
+              · ${c.condicion === 'inicial' ? 'carga inicial'
+                 : c.condicion === 'cuenta' ? 'a cuenta' : 'pagada'}</div>
+          </div>
+          <div class="total">${c.condicion === 'inicial' ? '—' : plata(c.total)}</div>
+        </div>`).join('')}` : ''}`;
+
+  $('#btnNuevoInsumo').onclick = () => abrirInsumo(null);
+  $('#btnNuevaCompra').onclick = abrirCompra;
+  cont.querySelectorAll('[data-editar-insumo]').forEach((b) => b.onclick = () =>
+    abrirInsumo(estado.insumos.find((i) => i.id === b.dataset.editarInsumo)));
+}
+
+let editandoInsumo = null;
+function abrirInsumo(ins) {
+  editandoInsumo = ins;
+  $('#tituloInsumo').textContent = ins ? 'Editar insumo' : 'Nuevo insumo';
+  $('#inpInsNombre').value = ins?.nombre || '';
+  $('#inpInsUnidad').value = ins?.unidad || '';
+  $('#inpInsMedidas').value = ins?.medidas ?? 1;
+  $('#inpInsCosto').value = ins?.costo ?? '';
+  $('#inpInsMinimo').value = ins?.minimo ?? '';
+  $('#dlgInsumo').showModal();
+  $('#inpInsNombre').focus();
+}
+
+async function guardarInsumo() {
+  const nombre = $('#inpInsNombre').value.trim();
+  if (nombre.length < 2) { $('#inpInsNombre').focus(); return; }
+  const medidas = Math.max(1, Math.floor(Number($('#inpInsMedidas').value) || 1));
+  const datos = {
+    nombre,
+    unidad: $('#inpInsUnidad').value.trim() || 'unidad',
+    medidas,
+    stock: Number(editandoInsumo?.stock || 0),
+    costo: Math.max(0, Number($('#inpInsCosto').value) || 0),
+    minimo: Math.max(0, Number($('#inpInsMinimo').value) || 0),
+    ...(editandoInsumo ? {} : { creadoEn: serverTimestamp() }),
+  };
+  try {
+    if (editandoInsumo) await updateDoc(doc(db, 'insumos', editandoInsumo.id), datos);
+    else await addDoc(collection(db, 'insumos'), datos);
+    $('#dlgInsumo').close();
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+// ---------- ingreso de mercadería ----------
+function abrirCompra() {
+  estado.compra = { items: {}, condicion: 'cuenta', pago: 'efectivo', proveedorId: '', proveedor: '' };
+  $('#dlgCompra').showModal();
+  pintarCompra();
+}
+
+function totalCompra() {
+  return Object.entries(estado.compra.items).reduce((a, [id, l]) => {
+    return a + Number(l.unidades || 0) * Number(l.costoUnit || 0);
+  }, 0);
+}
+
+function pintarCompra() {
+  const c = estado.compra;
+  const esInicial = c.condicion === 'inicial';
+  $('#cuerpoCompra').innerHTML = `
+    <label class="campo">
+      <span>Proveedor <small>(vacío si fue una compra suelta)</small></span>
+      <input id="inpCompraProv" list="listaProv" maxlength="60" autocomplete="off"
+             value="${esc(c.proveedor || '')}" placeholder="Distribuidora, super, kiosco…">
+      <datalist id="listaProv">
+        ${estado.proveedores.map((p) => `<option value="${esc(p.nombre)}">`).join('')}
+      </datalist>
+    </label>
+
+    <div class="campo">
+      <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">Qué es</span>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        ${[['cuenta', 'A cuenta'], ['contado', 'Pagada'], ['inicial', 'Carga inicial']].map(([k, t]) => `
+          <button type="button" class="btn ${c.condicion === k ? 'primario' : ''}"
+                  data-condicion="${k}" style="flex:1;font-size:.84rem">${t}</button>`).join('')}
+      </div>
+      <small class="pista">${{
+        cuenta: 'Suma stock y queda como deuda con el proveedor.',
+        contado: 'Suma stock y sale de la caja ahora.',
+        inicial: 'Solo suma stock: es lo que ya tenías, no plata que salió.',
+      }[c.condicion]}</small>
+    </div>
+
+    ${c.condicion === 'contado' ? `
+      <div class="campo">
+        <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">Cómo se pagó</span>
+        <div style="display:flex;gap:.6rem">
+          ${[['efectivo', '💵 Efectivo'], ['virtual', '📲 Virtual']].map(([k, t]) => `
+            <button type="button" class="btn ${c.pago === k ? 'primario' : ''}"
+                    data-pagocompra="${k}" style="flex:1">${t}</button>`).join('')}
+        </div>
+      </div>` : ''}
+
+    ${estado.insumos.length ? `
+      <div class="lista-venta">
+        ${estado.insumos.map((i) => {
+          const l = c.items[i.id] || {};
+          return `
+          <div class="item" style="flex-wrap:wrap">
+            <div class="cuerpo" style="flex:1 0 100%">
+              <div class="nombre">${esc(i.nombre)}</div>
+              <div class="desc">hay ${comoSeDice(i)}</div>
+            </div>
+            <label style="flex:1;font-size:.76rem;color:var(--suave)">entran
+              <input class="conteo-num" type="number" min="0" inputmode="numeric"
+                     data-compra-u="${esc(i.id)}" value="${l.unidades ?? ''}"
+                     placeholder="0" style="width:100%"></label>
+            ${!esInicial ? `<label style="flex:1;font-size:.76rem;color:var(--suave)">$ c/u
+              <input class="conteo-num" type="number" min="0" inputmode="numeric"
+                     data-compra-c="${esc(i.id)}" value="${l.costoUnit ?? i.costo ?? ''}"
+                     placeholder="0" style="width:100%"></label>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+      ${!esInicial ? `<div class="total-venta"><span>Total</span><b>${plata(totalCompra())}</b></div>` : ''}
+      <button class="btn primario ancho-full" id="btnGuardarCompra" style="margin-top:.8rem">
+        ${esInicial ? 'Cargar el stock inicial' : 'Guardar el ingreso'}</button>`
+      : `<div class="aviso mal"><span>⚠</span><div>
+          <b>Primero cargá los insumos.</b> Son las botellas, latas y paquetes que
+          comprás.</div></div>`}`;
+
+  $('#cuerpoCompra').querySelectorAll('[data-condicion]').forEach((b) => b.onclick = () => {
+    estado.compra.condicion = b.dataset.condicion; pintarCompra();
+  });
+  $('#cuerpoCompra').querySelectorAll('[data-pagocompra]').forEach((b) => b.onclick = () => {
+    estado.compra.pago = b.dataset.pagocompra; pintarCompra();
+  });
+  const prov = $('#inpCompraProv');
+  if (prov) prov.oninput = () => { estado.compra.proveedor = prov.value; };
+  $('#cuerpoCompra').querySelectorAll('[data-compra-u]').forEach((inp) => inp.oninput = () => {
+    const id = inp.dataset.compraU;
+    estado.compra.items[id] = { ...(estado.compra.items[id] || {}), unidades: Number(inp.value) || 0 };
+    if (!estado.compra.items[id].unidades) delete estado.compra.items[id];
+    const t = $('.total-venta b'); if (t) t.textContent = plata(totalCompra());
+  });
+  $('#cuerpoCompra').querySelectorAll('[data-compra-c]').forEach((inp) => inp.oninput = () => {
+    const id = inp.dataset.compraC;
+    estado.compra.items[id] = { ...(estado.compra.items[id] || {}), costoUnit: Number(inp.value) || 0 };
+    const t = $('.total-venta b'); if (t) t.textContent = plata(totalCompra());
+  });
+  if ($('#btnGuardarCompra')) $('#btnGuardarCompra').onclick = guardarCompra;
+}
+
+async function guardarCompra() {
+  const c = estado.compra;
+  const items = Object.entries(c.items)
+    .filter(([, l]) => Number(l.unidades) > 0)
+    .map(([id, l]) => {
+      const ins = estado.insumos.find((x) => x.id === id) || {};
+      return { insumoId: id, nombre: ins.nombre || id,
+               unidades: Number(l.unidades), costoUnit: Number(l.costoUnit || 0) };
+    });
+  if (!items.length) { alert('Cargá al menos un producto.'); return; }
+
+  const btn = $('#btnGuardarCompra');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+  const nombreProv = ($('#inpCompraProv')?.value || '').trim();
+  const total = c.condicion === 'inicial' ? 0 : totalCompra();
+  try {
+    // El proveedor se da de alta solo la primera vez que se lo nombra.
+    let proveedorId = '';
+    if (nombreProv) {
+      const ya = estado.proveedores.find((p) =>
+        p.nombre.toLowerCase() === nombreProv.toLowerCase());
+      if (ya) proveedorId = ya.id;
+      else {
+        const ref = await addDoc(collection(db, 'proveedores'),
+          { nombre: nombreProv, creadoEn: serverTimestamp() });
+        proveedorId = ref.id;
+      }
+    }
+
+    const ref = await addDoc(collection(db, 'compras'), {
+      proveedor: nombreProv, proveedorId,
+      fecha: Timestamp.fromDate(new Date()),
+      items, total, condicion: c.condicion,
+      ...(c.condicion === 'contado' ? { pago: c.pago } : {}),
+      cargadoPor: estado.usuario || 'casa',
+      creadoEn: serverTimestamp(),
+    });
+
+    // Suma el stock, en medidas.
+    await Promise.all(items.map((i) => {
+      const ins = estado.insumos.find((x) => x.id === i.insumoId);
+      if (!ins) return null;
+      const medidas = Math.max(1, Number(ins.medidas || 1));
+      return updateDoc(doc(db, 'insumos', i.insumoId),
+        { stock: Number(ins.stock || 0) + i.unidades * medidas });
+    }));
+
+    // Pagada en el acto: además es plata que salió de la caja.
+    if (c.condicion === 'contado' && total > 0) {
+      await addDoc(collection(db, 'egresos'), {
+        concepto: `Mercadería${nombreProv ? ' · ' + nombreProv : ''}`,
+        categoria: nombreProv ? 'proveedor' : 'insumo',
+        monto: total, pago: c.pago,
+        fecha: Timestamp.fromDate(new Date()),
+        cajaId: cajaActual(), proveedorId, compraId: ref.id,
+        cargadoPor: estado.usuario || 'casa', creadoEn: serverTimestamp(),
+      }).catch(() => {});
+    }
+    $('#dlgCompra').close();
+  } catch (e) {
+    alert('No se pudo: ' + (e.code || e.message));
+  }
+  btn.disabled = false;
+}
+
+// ---------- de qué sale cada producto de la carta ----------
+let recetaDe = null;
+function abrirReceta(item) {
+  recetaDe = item;
+  $('#tituloReceta').textContent = `De qué sale · ${item.nombre || item.id}`;
+  $('#cuerpoReceta').innerHTML = estado.insumos.length
+    ? `<div class="lista-conteo">${estado.insumos.map((i) => {
+        const linea = (item.receta || []).find((r) => r.insumoId === i.id);
+        return `
+        <div class="item">
+          <div class="cuerpo">
+            <div class="nombre">${esc(i.nombre)}</div>
+            <div class="desc">hay ${comoSeDice(i)}${
+              Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}</div>
+          </div>
+          <input class="conteo-num" type="number" min="0" inputmode="numeric"
+                 data-receta="${esc(i.id)}" placeholder="0"
+                 value="${linea?.medidas ?? ''}">
+        </div>`;
+      }).join('')}</div>`
+    : `<div class="aviso mal"><span>⚠</span><div>
+        <b>Todavía no hay insumos.</b> Cargalos en <b>Depósito</b> y volvé.</div></div>`;
+  $('#dlgReceta').showModal();
+}
+
+async function guardarReceta() {
+  const receta = [];
+  $('#cuerpoReceta').querySelectorAll('[data-receta]').forEach((inp) => {
+    const medidas = Number(inp.value) || 0;
+    if (medidas > 0) receta.push({ insumoId: inp.dataset.receta, medidas });
+  });
+  try {
+    await updateDoc(doc(db, 'carta', recetaDe.id), { receta });
+    $('#dlgReceta').close();
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 
 // ---------- el conteo de la noche ----------
@@ -2101,13 +2472,41 @@ function escucharConteo() {
   }, () => {});
 }
 
-// Lo vendido de cada producto en esta caja, que es contra lo que se compara.
-function vendidoPorItem() {
+// Qué se cuenta: lo del depósito (botellas, latas) y los productos de la carta
+// que todavía no tienen receta y llevan su propio stock. Contar "Fernet con
+// coca" no tiene sentido cuando sale de una botella: lo que se cuenta es la
+// botella.
+function cosasAContar() {
+  const sueltos = estado.carta.filter((i) =>
+    i.enCarta !== false && !(i.receta || []).length && typeof i.stock === 'number');
+  return [
+    ...estado.insumos.map((i) => ({
+      clave: `ins:${i.id}`, nombre: i.nombre, insumo: i,
+      medidas: Math.max(1, Number(i.medidas || 1)),
+      unidad: i.unidad || 'unidad', enApp: Number(i.stock || 0),
+    })),
+    ...sueltos.map((i) => ({
+      clave: `item:${i.id}`, nombre: i.nombre || i.id, insumo: null,
+      medidas: 1, unidad: 'unidad', enApp: Number(i.stock || 0),
+    })),
+  ];
+}
+
+// Lo que salió en esta caja, en las mismas unidades en que se cuenta: medidas
+// para el depósito, unidades para lo suelto.
+function consumoDeLaCaja() {
   const m = new Map();
+  const sumar = (clave, cuanto) => m.set(clave, (m.get(clave) || 0) + cuanto);
   for (const p of estado.pedidos) {
     if (p.estado !== 'entregado') continue;
     for (const i of (p.items || [])) {
-      m.set(i.id, (m.get(i.id) || 0) + Number(i.cantidad || 0));
+      const c = estado.carta.find((x) => x.id === i.id);
+      const cuantos = Number(i.cantidad || 0);
+      if (c && (c.receta || []).length) {
+        for (const r of c.receta) sumar(`ins:${r.insumoId}`, Number(r.medidas || 0) * cuantos);
+      } else {
+        sumar(`item:${i.id}`, cuantos);
+      }
     }
   }
   return m;
@@ -2126,8 +2525,8 @@ function pintarConteo() {
   const hayApertura = !!c.aperturaEn;
   const hayCierre = !!c.cierreEn;
   const etapa = !hayApertura ? 'apertura' : (!hayCierre ? 'cierre' : 'listo');
-  const vendido = vendidoPorItem();
-  const productos = estado.carta.filter((i) => i.enCarta !== false);
+  const vendido = consumoDeLaCaja();
+  const cosas = cosasAContar();
 
   $('#tituloConteo').textContent = {
     apertura: 'Conteo de apertura',
@@ -2140,64 +2539,82 @@ function pintarConteo() {
     listo: 'Ya está cerrado. Esto es lo que dio.',
   }[etapa];
 
+  if (!cosas.length) {
+    $('#cuerpoConteo').innerHTML = `<div class="aviso"><span>📦</span><div>
+      <b>No hay nada para contar.</b> Cargá los insumos del depósito, o ponele
+      stock a los productos de la carta.</div></div>`;
+    return;
+  }
+
   // Cerrado: la comparación, que es para lo que se hizo todo esto.
   if (etapa === 'listo') {
-    const filas = productos.map((i) => {
-      const abrio = Number(c.apertura?.[i.id] ?? 0);
-      const salio = Number(vendido.get(i.id) || 0);
-      const cerro = Number(c.cierre?.[i.id] ?? 0);
-      const deberia = abrio - salio;
-      return { i, abrio, salio, cerro, dif: cerro - deberia, deberia };
+    const filas = cosas.map((x) => {
+      const abrio = Number(c.apertura?.[x.clave] ?? 0);
+      const salio = Number(vendido.get(x.clave) || 0);
+      const cerro = Number(c.cierre?.[x.clave] ?? 0);
+      return { x, abrio, salio, cerro, dif: cerro - (abrio - salio) };
     }).filter((f) => f.abrio || f.salio || f.cerro);
     const faltan = filas.filter((f) => f.dif < 0);
+    const comoSe = (f, n) => f.x.medidas > 1
+      ? `${n} <small>med</small>` : String(n);
     $('#cuerpoConteo').innerHTML = `
       ${faltan.length ? `<div class="aviso mal"><span>⚠</span><div>
         <b>Falta mercadería en ${faltan.length} producto${faltan.length === 1 ? '' : 's'}.</b><br>
-        Puede ser rotura, un pedido mal cargado o un vaso que no se cobró.</div></div>`
+        Puede ser rotura, un trago servido de más o algo que no se cobró.</div></div>`
         : `<div class="aviso ok"><span>✓</span><div>
         <b>Cierra todo.</b> Lo que quedó coincide con lo vendido.</div></div>`}
       <table class="ranking tabla-conteo" style="margin-top:.8rem"><thead>
-        <tr><th>Producto</th><th class="n">Abrió</th><th class="n">Vendió</th>
+        <tr><th>Qué</th><th class="n">Abrió</th><th class="n">Salió</th>
             <th class="n">Quedó</th><th class="n">Dif</th></tr></thead><tbody>
         ${filas.map((f) => `
           <tr class="${f.dif < 0 ? 'falta' : (f.dif > 0 ? 'sobra' : '')}">
-            <td>${esc(f.i.nombre || f.i.id)}</td>
-            <td class="n">${f.abrio}</td><td class="n">${f.salio}</td>
+            <td>${esc(f.x.nombre)}</td>
+            <td class="n">${comoSe(f, f.abrio)}</td><td class="n">${f.salio}</td>
             <td class="n">${f.cerro}</td>
             <td class="n">${f.dif > 0 ? '+' : ''}${f.dif || '—'}</td>
           </tr>`).join('')}
       </tbody></table>
       <p style="font-size:.76rem;color:var(--suave);margin:.8rem 0 0">
         Lo contó ${esc(c.aperturaPor || '—')} al abrir y ${esc(c.cierrePor || '—')} al cerrar.
-        El conteo no movió el stock de la carta.</p>
+        Lo del depósito va en medidas. El conteo no movió el stock.</p>
       <button class="btn ancho-full solo-gerente-inline" id="btnRehacerConteo"
               style="margin-top:.7rem">Empezar un conteo nuevo</button>`;
     if ($('#btnRehacerConteo')) $('#btnRehacerConteo').onclick = rehacerConteo;
     return;
   }
 
-  // Abierto o por cerrar: la planilla para cargar los números.
+  // Abierto o por cerrar: la planilla. Se cuenta en unidades enteras o medias
+  // botellas, que es como se cuenta en una barra.
   $('#cuerpoConteo').innerHTML = `
     ${hayApertura ? `<p style="font-size:.8rem;color:var(--suave);margin:0 0 .6rem">
       Abrió ${esc(c.aperturaPor || '')} ${c.aperturaEn?.toDate?.()
         ? 'a las ' + hora(c.aperturaEn) : ''}.</p>` : ''}
     <div class="lista-conteo">
-      ${productos.map((i) => {
-        const abrio = Number(c.apertura?.[i.id] ?? 0);
-        const salio = Number(vendido.get(i.id) || 0);
+      ${cosas.map((x) => {
+        const abrio = Number(c.apertura?.[x.clave] ?? 0);
+        const salio = Number(vendido.get(x.clave) || 0);
+        const enApp = x.medidas > 1
+          ? `${Math.floor(x.enApp / x.medidas)} ${esc(x.unidad)}${
+              x.enApp % x.medidas ? ' y ' + (x.enApp % x.medidas) + ' med' : ''}`
+          : x.enApp;
         return `
         <div class="item">
           <div class="cuerpo">
-            <div class="nombre">${esc(i.nombre || i.id)}</div>
-            <div class="desc">en la app: ${typeof i.stock === 'number' ? i.stock : '∞'}${
-              etapa === 'cierre' ? ` · abrió ${abrio} · vendió ${salio}` : ''}</div>
+            <div class="nombre">${esc(x.nombre)}</div>
+            <div class="desc">en la app: ${enApp}${
+              x.medidas > 1 ? ` · ${x.medidas} medidas por ${esc(x.unidad)}` : ''}${
+              etapa === 'cierre' ? ` · abrió ${abrio} · salió ${salio}` : ''}</div>
           </div>
-          <input class="conteo-num" type="number" min="0" inputmode="numeric"
-                 data-conteo="${esc(i.id)}" placeholder="0"
-                 value="${estado.cargandoConteo[i.id] ?? ''}">
+          <input class="conteo-num" type="number" min="0" step="${x.medidas > 1 ? '0.5' : '1'}"
+                 inputmode="decimal" data-conteo="${esc(x.clave)}"
+                 data-medidas="${x.medidas}" placeholder="0"
+                 value="${estado.cargandoConteo[x.clave] ?? ''}">
         </div>`;
       }).join('')}
     </div>
+    <p style="font-size:.76rem;color:var(--suave);margin:.6rem 0 0">
+      Contá en ${cosas.some((x) => x.medidas > 1)
+        ? 'unidades: media botella se escribe 0.5' : 'unidades'}.</p>
     <button class="btn primario ancho-full" id="btnGuardarConteo" style="margin-top:.8rem">
       ${etapa === 'apertura' ? 'Guardar el conteo de apertura' : 'Cerrar el conteo'}</button>`;
 
@@ -2208,9 +2625,13 @@ function pintarConteo() {
 }
 
 async function guardarConteo(etapa) {
+  // Se cuenta en unidades y se guarda en medidas: media botella de 10 medidas
+  // son 5. Así la comparación con lo vendido es contra lo mismo.
   const numeros = {};
   $('#cuerpoConteo').querySelectorAll('[data-conteo]').forEach((inp) => {
-    if (inp.value !== '') numeros[inp.dataset.conteo] = Math.max(0, Math.floor(Number(inp.value) || 0));
+    if (inp.value === '') return;
+    const medidas = Math.max(1, Number(inp.dataset.medidas || 1));
+    numeros[inp.dataset.conteo] = Math.max(0, Math.round((Number(inp.value) || 0) * medidas));
   });
   if (!Object.keys(numeros).length) {
     alert('Cargá al menos un producto.');
@@ -2246,18 +2667,40 @@ async function rehacerConteo() {
 //
 // signo = -1 descuenta (se entregó), +1 devuelve (se corrigió un entregado).
 async function moverStock(pedido, signo) {
-  const toca = (pedido?.items || []).filter((i) => {
+  // Lo que hay que mover del depósito: se junta todo primero, porque dos
+  // tragos distintos pueden salir de la misma botella.
+  const porInsumo = new Map();
+  const sueltos = [];
+
+  for (const i of (pedido?.items || [])) {
     const c = estado.carta.find((x) => x.id === i.id);
-    return c && typeof c.stock === 'number';
-  });
-  if (!toca.length) return;
-  await Promise.all(toca.map((i) => {
-    const c = estado.carta.find((x) => x.id === i.id);
-    // No baja de cero: un stock en negativo no significa nada y asusta al
-    // que lo mira. Si falta, lo muestra el conteo de la noche.
-    const nuevo = Math.max(0, Number(c.stock) + signo * Number(i.cantidad || 0));
-    return updateDoc(doc(db, 'carta', i.id), { stock: nuevo }).catch(() => {});
-  }));
+    if (!c) continue;
+    const cuantos = Number(i.cantidad || 0);
+    if (Array.isArray(c.receta) && c.receta.length) {
+      // Sale del depósito: una medida por vez, no una botella.
+      for (const r of c.receta) {
+        porInsumo.set(r.insumoId,
+          (porInsumo.get(r.insumoId) || 0) + Number(r.medidas || 0) * cuantos);
+      }
+    } else if (typeof c.stock === 'number') {
+      // Sin receta: sigue descontando su propio stock, como antes. Así lo que
+      // ya estaba cargado no se rompe mientras se arma el depósito.
+      sueltos.push({ id: i.id, stock: c.stock, cuantos });
+    }
+  }
+
+  await Promise.all([
+    ...sueltos.map((x) => updateDoc(doc(db, 'carta', x.id),
+      // No baja de cero: un stock en negativo no significa nada y asusta al
+      // que lo mira. Si falta, lo muestra el conteo de la noche.
+      { stock: Math.max(0, x.stock + signo * x.cuantos) }).catch(() => {})),
+    ...[...porInsumo].map(([id, medidas]) => {
+      const ins = estado.insumos.find((x) => x.id === id);
+      if (!ins) return null;
+      return updateDoc(doc(db, 'insumos', id),
+        { stock: Math.max(0, Number(ins.stock || 0) + signo * medidas) }).catch(() => {});
+    }),
+  ]);
 }
 
 // ---------- cobrar ----------
@@ -2331,7 +2774,8 @@ function pintarCartaBar() {
     <div class="item ${fuera || i.disponible === false ? 'agotado' : ''}">
       <div class="cuerpo">
         <div class="nombre">${esc(i.nombre || i.id)}${fuera ? ' — <small>fuera de carta</small>' : ''}</div>
-        <div class="desc">${esc(i.categoria || '')} · ${plata(i.precio)}</div>
+        <div class="desc">${esc(i.categoria || '')} · ${plata(i.precio)}${
+          (i.receta || []).length ? ' · sale del depósito' : ''}</div>
       </div>
       <div class="cant">
         <button data-stock="${i.id}" data-d="-1" aria-label="Restar stock" ${fuera ? 'disabled' : ''}>−</button>
@@ -2341,12 +2785,17 @@ function pintarCartaBar() {
       <button class="btn" data-toggle="${i.id}" style="padding:.4rem .7rem;font-size:.82rem" ${fuera ? 'disabled' : ''}>
         ${i.disponible === false ? 'Activar' : 'Agotar'}
       </button>
+      <button class="btn solo-gerente-inline" data-receta-de="${i.id}"
+              style="padding:.4rem .7rem;font-size:.82rem"
+              title="De qué insumo sale">${(i.receta || []).length ? '🧾' : '🧾+'}</button>
       <button class="btn solo-gerente-inline" data-carta="${i.id}" style="padding:.4rem .7rem;font-size:.82rem">
         ${fuera ? 'Poner en carta' : 'Sacar'}
       </button>
     </div>`;
   }).join('');
 
+  cont.querySelectorAll('[data-receta-de]').forEach((b) => b.onclick = () =>
+    abrirReceta(estado.carta.find((i) => i.id === b.dataset.recetaDe)));
   cont.querySelectorAll('[data-stock]').forEach((b) => b.onclick = async () => {
     const i = estado.carta.find((x) => x.id === b.dataset.stock);
     const n = Math.max(0, (typeof i.stock === 'number' ? i.stock : 0) + Number(b.dataset.d));
@@ -2404,9 +2853,11 @@ $('#btnSonido').onclick = () => {
 function irA(cual) {
   const vistas = { tablero: '#vistaTablero', carta: '#vistaCartaBar',
                    evento: '#vistaEvento', caja: '#vistaCaja',
+                   deposito: '#vistaDeposito',
                    calendario: '#vistaCalendario', puerta: '#vistaPuerta' };
   const tabs = { tablero: '#tabTablero', carta: '#tabCartaBar',
                  evento: '#tabEvento', caja: '#tabCaja',
+                 deposito: '#tabDeposito',
                  calendario: '#tabCalendario', puerta: '#tabPuerta' };
   // La cámara se apaga al salir de Puerta: no se deja prendida de fondo.
   if (cual !== 'puerta') cerrarCamara();
@@ -2419,6 +2870,7 @@ $('#tabTablero').onclick = () => irA('tablero');
 $('#tabCartaBar').onclick = () => irA('carta');
 $('#tabEvento').onclick = () => irA('evento');
 $('#tabCaja').onclick = () => { irA('caja'); pintarCajaGeneral(); };
+$('#tabDeposito').onclick = () => { irA('deposito'); pintarDeposito(); };
 $('#tabCalendario').onclick = () => irA('calendario');
 $('#tabPuerta').onclick = () => irA('puerta');
 

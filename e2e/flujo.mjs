@@ -372,6 +372,9 @@ await chequear('el conteo de la noche compara y marca lo que falta', async () =>
   // Se cuenta de más al abrir y de menos al cerrar: tiene que marcar faltante.
   const stockApp = await barra.textContent('.lista-conteo .item .desc');
   if (!stockApp.includes('en la app')) throw new Error('no muestra el stock que tiene la app');
+  // Papas no tiene receta: se cuenta solo, como antes.
+  if (!(await barra.locator('[data-conteo="item:papas"]').count()))
+    throw new Error('no lista los productos que llevan su propio stock');
   const primero = barra.locator('[data-conteo]').first();
   await primero.fill('10');
   await barra.click('#btnGuardarConteo');
@@ -815,6 +818,97 @@ await chequear('la caja general suma los eventos cerrados y los rankea', async (
   await barra.waitForSelector('#eventosPasados .ranking', { timeout: 5000 });
   const detalle = await barra.textContent('#eventosPasados');
   if (!detalle.includes('Papas bravas')) throw new Error('el detalle no lista lo vendido');
+});
+
+await chequear('el depósito: insumo, receta y descuento por medidas', async () => {
+  // Si una escritura se cae, el panel avisa con un alert: lo capturamos para
+  // que el error del test diga qué pasó en vez de un timeout pelado.
+  let seQuejo = '';
+  const oirAlertas = async (d) => { seQuejo = d.message(); await d.accept(); };
+  barra.on('dialog', oirAlertas);
+  try {
+  await barra.click('#tabDeposito');
+  await barra.waitForSelector('#btnNuevoInsumo', { timeout: 10000 });
+
+  // Una botella que da 10 medidas: lo que se compra, no lo que se vende.
+  await barra.click('#btnNuevoInsumo');
+  await barra.waitForSelector('#dlgInsumo[open]', { timeout: 5000 });
+  await barra.fill('#inpInsNombre', 'Fernet 750');
+  await barra.fill('#inpInsUnidad', 'botella');
+  await barra.fill('#inpInsMedidas', '10');
+  await barra.fill('#inpInsCosto', '12000');
+  await barra.click('#btnGuardarInsumo');
+  await barra.waitForFunction(() =>
+    document.querySelector('#deposito')?.textContent.includes('Fernet 750'),
+    null, { timeout: 10000 }).catch(async () => {
+      const diag = await barra.evaluate(() => ({
+        oculto: document.querySelector('#vistaDeposito')?.hidden,
+        html: (document.querySelector('#deposito')?.innerHTML || '').slice(0, 300),
+        dlg: document.querySelector('#dlgInsumo')?.open,
+      }));
+      throw new Error('el insumo no aparecio. ' + JSON.stringify(diag));
+    });
+
+  // Entran 3 botellas a cuenta: suma stock y queda la deuda.
+  await barra.click('#btnNuevaCompra');
+  await barra.waitForSelector('#dlgCompra[open]', { timeout: 5000 });
+  await barra.fill('#inpCompraProv', 'Distribuidora Prueba');
+  await barra.locator('[data-compra-u]').first().fill('3');
+  await barra.locator('[data-compra-c]').first().fill('12000');
+  await barra.click('#btnGuardarCompra');
+  await barra.waitForFunction(() =>
+    document.querySelector('#deposito')?.textContent.includes('3 botellas'),
+    null, { timeout: 10000 }).catch(async () => {
+      throw new Error('la compra no sumo stock. Dice: '
+        + (await barra.textContent('#deposito')).slice(0, 250));
+    });
+  if (!(await barra.textContent('#deposito')).includes('Deuda con proveedores'))
+    throw new Error('la compra a cuenta no quedó como deuda');
+
+  // Un producto de la carta que sale de esa botella: una medida por trago.
+  await barra.click('#tabCartaBar');
+  await barra.locator('.item', { hasText: 'Fernet con coca' })
+    .locator('[data-receta-de]').click();
+  await barra.waitForSelector('#dlgReceta[open]', { timeout: 5000 });
+  await barra.locator('[data-receta]').first().fill('1');
+  await barra.click('#btnGuardarReceta');
+  await barra.waitForFunction(() =>
+    document.querySelector('#cartaBar')?.textContent.includes('sale del depósito'),
+    null, { timeout: 10000 }).catch(async () => {
+      throw new Error('la receta no quedo guardada. Carta: '
+        + (await barra.textContent('#cartaBar')).slice(0, 200));
+    });
+
+  // Un caso anterior lo dejó agotado: se reactiva para poder venderlo.
+  const fila = barra.locator('.item', { hasText: 'Fernet con coca' });
+  if ((await fila.locator('[data-toggle]').textContent()).includes('Activar')) {
+    await fila.locator('[data-toggle]').click();
+    await barra.waitForFunction(() => {
+      const f = [...document.querySelectorAll('#cartaBar .item')]
+        .find((x) => x.textContent.includes('Fernet con coca'));
+      return f && !f.className.includes('agotado');
+    }, null, { timeout: 10000 });
+  }
+
+  // Y al venderlo, baja UNA MEDIDA, no una botella.
+  const medidasAntes = (await db.collection('insumos').get()).docs[0].data().stock;
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Fernet con coca' })
+    .locator('[data-venta][data-d="1"]').click();
+  await barra.click('#btnVentaEfectivo');
+  let despues;
+  for (let i = 0; i < 40; i++) {
+    despues = (await db.collection('insumos').get()).docs[0].data().stock;
+    if (despues !== medidasAntes) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (despues !== medidasAntes - 1)
+    throw new Error(`descontó mal: ${medidasAntes} -> ${despues} (tenía que bajar 1 medida)`);
+  } catch (e) {
+    throw new Error(e.message + (seQuejo ? ` · el panel dijo: "${seQuejo}"` : ''));
+  } finally { barra.removeListener('dialog', oirAlertas); }
 });
 
 await chequear('la caja junta lo que entra y lo que sale', async () => {

@@ -102,6 +102,7 @@
       <button role="tab" id="tabCartaBar" aria-selected="false">Carta</button>
       <button role="tab" id="tabEvento" aria-selected="false">Noche</button>
       <button role="tab" id="tabCaja" aria-selected="false">Caja</button>
+      <button role="tab" id="tabDeposito" aria-selected="false">Depósito</button>
       <button role="tab" id="tabCalendario" aria-selected="false">Calendario</button>
       <button role="tab" id="tabPuerta" aria-selected="false">Puerta</button>
     </div>
@@ -116,6 +117,10 @@
       <button class="btn ancho-full" id="btnConteo" style="margin-bottom:.9rem">
         🧮 Conteo de la noche</button>
       <div id="cartaBar"><div class="cargando">Cargando carta…</div></div>
+    </section>
+
+    <section id="vistaDeposito" hidden>
+      <div id="deposito"><div class="cargando">Abriendo el depósito…</div></div>
     </section>
 
     <section id="vistaCaja" hidden>
@@ -238,6 +243,56 @@
 
 <!-- Quién está atendiendo: se toca de una lista, no se escribe. -->
 <!-- Conteo de la noche: control, no inventario. No mueve el stock. -->
+<!-- Un insumo: lo que se compra y se guarda. -->
+<dialog id="dlgInsumo">
+  <h2 style="margin-top:0" id="tituloInsumo">Nuevo insumo</h2>
+  <label class="campo">
+    <span>Qué es</span>
+    <input id="inpInsNombre" maxlength="60" autocomplete="off" placeholder="Fernet 750, lata de cerveza…">
+  </label>
+  <label class="campo">
+    <span>Cómo viene</span>
+    <input id="inpInsUnidad" maxlength="20" autocomplete="off" placeholder="botella, lata, paquete">
+  </label>
+  <label class="campo">
+    <span>Cuántas medidas da <small>(1 si se vende cerrado)</small></span>
+    <input id="inpInsMedidas" type="number" min="1" max="1000" inputmode="numeric" value="1">
+    <small class="pista" id="pistaInsumo">Una botella de 750 con medidas de 70 da 10.</small>
+  </label>
+  <label class="campo">
+    <span>Cuánto cuesta cada unidad <small>(opcional)</small></span>
+    <input id="inpInsCosto" type="number" min="0" inputmode="numeric">
+  </label>
+  <label class="campo">
+    <span>Avisame cuando queden menos de <small>(en unidades, opcional)</small></span>
+    <input id="inpInsMinimo" type="number" min="0" inputmode="numeric">
+  </label>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarInsumo" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnGuardarInsumo" style="flex:1.4">Guardar</button>
+  </div>
+</dialog>
+
+<!-- Un ingreso de mercadería: suma stock, y plata si se pagó. -->
+<dialog id="dlgCompra">
+  <h2 style="margin-top:0" id="tituloCompra">Ingreso de mercadería</h2>
+  <div id="cuerpoCompra"></div>
+  <button class="btn ancho-full" id="btnCancelarCompra" style="margin-top:.9rem">Volver</button>
+</dialog>
+
+<!-- De qué insumo sale un producto de la carta. -->
+<dialog id="dlgReceta">
+  <h2 style="margin-top:0" id="tituloReceta">De qué sale</h2>
+  <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 1rem">
+    Cuántas medidas del depósito se lleva cada uno que se vende. Si lo dejás
+    vacío, este producto no descuenta del depósito.</p>
+  <div id="cuerpoReceta"></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarReceta" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnGuardarReceta" style="flex:1.4">Guardar</button>
+  </div>
+</dialog>
+
 <dialog id="dlgConteo">
   <h2 style="margin-top:0" id="tituloConteo">Conteo de la noche</h2>
   <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 .9rem" id="subtituloConteo"></p>
@@ -293,6 +348,10 @@
       <option value="retiro">Retiro de plata</option>
       <option value="otro">Otro</option>
     </select>
+  </label>
+  <label class="campo">
+    <span>Proveedor <small>(si es un pago a cuenta, baja la deuda)</small></span>
+    <select id="inpEgrProveedor"><option value="">— ninguno —</option></select>
   </label>
   <div class="campo">
     <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">Cómo se pagó</span>

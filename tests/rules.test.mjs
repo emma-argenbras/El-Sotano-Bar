@@ -208,6 +208,95 @@ describe('el celular de la barra', () => {
   });
 });
 
+describe('el depósito', () => {
+  const insumo = (extra = {}) => ({
+    nombre: 'Fernet 750', unidad: 'botella', medidas: 10, stock: 50,
+    costo: 12000, minimo: 20, creadoEn: serverTimestamp(), ...extra,
+  });
+
+  it('la casa da de alta un insumo', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'insumos/fernet-750'), insumo()));
+  });
+
+  it('toda la barra lo ve: necesita saber qué hay', async () => {
+    await assertSucceeds(getDocs(collection(turnoOk(), 'insumos')));
+    await assertSucceeds(getDocs(collection(aparato(), 'insumos')));
+  });
+
+  // Una botella tiene que dar al menos una medida: con cero, un trago
+  // descontaría infinito.
+  it('con medidas en cero NO', async () => {
+    await assertFails(setDoc(doc(barra(), 'insumos/malo-1'), insumo({ medidas: 0 })));
+  });
+
+  it('con stock negativo tampoco', async () => {
+    await assertFails(setDoc(doc(barra(), 'insumos/malo-2'), insumo({ stock: -5 })));
+  });
+
+  it('la barra descuenta al entregar, y nada más', async () => {
+    await assertSucceeds(updateDoc(doc(aparato(), 'insumos/fernet-750'), { stock: 49 }));
+    await assertFails(updateDoc(doc(aparato(), 'insumos/fernet-750'), { costo: 1 }));
+    await assertFails(updateDoc(doc(turnoOk(), 'insumos/fernet-750'), { medidas: 99 }));
+  });
+
+  it('un cliente no ve el depósito', async () => {
+    await assertFails(getDocs(collection(anon(), 'insumos')));
+  });
+});
+
+describe('ingresos de mercadería y proveedores', () => {
+  const compra = (extra = {}) => ({
+    proveedor: 'Distribuidora Sur', proveedorId: 'prov-1',
+    fecha: new Date(), total: 120000, condicion: 'cuenta',
+    items: [{ insumoId: 'fernet-750', nombre: 'Fernet 750', unidades: 10, costoUnit: 12000 }],
+    cargadoPor: 'emma', creadoEn: serverTimestamp(), ...extra,
+  });
+
+  it('la casa carga una compra a cuenta', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'compras/compra-1'), compra()));
+  });
+
+  it('y una al contado, con forma de pago', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'compras/compra-2'),
+      compra({ condicion: 'contado', pago: 'efectivo' })));
+  });
+
+  it('y la carga inicial, que no es plata que salió', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'compras/compra-0'),
+      compra({ condicion: 'inicial', total: 0 })));
+  });
+
+  it('con una condición inventada NO', async () => {
+    await assertFails(setDoc(doc(barra(), 'compras/mala-1'),
+      compra({ condicion: 'fiado' })));
+  });
+
+  it('sin items tampoco', async () => {
+    await assertFails(setDoc(doc(barra(), 'compras/mala-2'), compra({ items: [] })));
+  });
+
+  it('la barra NO ve las compras: es plata, no servicio', async () => {
+    await assertFails(getDocs(collection(turnoOk(), 'compras')));
+    await assertFails(getDocs(collection(aparato(), 'compras')));
+    await assertFails(setDoc(doc(aparato(), 'compras/trucha'), compra()));
+  });
+
+  it('el proveedor lo da de alta la casa y lo lee la barra', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'proveedores/prov-1'),
+      { nombre: 'Distribuidora Sur', creadoEn: serverTimestamp() }));
+    await assertSucceeds(getDoc(doc(turnoOk(), 'proveedores/prov-1')));
+    await assertFails(setDoc(doc(turnoOk(), 'proveedores/prov-2'), { nombre: 'Mía' }));
+  });
+
+  it('un pago a cuenta es un gasto con el proveedor apuntado', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'egresos/pago-1'), {
+      concepto: 'Pago a Distribuidora Sur', categoria: 'proveedor',
+      monto: 50000, pago: 'efectivo', fecha: new Date(),
+      proveedorId: 'prov-1', cargadoPor: 'emma', creadoEn: serverTimestamp(),
+    }));
+  });
+});
+
 describe('el conteo de la noche', () => {
   const conteo = (extra = {}) => ({
     cajaId: 'ev-1', nombre: 'Noche',

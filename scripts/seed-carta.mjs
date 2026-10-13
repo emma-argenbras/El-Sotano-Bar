@@ -37,6 +37,17 @@ const CARTA = [
 iniciar();
 const db = getFirestore();
 
+// Esta carta es de ejemplo, de cuando no había nada cargado. Si el bar ya
+// tiene su carta de verdad, meter estos productos es ensuciarla: se borraron
+// a mano una vez y no van a volver por un comando corrido sin querer.
+const yaHay = await db.collection('carta').limit(1).get();
+if (!yaHay.empty && !forzar) {
+  console.log('La carta ya tiene productos: no toco nada.');
+  console.log('Los productos se cargan desde el panel. Si igual querés la');
+  console.log('carta de ejemplo encima de la real, corré con --forzar.');
+  process.exit(0);
+}
+
 let creados = 0, salteados = 0, actualizados = 0;
 const lote = db.batch();
 
