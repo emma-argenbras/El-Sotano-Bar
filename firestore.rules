@@ -173,6 +173,14 @@ service cloud.firestore {
         && d.get('vendidoPor', '') is string;
     }
 
+    function conteoValido(d) {
+      return d.keys().hasOnly(['cajaId', 'nombre', 'apertura', 'cierre',
+                              'aperturaEn', 'cierreEn', 'aperturaPor', 'cierrePor'])
+        && d.get('cajaId', '') is string
+        && (!('apertura' in d.keys()) || d.apertura is map)
+        && (!('cierre' in d.keys()) || d.cierre is map);
+    }
+
     function egresoValido(d) {
       return d.keys().hasAll(['concepto', 'categoria', 'monto', 'pago', 'fecha'])
         && d.keys().hasOnly(['concepto', 'categoria', 'monto', 'pago', 'fecha',
@@ -374,6 +382,18 @@ service cloud.firestore {
       // Pisarlo seria desarmar el candado.
       allow update: if false;
       // La casa lo libera si anoto mal un numero.
+      allow delete: if esAdmin();
+    }
+
+    // ---------- el conteo de la noche ----------
+    // Control, no inventario: lo que se cuenta a mano al abrir y al cerrar.
+    // NO mueve el stock de la carta — ese baja solo al entregar. Sirve para
+    // comparar lo que habia, lo que se vendio y lo que quedo, y ver si falta.
+    //
+    // Lo carga quien atiende: es la persona que tiene las botellas delante.
+    match /conteos/{caja} {
+      allow read: if esBarra();
+      allow create, update: if esBarra() && conteoValido(request.resource.data);
       allow delete: if esAdmin();
     }
 

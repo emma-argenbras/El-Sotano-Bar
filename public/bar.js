@@ -60,7 +60,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -358,6 +358,8 @@ $('#btnVerPass').onclick = () => {
 };
 
 $('#btnQuienAtiende').onclick = elegirQuienAtiende;
+$('#btnConteo').onclick = abrirConteo;
+$('#btnCerrarConteo').onclick = () => $('#dlgConteo').close();
 $('#btnCerrarAtiende').onclick = () => $('#dlgAtiende').close();
 $('#btnCancelarPersona').onclick = () => $('#dlgPersona').close();
 $('#btnConfirmarPersona').onclick = crearPersona;
@@ -1685,8 +1687,10 @@ function pintarTablero() {
       + '1 = cancelarlo (sale de la caja)\n'
       + '2 = volverlo a Listo\n\n'
       + 'Dejalo vacío para no tocar nada.', '');
-    if (r === '1') cambiarEstado(p.id, 'cancelado');
-    else if (r === '2') cambiarEstado(p.id, 'listo');
+    if (r !== '1' && r !== '2') return;
+    // Sacarlo de entregado devuelve lo que se había descontado.
+    if (p.estado === 'entregado') moverStock(p, +1);
+    cambiarEstado(p.id, r === '1' ? 'cancelado' : 'listo');
   });
 }
 
@@ -2040,6 +2044,7 @@ async function cobrarVenta(pago) {
       nombreCliente: 'Mostrador',
       creadoEn: serverTimestamp(),
     });
+    await moverStock({ items }, -1);
     if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
     estado.venta = {};
     $('#dlgVenta').close();
@@ -2080,6 +2085,181 @@ async function guardarEgreso() {
   btn.disabled = false; btn.textContent = 'Cargar';
 }
 
+// ---------- el conteo de la noche ----------
+//
+// Es control, no inventario: lo que la barra cuenta a mano al abrir y al
+// cerrar. NO toca el stock de la carta. Sirve para una sola cosa, que es la
+// que importa: comparar lo que había, lo que se vendió y lo que quedó.
+function escucharConteo() {
+  const caja = cajaActual();
+  if (estado.conteoDe === caja) return;
+  estado.conteoDe = caja;
+  if (estado.cortarConteo) estado.cortarConteo();
+  estado.cortarConteo = onSnapshot(doc(db, 'conteos', caja), (d) => {
+    estado.conteo = d.exists() ? d.data() : null;
+    pintarConteo();
+  }, () => {});
+}
+
+// Lo vendido de cada producto en esta caja, que es contra lo que se compara.
+function vendidoPorItem() {
+  const m = new Map();
+  for (const p of estado.pedidos) {
+    if (p.estado !== 'entregado') continue;
+    for (const i of (p.items || [])) {
+      m.set(i.id, (m.get(i.id) || 0) + Number(i.cantidad || 0));
+    }
+  }
+  return m;
+}
+
+function abrirConteo() {
+  escucharConteo();
+  estado.cargandoConteo = {};
+  $('#dlgConteo').showModal();
+  pintarConteo();
+}
+
+function pintarConteo() {
+  if (!$('#dlgConteo').open) return;
+  const c = estado.conteo || {};
+  const hayApertura = !!c.aperturaEn;
+  const hayCierre = !!c.cierreEn;
+  const etapa = !hayApertura ? 'apertura' : (!hayCierre ? 'cierre' : 'listo');
+  const vendido = vendidoPorItem();
+  const productos = estado.carta.filter((i) => i.enCarta !== false);
+
+  $('#tituloConteo').textContent = {
+    apertura: 'Conteo de apertura',
+    cierre: 'Conteo de cierre',
+    listo: 'Conteo de la noche',
+  }[etapa];
+  $('#subtituloConteo').textContent = {
+    apertura: 'Contá lo que hay antes de abrir. Esto no toca el stock: es control.',
+    cierre: 'Contá lo que quedó. Abajo vas a ver si falta algo.',
+    listo: 'Ya está cerrado. Esto es lo que dio.',
+  }[etapa];
+
+  // Cerrado: la comparación, que es para lo que se hizo todo esto.
+  if (etapa === 'listo') {
+    const filas = productos.map((i) => {
+      const abrio = Number(c.apertura?.[i.id] ?? 0);
+      const salio = Number(vendido.get(i.id) || 0);
+      const cerro = Number(c.cierre?.[i.id] ?? 0);
+      const deberia = abrio - salio;
+      return { i, abrio, salio, cerro, dif: cerro - deberia, deberia };
+    }).filter((f) => f.abrio || f.salio || f.cerro);
+    const faltan = filas.filter((f) => f.dif < 0);
+    $('#cuerpoConteo').innerHTML = `
+      ${faltan.length ? `<div class="aviso mal"><span>⚠</span><div>
+        <b>Falta mercadería en ${faltan.length} producto${faltan.length === 1 ? '' : 's'}.</b><br>
+        Puede ser rotura, un pedido mal cargado o un vaso que no se cobró.</div></div>`
+        : `<div class="aviso ok"><span>✓</span><div>
+        <b>Cierra todo.</b> Lo que quedó coincide con lo vendido.</div></div>`}
+      <table class="ranking tabla-conteo" style="margin-top:.8rem"><thead>
+        <tr><th>Producto</th><th class="n">Abrió</th><th class="n">Vendió</th>
+            <th class="n">Quedó</th><th class="n">Dif</th></tr></thead><tbody>
+        ${filas.map((f) => `
+          <tr class="${f.dif < 0 ? 'falta' : (f.dif > 0 ? 'sobra' : '')}">
+            <td>${esc(f.i.nombre || f.i.id)}</td>
+            <td class="n">${f.abrio}</td><td class="n">${f.salio}</td>
+            <td class="n">${f.cerro}</td>
+            <td class="n">${f.dif > 0 ? '+' : ''}${f.dif || '—'}</td>
+          </tr>`).join('')}
+      </tbody></table>
+      <p style="font-size:.76rem;color:var(--suave);margin:.8rem 0 0">
+        Lo contó ${esc(c.aperturaPor || '—')} al abrir y ${esc(c.cierrePor || '—')} al cerrar.
+        El conteo no movió el stock de la carta.</p>
+      <button class="btn ancho-full solo-gerente-inline" id="btnRehacerConteo"
+              style="margin-top:.7rem">Empezar un conteo nuevo</button>`;
+    if ($('#btnRehacerConteo')) $('#btnRehacerConteo').onclick = rehacerConteo;
+    return;
+  }
+
+  // Abierto o por cerrar: la planilla para cargar los números.
+  $('#cuerpoConteo').innerHTML = `
+    ${hayApertura ? `<p style="font-size:.8rem;color:var(--suave);margin:0 0 .6rem">
+      Abrió ${esc(c.aperturaPor || '')} ${c.aperturaEn?.toDate?.()
+        ? 'a las ' + hora(c.aperturaEn) : ''}.</p>` : ''}
+    <div class="lista-conteo">
+      ${productos.map((i) => {
+        const abrio = Number(c.apertura?.[i.id] ?? 0);
+        const salio = Number(vendido.get(i.id) || 0);
+        return `
+        <div class="item">
+          <div class="cuerpo">
+            <div class="nombre">${esc(i.nombre || i.id)}</div>
+            <div class="desc">en la app: ${typeof i.stock === 'number' ? i.stock : '∞'}${
+              etapa === 'cierre' ? ` · abrió ${abrio} · vendió ${salio}` : ''}</div>
+          </div>
+          <input class="conteo-num" type="number" min="0" inputmode="numeric"
+                 data-conteo="${esc(i.id)}" placeholder="0"
+                 value="${estado.cargandoConteo[i.id] ?? ''}">
+        </div>`;
+      }).join('')}
+    </div>
+    <button class="btn primario ancho-full" id="btnGuardarConteo" style="margin-top:.8rem">
+      ${etapa === 'apertura' ? 'Guardar el conteo de apertura' : 'Cerrar el conteo'}</button>`;
+
+  $('#cuerpoConteo').querySelectorAll('[data-conteo]').forEach((inp) => {
+    inp.oninput = () => { estado.cargandoConteo[inp.dataset.conteo] = inp.value; };
+  });
+  $('#btnGuardarConteo').onclick = () => guardarConteo(etapa);
+}
+
+async function guardarConteo(etapa) {
+  const numeros = {};
+  $('#cuerpoConteo').querySelectorAll('[data-conteo]').forEach((inp) => {
+    if (inp.value !== '') numeros[inp.dataset.conteo] = Math.max(0, Math.floor(Number(inp.value) || 0));
+  });
+  if (!Object.keys(numeros).length) {
+    alert('Cargá al menos un producto.');
+    return;
+  }
+  const btn = $('#btnGuardarConteo');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+  const quien = quienAtiende() || estado.usuario || 'casa';
+  try {
+    await setDoc(doc(db, 'conteos', cajaActual()), etapa === 'apertura'
+      ? { cajaId: cajaActual(), nombre: estado.evento?.nombre || 'Día',
+          apertura: numeros, aperturaEn: serverTimestamp(), aperturaPor: quien }
+      : { cierre: numeros, cierreEn: serverTimestamp(), cierrePor: quien },
+      { merge: true });
+    estado.cargandoConteo = {};
+  } catch (e) {
+    alert('No se pudo guardar: ' + (e.code || e.message));
+  }
+  btn.disabled = false;
+}
+
+async function rehacerConteo() {
+  if (!confirm('¿Empezar un conteo nuevo?\n\nSe borra el de esta noche.')) return;
+  try { await deleteDoc(doc(db, 'conteos', cajaActual())); estado.cargandoConteo = {}; }
+  catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+// ---------- el stock baja al entregar ----------
+//
+// Al entregar, no al pedir: lo que todavía no salió de la barra sigue siendo
+// stock. Solo se tocan los productos que llevan cuenta; los que están en ∞ no
+// se controlan y se dejan como están.
+//
+// signo = -1 descuenta (se entregó), +1 devuelve (se corrigió un entregado).
+async function moverStock(pedido, signo) {
+  const toca = (pedido?.items || []).filter((i) => {
+    const c = estado.carta.find((x) => x.id === i.id);
+    return c && typeof c.stock === 'number';
+  });
+  if (!toca.length) return;
+  await Promise.all(toca.map((i) => {
+    const c = estado.carta.find((x) => x.id === i.id);
+    // No baja de cero: un stock en negativo no significa nada y asusta al
+    // que lo mira. Si falta, lo muestra el conteo de la noche.
+    const nuevo = Math.max(0, Number(c.stock) + signo * Number(i.cantidad || 0));
+    return updateDoc(doc(db, 'carta', i.id), { stock: nuevo }).catch(() => {});
+  }));
+}
+
 // ---------- cobrar ----------
 // Al entregar hay que decir cómo pagó: un toque, y la caja queda cerrada en el
 // momento. Si se deja para después, no se hace nunca.
@@ -2100,6 +2280,8 @@ async function cerrarCobro(pago) {
     await updateDoc(doc(db, 'pedidos', p.id), {
       estado: 'entregado', pago, vendidoPor: quienAtiende() || estado.usuario || 'casa',
     });
+    // Recién acá sale de la barra: ahora sí baja el stock.
+    if (p.estado !== 'entregado') await moverStock(p, -1);
     if (navigator.vibrate) navigator.vibrate(12);
   } catch (e) { alert('No se pudo cobrar: ' + (e.code || e.message)); }
 }

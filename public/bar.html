@@ -113,6 +113,8 @@
     </section>
 
     <section id="vistaCartaBar" hidden>
+      <button class="btn ancho-full" id="btnConteo" style="margin-bottom:.9rem">
+        🧮 Conteo de la noche</button>
       <div id="cartaBar"><div class="cargando">Cargando carta…</div></div>
     </section>
 
@@ -235,6 +237,14 @@
 </dialog>
 
 <!-- Quién está atendiendo: se toca de una lista, no se escribe. -->
+<!-- Conteo de la noche: control, no inventario. No mueve el stock. -->
+<dialog id="dlgConteo">
+  <h2 style="margin-top:0" id="tituloConteo">Conteo de la noche</h2>
+  <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 .9rem" id="subtituloConteo"></p>
+  <div id="cuerpoConteo"></div>
+  <button class="btn ancho-full" id="btnCerrarConteo" style="margin-top:.9rem">Volver</button>
+</dialog>
+
 <dialog id="dlgAtiende">
   <h2 style="margin-top:0">¿Quién está atendiendo?</h2>
   <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 1rem">

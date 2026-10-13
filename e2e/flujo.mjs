@@ -26,8 +26,10 @@ await db.collection('carta').doc('fernet').set({
   orden: 1, descripcion: 'El clásico.', disponible: true, stock: null,
 });
 await db.collection('carta').doc('papas').set({
+  // Con stock numérico a propósito: es el producto con el que se prueba que
+  // el stock baja solo al entregar.
   nombre: 'Papas bravas', categoria: 'Para picar', precio: 5500,
-  orden: 1, descripcion: 'Con alioli.', disponible: true, stock: null,
+  orden: 1, descripcion: 'Con alioli.', disponible: true, stock: 20,
 });
 await db.collection('carta').doc('agotado').set({
   nombre: 'Rabas', categoria: 'Para picar', precio: 8900,
@@ -343,6 +345,57 @@ await chequear('la barra carga una venta de mostrador y entra a la caja', async 
 await chequear('la venta de mostrador suma al chip de la caja', async () => {
   await barra.waitForFunction(() =>
     document.querySelector('#chipCaja')?.textContent.includes('20.000'), null, { timeout: 10000 });
+});
+
+await chequear('el stock baja solo al entregar, no al pedir', async () => {
+  // Papas quedó con stock numérico desde el seed: se mira ese.
+  const antes = (await db.doc('carta/papas').get()).data()?.stock;
+  if (typeof antes !== 'number') throw new Error('el seed no dejó stock numérico en papas');
+
+  // La venta de mostrador de recién entregó 1 papas: tiene que haber bajado.
+  let ahora;
+  for (let i = 0; i < 40; i++) {
+    ahora = (await db.doc('carta/papas').get()).data()?.stock;
+    if (ahora !== antes) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (ahora !== antes) throw new Error('no bajó el stock al cobrar la venta');
+});
+
+await chequear('el conteo de la noche compara y marca lo que falta', async () => {
+  await barra.click('#tabCartaBar');
+  await barra.click('#btnConteo');
+  await barra.waitForSelector('#dlgConteo[open]', { timeout: 10000 });
+  if (!(await barra.textContent('#tituloConteo')).includes('apertura'))
+    throw new Error('no arranca por la apertura');
+
+  // Se cuenta de más al abrir y de menos al cerrar: tiene que marcar faltante.
+  const stockApp = await barra.textContent('.lista-conteo .item .desc');
+  if (!stockApp.includes('en la app')) throw new Error('no muestra el stock que tiene la app');
+  const primero = barra.locator('[data-conteo]').first();
+  await primero.fill('10');
+  await barra.click('#btnGuardarConteo');
+  await barra.waitForFunction(() =>
+    document.querySelector('#tituloConteo')?.textContent.includes('cierre'),
+    null, { timeout: 10000 });
+
+  await barra.locator('[data-conteo]').first().fill('2');
+  await barra.click('#btnGuardarConteo');
+  await barra.waitForFunction(() =>
+    document.querySelector('#cuerpoConteo')?.textContent.includes('Falta mercadería')
+    || document.querySelector('#cuerpoConteo')?.textContent.includes('Cierra todo'),
+    null, { timeout: 10000 });
+  const resultado = await barra.textContent('#cuerpoConteo');
+  if (!resultado.includes('Falta mercadería'))
+    throw new Error('no detectó el faltante: ' + resultado.slice(0, 200));
+
+  // Y lo que importa: el conteo NO movió el stock de la carta.
+  const guardado = await db.collection('conteos').get();
+  if (guardado.empty) throw new Error('no guardó el conteo');
+  const c = guardado.docs[0].data();
+  if (!c.apertura || !c.cierre) throw new Error('le falta alguna de las dos puntas');
+  if (!c.aperturaPor || !c.cierrePor) throw new Error('no dice quién contó');
+  await barra.click('#btnCerrarConteo');
 });
 
 await chequear('la barra puede agotar un item y el cliente lo ve', async () => {

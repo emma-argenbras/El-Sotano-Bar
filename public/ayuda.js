@@ -214,7 +214,14 @@
         <p><b>Agotar</b> marca que se acabó. El cliente lo sigue viendo pero no lo
         puede pedir. <b>Activar</b> lo vuelve a habilitar.</p>
         <p>Los <b>− ∞ +</b> ajustan el stock. En ∞ no se controla.</p>
-        <p><b>El stock no baja solo</b> al entregar: hay que ajustarlo a mano.</p>
+        <p><b>El stock baja solo al entregar</b>, no al pedir: lo que todavía no
+        salió de la barra sigue contando. Si corregís un entregado, vuelve.</p>
+        <p><b>🧮 Conteo de la noche</b>: contás lo que hay <b>antes de abrir</b>,
+        y al terminar contás de nuevo. La app compara lo que había, lo que se
+        vendió y lo que quedó, y te marca en rojo dónde falta.</p>
+        <p>El conteo <b>no toca el stock</b>: es control, no inventario. Si
+        falta, puede ser rotura, un pedido mal cargado o un vaso que no se
+        cobró — el número te dice dónde mirar.</p>
         <p class="solo-admin-ayuda"><b>Sacar</b> retira un producto de la carta: el
         cliente deja de verlo. No se borra, vuelve con <b>Poner en carta</b>.
         Distinto de Agotar, que es "se acabó esta noche".</p>`,

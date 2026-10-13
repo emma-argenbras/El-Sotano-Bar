@@ -472,6 +472,22 @@ body.es-puerta #tabTablero, body.es-puerta #tabCartaBar, body.es-puerta #tabEven
 }
 .con-ojo .ojo:hover, .con-ojo .ojo[aria-pressed="true"] { opacity: 1; }
 
+/* ---------- conteo de la noche ---------- */
+.lista-conteo { max-height: 50vh; overflow-y: auto; }
+.lista-conteo .item { margin-bottom: .4rem; }
+.conteo-num {
+  width: 4.5rem; flex: 0 0 auto; text-align: center;
+  font-variant-numeric: tabular-nums; font-size: 1.05rem;
+}
+.tabla-conteo th {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--suave); font-weight: 600; text-align: left; padding: .2rem .4rem;
+}
+.tabla-conteo th.n { text-align: right; }
+.tabla-conteo tr.falta td { color: var(--rojo); }
+.tabla-conteo tr.falta td:first-child::after { content: ' ⚠'; }
+.tabla-conteo tr.sobra td { color: var(--verde); }
+
 /* ---------- venta de mostrador y caja ---------- */
 .lista-venta { max-height: 45vh; overflow-y: auto; margin: .2rem 0 .8rem; }
 .lista-venta .item { margin-bottom: .4rem; }

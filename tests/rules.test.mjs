@@ -208,6 +208,51 @@ describe('el celular de la barra', () => {
   });
 });
 
+describe('el conteo de la noche', () => {
+  const conteo = (extra = {}) => ({
+    cajaId: 'ev-1', nombre: 'Noche',
+    apertura: { fernet: 12, papas: 30 },
+    aperturaEn: new Date(), aperturaPor: 'nico', ...extra,
+  });
+
+  it('lo carga quien atiende: tiene las botellas delante', async () => {
+    await assertSucceeds(setDoc(doc(turnoOk(), 'conteos/ev-1'), conteo()));
+    await assertSucceeds(setDoc(doc(aparato(), 'conteos/dia-2026-10-13'),
+      conteo({ cajaId: 'dia-2026-10-13' })));
+  });
+
+  it('y lo cierra con el segundo conteo', async () => {
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'conteos/ev-1'), {
+      cierre: { fernet: 9, papas: 24 }, cierreEn: new Date(), cierrePor: 'nico',
+    }));
+  });
+
+  it('la casa lo lee', async () => {
+    await assertSucceeds(getDoc(doc(barra(), 'conteos/ev-1')));
+    await assertSucceeds(getDoc(doc(gerente(), 'conteos/ev-1')));
+  });
+
+  it('un cliente no: no es asunto suyo', async () => {
+    await assertFails(getDoc(doc(anon(), 'conteos/ev-1')));
+    await assertFails(setDoc(doc(anon(), 'conteos/trucho'), conteo()));
+  });
+
+  it('con campos inventados NO', async () => {
+    await assertFails(setDoc(doc(turnoOk(), 'conteos/ev-9'),
+      conteo({ cajaId: 'ev-9', loQueSea: true })));
+  });
+
+  it('el conteo NO toca el stock de la carta: es control, no inventario', async () => {
+    // La barra puede ajustar stock por su cuenta, pero el conteo es otro
+    // documento: guardar uno no cambia el otro.
+    const antes = await getDoc(doc(barra(), 'carta/fernet'));
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'conteos/ev-1'),
+      { cierre: { fernet: 0 } }));
+    const despues = await getDoc(doc(barra(), 'carta/fernet'));
+    assert.equal(despues.data().stock, antes.data().stock);
+  });
+});
+
 describe('la plata que sale', () => {
   const egreso = (extra = {}) => ({
     concepto: 'Hielo', categoria: 'insumo', monto: 12000,
