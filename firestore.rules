@@ -394,7 +394,10 @@ service cloud.firestore {
     match /accesosBarra/{uid} {
       // Cada uno puede ver el suyo: el panel avisa cuando lo apagaron.
       allow get: if esAdmin() || esDueno(uid);
-      allow list: if esAdmin();
+      // El celular de la barra también la lee: necesita los nombres para que
+      // quien atiende se elija de una lista y no escribiéndolo a mano. Son
+      // nombres y roles, no hay nada secreto acá.
+      allow list: if esAdmin() || esAparatoDeBarra();
       // Un administrador da de alta y apaga a cualquiera, barman u otro
       // administrador: es cuenta full. Lo único que no puede es borrar.
       //

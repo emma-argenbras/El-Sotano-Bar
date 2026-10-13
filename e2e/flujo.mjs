@@ -437,8 +437,32 @@ await chequear('el celular de la barra se registra y entra sin turno', async () 
       throw new Error('el aparato no tiene que ver la caja general');
     if (await cel.locator('#tabCalendario').isVisible())
       throw new Error('el aparato no tiene que ver el calendario');
+    if (await cel.locator('#tabPuerta').isVisible())
+      throw new Error('la puerta es de la gente de puerta, no del aparato');
+    // Lo suyo: pedidos, carta y la noche.
+    for (const t of ['#tabTablero', '#tabCartaBar', '#tabEvento']) {
+      if (!(await cel.locator(t).isVisible())) throw new Error('le falta ' + t);
+    }
     if (!(await cel.locator('#btnVentaBarra').isVisible()))
       throw new Error('tiene que poder cargar una venta de mostrador');
+    // Leer el padrón ya no lo convierte en dueño: nada de administración.
+    if (await cel.locator('#btnAltaBarman').isVisible())
+      throw new Error('el aparato no puede dar de alta gente');
+
+    // Quién atiende se elige de una lista, no se escribe: los nombres salen
+    // del padrón, que el aparato sí puede leer.
+    await cel.click('#btnQuienAtiende');
+    await cel.waitForSelector('#dlgAtiende[open]', { timeout: 10000 });
+    await cel.waitForSelector('[data-atiende]', { timeout: 10000 });
+    const quienes = await cel.textContent('#listaAtiende');
+    if (!quienes.includes('barra-turno'))
+      throw new Error('no lista a los barmanes registrados: ' + quienes);
+    const seLista = await cel.locator('[data-atiende="barra"]').count();
+    if (seLista) throw new Error('se lista a sí mismo: el aparato no atiende');
+    await cel.locator('[data-atiende="barra-turno"]').click();
+    await cel.waitForFunction(() =>
+      document.querySelector('#quienAtiende')?.textContent === 'barra-turno',
+      null, { timeout: 5000 });
   } finally { await ctxAparato.close(); }
 });
 

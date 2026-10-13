@@ -14,6 +14,14 @@ import { claveAnotado, digitosTel, telValido, porQueNoVale, FORMATO_TEL } from '
 // por detrás va "barra-lunes@barra.local". El dominio no existe ni tiene que
 // existir — Firebase solo pide que el string tenga forma de mail.
 const DOMINIO_TURNO = 'barra.local';
+
+// El dueño entra con su mail; el personal, con usuario@barra.local. No hay
+// forma de que una cuenta de la casa se haga pasar por el dueño: el mail lo
+// fija Firebase al crearla y las reglas miran lo mismo del lado del servidor.
+const esElDueno = () => {
+  const mail = auth.currentUser?.email || '';
+  return !!mail && !mail.endsWith('@' + DOMINIO_TURNO);
+};
 const aMail = (entrada) => {
   const t = String(entrada || '').trim().toLowerCase();
   return t.includes('@') ? t : `${t}@${DOMINIO_TURNO}`;
@@ -350,6 +358,7 @@ $('#btnVerPass').onclick = () => {
 };
 
 $('#btnQuienAtiende').onclick = elegirQuienAtiende;
+$('#btnCerrarAtiende').onclick = () => $('#dlgAtiende').close();
 $('#btnCancelarPersona').onclick = () => $('#dlgPersona').close();
 $('#btnConfirmarPersona').onclick = crearPersona;
 $('#inpPersonaUsuario').oninput = () => {
@@ -1384,7 +1393,11 @@ const hora = (t) => (t?.toDate ? t.toDate().toLocaleTimeString('es-AR',
 // corta el acceso en el momento, sin tocar reglas ni redesplegar.
 function escucharAccesos() {
   onSnapshot(collection(db, 'accesosBarra'), (snap) => {
-    estado.dueno = true;
+    // OJO: poder leer el padrón ya no significa ser el dueño. Lo leen el dueño,
+    // los administradores y el celular de la barra, que lo necesita para saber
+    // quién puede estar atendiendo. El dueño es el que entra con un mail de
+    // verdad: todas las cuentas de la casa son usuario@barra.local.
+    estado.dueno = esElDueno();
     aplicarRol();
     estado.accesos = snap.docs.map((d) => ({ uid: d.id, ...d.data() }))
       .sort((a, b) => Number(!!b.activo) - Number(!!a.activo)
@@ -1414,6 +1427,10 @@ function aplicarRol() {
   b.toggle('es-aparato', estado.esAparato);
   pintarQuienAtiende();
   $('#tabCaja').hidden = !(estado.dueno || estado.rol === 'admin');
+  // El celular de la barra atiende la barra: pedidos, carta y la noche. La
+  // puerta es de la gente de la puerta, con su propia cuenta.
+  $('#tabPuerta').hidden = estado.esAparato;
+  if (estado.esAparato && !$('#vistaPuerta').hidden) irA('tablero');
   // La puerta no trabaja pedidos ni carta: se le deja su pantalla y nada más.
   $('#tabCalendario').hidden = !(estado.dueno || estado.rol === 'admin');
   const soloPuerta = !estado.dueno && estado.rol === 'puerta';
@@ -1756,15 +1773,25 @@ function barmanesPosibles() {
 
 function elegirQuienAtiende() {
   const gente = barmanesPosibles();
-  const lista = gente.length
-    ? gente.map((g, i) => `${i + 1}. ${g}`).join('\n')
-    : '(todavía no hay barmanes registrados)';
-  const r = (prompt(`¿Quién está atendiendo?\n\n${lista}\n\n`
-    + 'Escribí el número o el nombre.') || '').trim();
-  if (!r) return;
-  const porNumero = gente[Number(r) - 1];
-  localStorage.setItem('sotano:atiende', porNumero || r);
-  pintarQuienAtiende();
+  const actual = quienAtiende();
+  const delTurno = (estado.evento?.barmanes || []).length > 0;
+  $('#listaAtiende').innerHTML = gente.length
+    ? gente.map((g) => `
+        <button class="btn ${g === actual ? 'primario' : ''} ancho-full"
+                data-atiende="${esc(g)}" style="margin-bottom:.5rem;padding:.9rem">
+          ${esc(g)}${g === actual ? ' ✓' : ''}</button>`).join('')
+      + (delTurno ? `<p style="color:var(--suave);font-size:.78rem;margin:.6rem 0 0">
+          Son los asignados a esta noche.</p>` : '')
+    : `<div class="aviso"><span>👤</span><div>
+        <b>Todavía no hay barmanes registrados.</b><br>
+        Se registran desde el panel de un administrador, en
+        <b>Noche → Personal</b>.</div></div>`;
+  $('#listaAtiende').querySelectorAll('[data-atiende]').forEach((b) => b.onclick = () => {
+    localStorage.setItem('sotano:atiende', b.dataset.atiende);
+    pintarQuienAtiende();
+    $('#dlgAtiende').close();
+  });
+  $('#dlgAtiende').showModal();
 }
 
 // La caja a la que entra lo que se vende: la del evento abierto, o la del día.

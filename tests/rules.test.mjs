@@ -143,6 +143,14 @@ describe('el celular de la barra', () => {
     await assertSucceeds(getDocs(collection(aparato(), 'pedidos')));
   });
 
+  it('lee el padrón: lo necesita para elegir quién atiende', async () => {
+    await assertSucceeds(getDocs(collection(aparato(), 'accesosBarra')));
+  });
+
+  it('pero un barman cualquiera no lo lee', async () => {
+    await assertFails(getDocs(collection(turnoOk(), 'accesosBarra')));
+  });
+
   it('marca agotado como cualquier barman', async () => {
     await assertSucceeds(updateDoc(doc(aparato(), 'carta/fernet'), { disponible: false }));
   });
