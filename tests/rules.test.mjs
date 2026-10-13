@@ -123,6 +123,33 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-5'), invitadoNuevo({ telefono: '12' })));
   });
 
+  // Un solo formato: si uno escribe con 0 y otro sin, el candado del teléfono
+  // no sirve, porque para la base son dos números distintos.
+  it('con el 0 adelante NO', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-formato-tel-1xx'),
+      invitadoNuevo({ telefono: '03454189066' })));
+  });
+
+  it('con el 15 NO', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-formato-tel-2xx'),
+      invitadoNuevo({ telefono: '3454159066' + '12' })));
+  });
+
+  it('con el 54 del país NO', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-formato-tel-3xx'),
+      invitadoNuevo({ telefono: '5493454189066' })));
+  });
+
+  it('con guiones o espacios NO: se guarda solo el número', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-formato-tel-4xx'),
+      invitadoNuevo({ telefono: '3454 18-9066' })));
+  });
+
+  it('diez números pelados sí', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'invitados/token-formato-tel-5xx'),
+      invitadoNuevo({ telefono: '3454189066' })));
+  });
+
   it('no se puede anotar en un evento que no es el abierto', async () => {
     await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-6'), invitadoNuevo({ eventoId: 'otro' })));
   });
@@ -234,6 +261,20 @@ describe('invitado de último momento', () => {
     await assertSucceeds(setDoc(doc(barra(), 'invitados/ultimo-momento-token-largo'), {
       eventoId: 'ev-1', nombre: 'Cami', telefono: '1155552222',
       creadoEn: serverTimestamp(), ingresadoEn: serverTimestamp(), ingresadoPor: 'guille',
+    }));
+  });
+
+  it('la casa usa el mismo molde de teléfono', async () => {
+    await assertFails(setDoc(doc(barra(), 'invitados/ultimo-momento-mal-tel-x'), {
+      eventoId: 'ev-1', nombre: 'Mal Tel', telefono: '03454189066',
+      creadoEn: serverTimestamp(),
+    }));
+  });
+
+  it('pero puede anotar sin teléfono: en la puerta a veces no hay', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'invitados/ultimo-momento-sin-tel'), {
+      eventoId: 'ev-1', nombre: 'Sin Tel', telefono: '',
+      creadoEn: serverTimestamp(),
     }));
   });
 

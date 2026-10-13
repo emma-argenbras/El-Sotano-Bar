@@ -448,6 +448,19 @@ body.es-puerta #tabTablero, body.es-puerta #tabCartaBar, body.es-puerta #tabEven
 .fila-noche .acciones-noche .btn { padding: .35rem .7rem; font-size: .8rem; }
 .fila-noche .acciones-noche .btn[data-empezar] { margin-left: auto; }
 
+/* El teléfono se escribe de una sola manera: diez números. El prefijo se
+   muestra fijo al costado para que se vea qué NO hay que escribir. */
+.con-prefijo { display: flex; align-items: stretch; gap: .4rem; }
+.con-prefijo .prefijo {
+  display: flex; align-items: center; padding: 0 .7rem;
+  background: var(--panel-alto); border: 1px solid var(--borde); border-radius: 12px;
+  color: var(--suave); font-weight: 600; white-space: nowrap;
+}
+.con-prefijo input { flex: 1; min-width: 0; letter-spacing: .04em; }
+.pista { display: block; margin-top: .35rem; font-size: .78rem; color: var(--suave); }
+.pista.bien { color: var(--verde); }
+.pista.mal  { color: var(--rojo); }
+
 /* ---------- plegables: listas que no se comen la pantalla ---------- */
 .plegable {
   border: 1px solid var(--borde); border-radius: 12px;

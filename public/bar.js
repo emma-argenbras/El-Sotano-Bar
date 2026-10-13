@@ -8,7 +8,7 @@ import {
   getFirestore, connectFirestoreEmulator, collection, doc, query, where, orderBy,
   onSnapshot, updateDoc, setDoc, deleteDoc, getDocs, Timestamp, addDoc, limit, serverTimestamp,
 } from '/vendor/firebase.js';
-import { claveAnotado, digitosTel } from '/tel.js';
+import { claveAnotado, digitosTel, telValido, porQueNoVale, FORMATO_TEL } from '/tel.js';
 
 // Las cuentas del turno no tienen mail: el usuario escribe "barra-lunes" y
 // por detrás va "barra-lunes@barra.local". El dominio no existe ni tiene que
@@ -961,8 +961,14 @@ function abrirAltaInvitado() {
 $('#btnCerrarInvitado').onclick = () => $('#dlgInvitado').close();
 $('#btnGuardarInvitado').onclick = async () => {
   const nombre = $('#inpInvNombre').value.trim();
-  const telefono = $('#inpInvTel').value.trim();
+  const telefono = digitosTel($('#inpInvTel').value);
   if (nombre.length < 2) { $('#inpInvNombre').focus(); return; }
+  // Mismo molde que el registro, para que el candado del teléfono cierre. Sin
+  // teléfono se puede anotar igual: en la puerta a veces no hay otra.
+  if (telefono && !telValido(telefono)) {
+    alert(porQueNoVale($('#inpInvTel').value));
+    $('#inpInvTel').focus(); return;
+  }
   const entra = $('#inpInvEntra').checked;
   const btn = $('#btnGuardarInvitado');
   const evento = estado.evento?.id || estado.registro?.eventoId || '';

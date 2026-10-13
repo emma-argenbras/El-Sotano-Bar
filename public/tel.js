@@ -23,3 +23,29 @@ export function digitosTel(tel) {
 export function claveAnotado(eventoId, tel, sufijo = '') {
   return `${eventoId}__${digitosTel(tel)}${sufijo ? '__' + sufijo : ''}`;
 }
+
+// Cómo se escribe un teléfono acá: diez números, área y número, sin el 0 de
+// larga distancia y sin el 15. Todos los de Argentina entran en ese molde:
+// 11 + ocho, 3454 + seis, 351 + siete. Guardar siempre lo mismo es lo que
+// hace que el candado sirva; si uno lo escribe con 0 y otro sin, son dos.
+const cuantos = (n, uno, varios) =>
+  n === 1 ? `${uno} 1 número` : `${varios} ${n} números`;
+
+export const FORMATO_TEL = 'Diez números, sin 0 y sin 15. Ej.: 3454 18 9066';
+
+export function telValido(tel) {
+  return /^[1-9][0-9]{9}$/.test(String(tel ?? '').replace(/\D/g, ''));
+}
+
+// El porqué, en criollo. El cartel tiene que decir qué sacar, no "inválido".
+export function porQueNoVale(tel) {
+  const d = String(tel ?? '').replace(/\D/g, '');
+  if (!d) return 'Falta el teléfono. ' + FORMATO_TEL;
+  if (d.startsWith('0')) return 'Sacale el 0 de adelante. ' + FORMATO_TEL;
+  if (d.startsWith('54')) return 'Sacale el 54 de adelante. ' + FORMATO_TEL;
+  if (d.length === 12 && [2, 3, 4].some((a) => d.slice(a, a + 2) === '15'))
+    return 'Sacale el 15. ' + FORMATO_TEL;
+  if (d.length < 10) return `${cuantos(10 - d.length, 'Te falta', 'Te faltan')}. ` + FORMATO_TEL;
+  if (d.length > 10) return `${cuantos(d.length - 10, 'Te sobra', 'Te sobran')}. ` + FORMATO_TEL;
+  return '';
+}

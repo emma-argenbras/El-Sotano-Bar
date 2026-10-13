@@ -150,7 +150,12 @@
   </label>
   <label class="campo">
     <span>Teléfono</span>
-    <input id="inpInvTel" type="tel" maxlength="25" inputmode="tel" autocomplete="off">
+    <div class="con-prefijo">
+      <span class="prefijo">+54 9</span>
+      <input id="inpInvTel" type="tel" maxlength="13" inputmode="numeric"
+             autocomplete="off" placeholder="3454 18 9066">
+    </div>
+    <small class="pista">Diez números, sin 0 y sin 15. Sin teléfono también se puede.</small>
   </label>
   <label class="campo" style="display:flex;align-items:center;gap:.6rem">
     <input type="checkbox" id="inpInvEntra" checked style="width:auto;margin:0">

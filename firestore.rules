@@ -242,7 +242,9 @@ service cloud.firestore {
         && d.keys().hasAll(['eventoId', 'nombre', 'telefono', 'creadoEn'])
         && d.eventoId is string
         && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60
-        && d.telefono is string && d.telefono.size() >= 6 && d.telefono.size() <= 25
+        // Un solo formato: diez números, sin el 0 y sin el 15. Si cada uno lo
+        // escribe a su manera, el candado del teléfono no sirve para nada.
+        && d.telefono is string && d.telefono.matches('^[1-9][0-9]{9}$')
         && d.creadoEn == request.time
         && d.get('ingresadoEn', null) == null;
     }
@@ -266,7 +268,10 @@ service cloud.firestore {
         && d.keys().hasAll(['eventoId', 'nombre', 'telefono', 'creadoEn'])
         && d.eventoId is string
         && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60
-        && d.telefono is string && d.telefono.size() <= 25
+        // La casa usa el mismo molde, o lo deja vacío: en la puerta a veces no
+        // hay teléfono y no se le va a negar la entrada por eso.
+        && d.telefono is string
+        && (d.telefono == '' || d.telefono.matches('^[1-9][0-9]{9}$'))
         && d.creadoEn == request.time;
     }
 

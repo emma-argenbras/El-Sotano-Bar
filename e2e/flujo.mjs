@@ -788,6 +788,37 @@ await chequear('el QR del pase codifica su token', async () => {
   if (leido?.data !== tokenInvitado) throw new Error('el QR dice: ' + leido?.data);
 });
 
+await chequear('el teléfono se escribe de una sola manera: sin 0 y sin 15', async () => {
+  const ctxTel = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctxTel.newPage();
+  try {
+    await pg.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await pg.waitForSelector('#formRegistro', { timeout: 15000 });
+    if (!(await pg.textContent('#pistaTel')).includes('sin 0 y sin 15'))
+      throw new Error('no explica cómo se escribe');
+
+    await pg.fill('#inpNombre', 'Cero Adelante');
+    await pg.fill('#inpTel', '03454189066');
+    // Lo que entra es solo número, y recortado a diez.
+    const loQueQueda = await pg.inputValue('#inpTel');
+    if (/[^0-9 ]/.test(loQueQueda)) throw new Error('dejó escribir otra cosa: ' + loQueQueda);
+    if (!(await pg.textContent('#pistaTel')).includes('Sacale el 0'))
+      throw new Error('no avisa del 0: ' + (await pg.textContent('#pistaTel')));
+
+    await pg.click('#btnRegistrar');
+    await pg.waitForFunction(() =>
+      !document.querySelector('#error')?.classList.contains('oculto'), null, { timeout: 10000 });
+    if (!(await pg.textContent('#errorTexto')).includes('Sacale el 0'))
+      throw new Error('lo dejó pasar igual');
+    if (pg.url().includes('pase.html')) throw new Error('lo anotó con el 0');
+
+    // Y bien escrito, la pista lo confirma antes de tocar el botón.
+    await pg.fill('#inpTel', '3454189066');
+    if (!(await pg.textContent('#pistaTel')).includes('bien'))
+      throw new Error('no confirma el formato bueno');
+  } finally { await ctxTel.close(); }
+});
+
 await chequear('el mismo teléfono no se anota dos veces, aunque lo escriba distinto', async () => {
   const ctxDup = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const dup = await ctxDup.newPage();
@@ -795,8 +826,8 @@ await chequear('el mismo teléfono no se anota dos veces, aunque lo escriba dist
     await dup.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
     await dup.waitForSelector('#formRegistro', { timeout: 15000 });
     await dup.fill('#inpNombre', 'Ana De Nuevo');
-    // El mismo número de Ana con otro formato: +54 9, guiones, el 0 adelante.
-    await dup.fill('#inpTel', '+54 9 11 5555-0000');
+    // El mismo número de Ana, escrito con guiones y espacios.
+    await dup.fill('#inpTel', '11-5555 0000');
     await dup.click('#btnRegistrar');
     await dup.waitForFunction(() =>
       !document.querySelector('#error')?.classList.contains('oculto'), null, { timeout: 15000 });

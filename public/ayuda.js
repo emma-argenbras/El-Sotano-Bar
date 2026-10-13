@@ -80,7 +80,11 @@
         gente se anote a la otra, entrá a sus <b>Invitaciones</b> y tocá <b>Pasar
         el link a esta noche</b>. El cartel rojo te avisa cuando el link está
         apuntando a otra.</p>
-        <p>El invitado deja nombre y teléfono, y recibe <b>su pase con QR</b>.</p>
+        <p>El invitado deja nombre y teléfono, y recibe <b>su pase con QR</b>. El
+        teléfono entra de una sola manera: <b>diez números, sin el 0 y sin el
+        15</b> (3454 18 9066). El formulario no deja escribirlo de otra forma y
+        le dice qué sacar. Es lo que hace que el candado del teléfono sirva: si
+        uno lo escribe con 0 y otro sin, para la base son dos personas.</p>
         <p><b>Un teléfono, una anotación por noche.</b> Si intenta de nuevo con el
         mismo número —aunque lo escriba con +54, con 0 o con 15— le rebota, y si
         vuelve a abrir el link desde el mismo celular ve su pase en vez del
@@ -99,6 +103,7 @@
         veces, se equivocó de noche. Su pase deja de servir y le libera el
         teléfono para que se pueda anotar de nuevo.</p>
         <p>Si alguien aparece sin anotarse: <b>+ Invitado de último momento</b>.
+        Mismo formato de teléfono, o dejalo vacío si no hay.
         Entra aunque la lista esté llena. Le podés mandar su pase ahí mismo.</p>`,
     },
     {

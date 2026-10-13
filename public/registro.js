@@ -6,7 +6,7 @@ import {
   initializeApp, getFirestore, initializeFirestore, connectFirestoreEmulator,
   doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp, writeBatch,
 } from '/vendor/firebase.js';
-import { claveAnotado, digitosTel } from '/tel.js';
+import { claveAnotado, digitosTel, telValido, porQueNoVale, FORMATO_TEL } from '/tel.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
 const $ = (s) => document.querySelector(s);
@@ -84,9 +84,13 @@ function pintar() {
         <input id="inpNombre" maxlength="60" required autocomplete="name">
       </label>
       <label class="campo">
-        <span>Tu teléfono</span>
-        <input id="inpTel" type="tel" maxlength="25" required autocomplete="tel"
-               inputmode="tel" placeholder="11 5555 5555">
+        <span>Tu teléfono <small>(sin 0 y sin 15)</small></span>
+        <div class="con-prefijo">
+          <span class="prefijo">+54 9</span>
+          <input id="inpTel" type="tel" maxlength="13" required autocomplete="tel"
+                 inputmode="numeric" placeholder="3454 18 9066">
+        </div>
+        <small class="pista" id="pistaTel">${esc(FORMATO_TEL)}</small>
       </label>
       <div class="aviso mal oculto" id="error"><span>⚠</span><div id="errorTexto"></div></div>
       <button class="btn primario ancho-full" id="btnRegistrar" type="submit">Reservar mi lugar</button>
@@ -96,6 +100,18 @@ function pintar() {
     </p>`;
 
   $('#formRegistro').onsubmit = registrar;
+
+  // Mientras escribe: solo números, de a bloques, y la pista le dice qué le
+  // falta. Que se entere acá y no al tocar el botón.
+  const tel = $('#inpTel');
+  tel.oninput = () => {
+    const d = tel.value.replace(/\D/g, '').slice(0, 10);
+    tel.value = d.length > 6 ? `${d.slice(0, 4)} ${d.slice(4, 6)} ${d.slice(6)}` : d;
+    const mal = d ? porQueNoVale(d) : '';
+    $('#pistaTel').textContent = d && !mal ? '✓ Así está bien' : (mal || FORMATO_TEL);
+    $('#pistaTel').className = 'pista' + (d && !mal ? ' bien' : (d && mal ? ' mal' : ''));
+  };
+
   miPaseDeEstaNoche();
 }
 
@@ -103,10 +119,10 @@ async function registrar(e) {
   e.preventDefault();
   const btn = $('#btnRegistrar');
   const nombre = $('#inpNombre').value.trim();
-  const telefono = $('#inpTel').value.trim();
-  if (nombre.length < 2 || telefono.replace(/\D/g, '').length < 6) {
-    return fallar('Revisá el nombre y el teléfono.');
-  }
+  const telefono = digitosTel($('#inpTel').value);
+  if (nombre.length < 2) return fallar('Falta tu nombre y apellido.');
+  // Un solo formato para todos: así el candado del teléfono sirve de verdad.
+  if (!telValido(telefono)) return fallar(porQueNoVale($('#inpTel').value));
   btn.disabled = true; btn.textContent = 'Reservando…';
 
   const id = token();
