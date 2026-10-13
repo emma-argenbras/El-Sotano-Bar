@@ -59,7 +59,8 @@ before(async () => {
     // Esta noche trabaja nico. Franco está registrado pero no asignado.
     await setDoc(doc(db, 'barra/turno'), { eventoId: 'ev-1', barmanes: ['uid-turno-ok', 'uid-puerta'] });
     await setDoc(doc(db, 'accesosBarra/uid-puerta'), { usuario: 'puerta', activo: true, rol: 'puerta' });
-    await setDoc(doc(db, 'publico/registro'), {
+    await setDoc(doc(db, 'publico/registro'), { eventoId: 'ev-1', nombre: 'Noche' });
+    await setDoc(doc(db, 'registros/ev-1'), {
       eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 1, abierto: true,
     });
     await setDoc(doc(db, 'invitados/token-largo-de-prueba-1'), {
@@ -168,30 +169,98 @@ describe('registro de invitados', () => {
   });
 
   it('el contador sube de a uno, nunca de a más', async () => {
-    await assertSucceeds(updateDoc(doc(anon(), 'publico/registro'), { registrados: 2 }));
-    await assertFails(updateDoc(doc(anon(), 'publico/registro'), { registrados: 50 }));
+    await assertSucceeds(updateDoc(doc(anon(), 'registros/ev-1'), { registrados: 2 }));
+    await assertFails(updateDoc(doc(anon(), 'registros/ev-1'), { registrados: 50 }));
   });
 
   it('un invitado NO puede ampliar el cupo ni reabrir el registro', async () => {
-    await assertFails(updateDoc(doc(anon(), 'publico/registro'), { capacidad: 999 }));
-    await assertFails(updateDoc(doc(anon(), 'publico/registro'), { abierto: false }));
+    await assertFails(updateDoc(doc(anon(), 'registros/ev-1'), { capacidad: 999 }));
+    await assertFails(updateDoc(doc(anon(), 'registros/ev-1'), { abierto: false }));
   });
 
   it('lleno, no entra nadie más', async () => {
     await env.withSecurityRulesDisabled(async (ctx) =>
-      setDoc(doc(ctx.firestore(), 'publico/registro'),
+      setDoc(doc(ctx.firestore(), 'registros/ev-1'),
         { eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 3, abierto: true }));
     await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-8'), invitadoNuevo()));
   });
 
   it('cerrado el registro, tampoco', async () => {
     await env.withSecurityRulesDisabled(async (ctx) =>
-      setDoc(doc(ctx.firestore(), 'publico/registro'),
+      setDoc(doc(ctx.firestore(), 'registros/ev-1'),
         { eventoId: 'ev-1', nombre: 'Noche', capacidad: 9, registrados: 0, abierto: false }));
     await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-9'), invitadoNuevo()));
     await env.withSecurityRulesDisabled(async (ctx) =>
-      setDoc(doc(ctx.firestore(), 'publico/registro'),
+      setDoc(doc(ctx.firestore(), 'registros/ev-1'),
         { eventoId: 'ev-1', nombre: 'Noche', capacidad: 9, registrados: 0, abierto: true }));
+  });
+});
+
+describe('cada noche tiene su registro', () => {
+  before(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'registros/ev-1'),
+        { eventoId: 'ev-1', nombre: 'Noche', capacidad: 9, registrados: 0, abierto: true });
+      await setDoc(doc(db, 'registros/ev-7'),
+        { eventoId: 'ev-7', nombre: 'La otra', capacidad: 5, registrados: 0, abierto: true });
+      await setDoc(doc(db, 'registros/ev-8'),
+        { eventoId: 'ev-8', nombre: 'Ya pasó', capacidad: 5, registrados: 5, abierto: false });
+    });
+  });
+
+  // Lo que hacía falta: dos noches tomando gente al mismo tiempo, cada una
+  // por su link. Antes el registro era uno solo y el QR viejo llevaba al
+  // evento nuevo.
+  it('con dos noches abiertas, cada una anota en la suya', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'invitados/token-noche-uno-largo-x'),
+      invitadoNuevo({ eventoId: 'ev-1', telefono: '1155557001' })));
+    await assertSucceeds(setDoc(doc(anon(), 'invitados/token-noche-siete-larg'),
+      invitadoNuevo({ eventoId: 'ev-7', telefono: '1155557002' })));
+  });
+
+  it('el mismo teléfono se anota a las dos: son noches distintas', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'anotados/ev-1__1155557003'),
+      { eventoId: 'ev-1', tel: '1155557003', creadoEn: serverTimestamp() }));
+    await assertSucceeds(setDoc(doc(anon(), 'anotados/ev-7__1155557003'),
+      { eventoId: 'ev-7', tel: '1155557003', creadoEn: serverTimestamp() }));
+  });
+
+  it('a una noche cerrada no entra nadie, aunque otra esté abierta', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-noche-ocho-largo-'),
+      invitadoNuevo({ eventoId: 'ev-8', telefono: '1155557004' })));
+  });
+
+  it('a una noche que no existe tampoco', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-noche-fantasma-x'),
+      invitadoNuevo({ eventoId: 'ev-no-existe', telefono: '1155557005' })));
+  });
+
+  it('el contador de una noche no lo mueve el de otra', async () => {
+    await assertSucceeds(updateDoc(doc(anon(), 'registros/ev-7'), { registrados: 1 }));
+    await assertFails(updateDoc(doc(anon(), 'registros/ev-7'), { registrados: 4 }));
+    await assertFails(updateDoc(doc(anon(), 'registros/ev-8'), { registrados: 1 }));
+  });
+
+  it('cualquiera lee el registro de una noche: es lo que abre su link', async () => {
+    await assertSucceeds(getDoc(doc(anon(), 'registros/ev-7')));
+  });
+
+  it('pero NO la lista de todas las noches', async () => {
+    await assertFails(getDocs(collection(anon(), 'registros')));
+    await assertSucceeds(getDocs(collection(barra(), 'registros')));
+  });
+
+  it('un invitado NO puede crear ni ampliar una noche', async () => {
+    await assertFails(setDoc(doc(anon(), 'registros/ev-inventada'),
+      { eventoId: 'ev-inventada', nombre: 'Mía', capacidad: 99, registrados: 0, abierto: true }));
+    await assertFails(updateDoc(doc(anon(), 'registros/ev-7'), { capacidad: 999 }));
+    await assertFails(updateDoc(doc(anon(), 'registros/ev-7'), { abierto: false }));
+  });
+
+  it('la casa sí: abre, cierra y corrige', async () => {
+    await assertSucceeds(updateDoc(doc(barra(), 'registros/ev-7'), { abierto: false }));
+    await assertSucceeds(updateDoc(doc(barra(), 'registros/ev-7'), { abierto: true }));
   });
 });
 
@@ -210,12 +279,12 @@ describe('un teléfono, una anotación', () => {
 
   it('el mismo teléfono en otra noche sí: el candado es por evento', async () => {
     await env.withSecurityRulesDisabled(async (ctx) =>
-      setDoc(doc(ctx.firestore(), 'publico/registro'),
+      setDoc(doc(ctx.firestore(), 'registros/ev-2'),
         { eventoId: 'ev-2', nombre: 'Otra', capacidad: 3, registrados: 0, abierto: true }));
     await assertSucceeds(setDoc(doc(anon(), 'anotados/ev-2__1155553333'),
       candado({ eventoId: 'ev-2' })));
     await env.withSecurityRulesDisabled(async (ctx) =>
-      setDoc(doc(ctx.firestore(), 'publico/registro'),
+      setDoc(doc(ctx.firestore(), 'registros/ev-1'),
         { eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 1, abierto: true }));
   });
 
@@ -256,7 +325,7 @@ describe('un teléfono, una anotación', () => {
 describe('invitado de último momento', () => {
   it('la casa lo anota aunque esté lleno', async () => {
     await env.withSecurityRulesDisabled(async (ctx) =>
-      setDoc(doc(ctx.firestore(), 'publico/registro'),
+      setDoc(doc(ctx.firestore(), 'registros/ev-1'),
         { eventoId: 'ev-1', nombre: 'Noche', capacidad: 1, registrados: 9, abierto: true }));
     await assertSucceeds(setDoc(doc(barra(), 'invitados/ultimo-momento-token-largo'), {
       eventoId: 'ev-1', nombre: 'Cami', telefono: '1155552222',
@@ -280,7 +349,7 @@ describe('invitado de último momento', () => {
 
   it('y aunque el registro esté cerrado', async () => {
     await env.withSecurityRulesDisabled(async (ctx) =>
-      setDoc(doc(ctx.firestore(), 'publico/registro'),
+      setDoc(doc(ctx.firestore(), 'registros/ev-1'),
         { eventoId: 'ev-1', nombre: 'Noche', capacidad: 50, registrados: 0, abierto: false }));
     await assertSucceeds(setDoc(doc(barra(), 'invitados/ultimo-momento-token-2xx'), {
       eventoId: 'ev-1', nombre: 'Dani', telefono: '1155553333', creadoEn: serverTimestamp(),
@@ -298,7 +367,7 @@ describe('invitado de último momento', () => {
       eventoId: 'ev-1', nombre: 'Amigo', telefono: '1155555555', creadoEn: serverTimestamp(),
     }));
     await env.withSecurityRulesDisabled(async (ctx) =>
-      setDoc(doc(ctx.firestore(), 'publico/registro'),
+      setDoc(doc(ctx.firestore(), 'registros/ev-1'),
         { eventoId: 'ev-1', nombre: 'Noche', capacidad: 9, registrados: 0, abierto: true }));
   });
 });

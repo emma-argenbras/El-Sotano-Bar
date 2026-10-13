@@ -52,7 +52,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -263,10 +263,17 @@ function escucharEvento() {
     pintarCalendario();
   }, fallo('#evento'));
 
+  // El puntero del link viejo (/registro.html sin noche): a qué noche manda.
   onSnapshot(doc(db, 'publico', 'registro'), (d) => {
     estado.registro = d.exists() ? d.data() : null;
-    pintarInvitar();
-    pintarPuerta(); pintarEvento(); pintarCalendario();
+    pintarInvitar(); pintarPuerta(); pintarEvento(); pintarCalendario();
+  }, () => {});
+
+  // Un registro por noche. Cada uno con su cupo y su cuenta.
+  onSnapshot(collection(db, 'registros'), (snap) => {
+    estado.registros = {};
+    snap.docs.forEach((d) => { estado.registros[d.id] = d.data(); });
+    pintarInvitar(); pintarPuerta(); pintarEvento(); pintarCalendario();
   }, () => {});
 
   onSnapshot(ESTADO_LOCAL(), (d) => {
@@ -340,10 +347,17 @@ $('#btnConfirmarEvento').onclick = async () => {
     if (editando) {
       await updateDoc(doc(db, 'barra', 'eventos', 'items', editando.id),
         { nombre, fecha: Timestamp.fromDate(fecha), capacidad, barmanes: elegidos });
-      // Si el registro estaba apuntando a esta noche, se actualiza con ella.
-      if (estado.registro?.eventoId === editando.id) {
-        await updateDoc(doc(db, 'publico', 'registro'),
-          { nombre, capacidad, abierto: capacidad > 0 });
+      // El registro de ESTA noche, que es suyo y de ninguna otra.
+      if (capacidad > 0) {
+        const yaHay = estado.registros[editando.id];
+        await setDoc(doc(db, 'registros', editando.id), {
+          eventoId: editando.id, nombre, capacidad,
+          registrados: Number(yaHay?.registrados || 0),
+          abierto: yaHay ? yaHay.abierto !== false : true,
+        });
+      } else if (estado.registros[editando.id]) {
+        // Le sacaron el cupo: no hay lista, se cierra.
+        await updateDoc(doc(db, 'registros', editando.id), { capacidad: 0, abierto: false });
       }
     } else {
       const ref = await addDoc(EVENTOS(), {
@@ -352,13 +366,30 @@ $('#btnConfirmarEvento').onclick = async () => {
       });
       // El registro se abre al agendar: la gracia es que se anoten antes.
       if (capacidad > 0) {
-        await setDoc(doc(db, 'publico', 'registro'),
+        await setDoc(doc(db, 'registros', ref.id),
           { eventoId: ref.id, nombre, capacidad, registrados: 0, abierto: true });
+        // Y el link viejo, el que no dice de qué noche es, se reacomoda.
+        await setDoc(doc(db, 'publico', 'registro'), { eventoId: ref.id, nombre });
+        estado.registros[ref.id] = { abierto: true, capacidad, nombre };
       }
     }
     $('#dlgEvento').close();
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 };
+
+// El link viejo (/registro.html sin noche) tiene que llevar a algún lado: a la
+// que está en curso, y si no, a la próxima agendada con cupo. Se recalcula
+// cada vez que cambia la agenda, así no queda apuntando a una noche cancelada.
+async function apuntarLinkViejo() {
+  const enCurso = estado.evento?.id && estado.registros[estado.evento.id]?.abierto !== false
+    ? estado.evento : null;
+  const proxima = [...(estado.agenda || [])]
+    .filter((e) => Number(e.capacidad || 0) > 0 && estado.registros[e.id]?.abierto !== false)
+    .sort((a, b) => (a.fecha?.toMillis?.() || 0) - (b.fecha?.toMillis?.() || 0))[0];
+  const elegida = enCurso || proxima || null;
+  await setDoc(doc(db, 'publico', 'registro'),
+    { eventoId: elegida?.id || null, nombre: elegida?.nombre || null }).catch(() => {});
+}
 
 // Arrancar la noche: recién acá entran pedidos.
 async function empezarNoche(ev) {
@@ -367,6 +398,8 @@ async function empezarNoche(ev) {
     await updateDoc(doc(db, 'barra', 'eventos', 'items', ev.id),
       { estado: 'abierto', abiertoEn: serverTimestamp() });
     await marcarTurno(ev.id, ev.barmanes || []);
+    // El link sin noche manda a la que está en curso.
+    await setDoc(doc(db, 'publico', 'registro'), { eventoId: ev.id, nombre: ev.nombre });
     await marcarTomandoPedidos(true, ev);
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
@@ -375,9 +408,13 @@ async function borrarAgendado(ev) {
   if (!confirm(`¿Sacar "${ev.nombre}" de la agenda?`)) return;
   try {
     await updateDoc(doc(db, 'barra', 'eventos', 'items', ev.id), { estado: 'cancelado' });
+    // Su registro se cierra: el link de esa noche deja de anotar gente.
+    if (estado.registros[ev.id]) {
+      await updateDoc(doc(db, 'registros', ev.id), { abierto: false });
+    }
     if (estado.registro?.eventoId === ev.id) {
-      await setDoc(doc(db, 'publico', 'registro'),
-        { eventoId: null, nombre: null, capacidad: 0, registrados: 0, abierto: false });
+      if (estado.registros[ev.id]) estado.registros[ev.id] = { ...estado.registros[ev.id], abierto: false };
+      await apuntarLinkViejo();
     }
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
@@ -386,18 +423,23 @@ async function borrarAgendado(ev) {
 // El link de registro es uno solo (/registro.html) y apunta a la noche que
 // tenga el registro abierto. Por eso acá no alcanza con mostrarlo: hay que
 // decir a qué noche está apuntando, y dejar pasarlo a esta.
-const LINK_REGISTRO = () => `${location.origin}/registro.html`;
+// El link lleva la noche adentro: el QR de una noche no manda a otra. Es la
+// diferencia entre "el link del bar" y "el link de este evento".
+const LINK_REGISTRO = (ev) =>
+  `${location.origin}/registro.html?ev=${encodeURIComponent(ev)}`;
 
-let qrGuardado = null;
-// El QR con el coquito en el medio, igual que el de la carta. Nivel H de
-// corrección: por eso el logo tapando el 20% del centro no lo rompe.
-async function qrRegistro() {
-  if (qrGuardado) return qrGuardado;
+// Un QR por noche, guardado para no rearmarlo en cada repintada.
+const qrsGuardados = {};
+// El coquito va en el medio, igual que el de la carta. Nivel H de corrección:
+// por eso el logo tapando el centro no lo rompe.
+async function qrRegistro(ev) {
+  if (qrsGuardados[ev]) return qrsGuardados[ev];
   const { qrDataURL } = await import('/vendor/qr.js');
-  const base = await qrDataURL(LINK_REGISTRO(), {
+  const base = await qrDataURL(LINK_REGISTRO(ev), {
     width: 600, margin: 2, errorCorrectionLevel: 'H',
     color: { dark: '#0d0b10', light: '#ffffff' },
   });
+  let final = base;
   try {
     const cargar = (src) => new Promise((ok, mal) => {
       const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = src;
@@ -410,9 +452,10 @@ async function qrRegistro() {
     cx.fillStyle = '#ffffff';
     cx.fillRect(desde - 10, desde - 10, lado + 20, lado + 20);
     cx.drawImage(await cargar('/iconos/icono.svg'), desde, desde, lado, lado);
-    qrGuardado = lienzo.toDataURL('image/png');
-  } catch { qrGuardado = base; }   // sin logo se lee igual
-  return qrGuardado;
+    final = lienzo.toDataURL('image/png');
+  } catch { /* sin logo se lee igual */ }
+  qrsGuardados[ev] = final;
+  return final;
 }
 
 function abrirInvitar(ev) {
@@ -427,13 +470,11 @@ function abrirInvitar(ev) {
 async function pintarInvitar() {
   const ev = estado.invitandoA;
   if (!ev || !$('#dlgInvitar').open) return;
-  const url = LINK_REGISTRO();
-  const reg = estado.registro;
-  const esta = reg?.eventoId === ev.id;
-  const vivo = esta && reg.abierto !== false;
-  const anotados = Number(esta ? reg.registrados || 0 : 0);
+  const url = LINK_REGISTRO(ev.id);
+  const reg = estado.registros[ev.id];
+  const abierto = !!reg && reg.abierto !== false;
+  const anotados = Number(reg?.registrados || 0);
   const cupo = Number(ev.capacidad || 0);
-  const otra = reg?.eventoId && !esta && reg.abierto !== false ? reg.nombre : '';
 
   // Sin cupo no hay lista: no tiene sentido mostrar un QR que no lleva a nada.
   if (!cupo) {
@@ -448,18 +489,13 @@ async function pintarInvitar() {
     .filter((i) => i.eventoId === ev.id)
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
-  const img = await qrRegistro();
+  const img = await qrRegistro(ev.id);
   if (estado.invitandoA !== ev || !$('#dlgInvitar').open) return;  // cambió mientras cargaba
 
-  const aviso = vivo ? '' : `
+  const aviso = abierto ? '' : `
     <div class="aviso mal"><span>⚠</span><div>
-      ${otra
-        ? `<b>El link está apuntando a “${esc(otra)}”.</b> Si lo compartís así, la
-           gente se anota para esa noche.`
-        : '<b>El registro de esta noche está cerrado.</b> Así nadie puede anotarse.'}
-    </div></div>
-    <button class="btn primario ancho-full solo-gerente-inline" id="btnActivarRegistro"
-            style="margin:.7rem 0">Pasar el link a esta noche</button>`;
+      <b>El registro de esta noche está cerrado.</b> El link y el QR siguen siendo
+      suyos, pero nadie se puede anotar hasta que lo abras.</div></div>`;
 
   $('#cuerpoInvitar').innerHTML = `
     ${aviso}
@@ -469,43 +505,44 @@ async function pintarInvitar() {
     </div>
     <p style="font-size:.8rem;color:var(--oro);word-break:break-all;margin:.8rem 0 .2rem">${esc(url)}</p>
     <p style="font-size:.78rem;color:var(--suave);margin:0 0 .8rem">
-      ${vivo
-        ? `${anotados} de ${cupo} anotados · quedan ${Math.max(0, cupo - anotados)} lugares`
-        : 'Mientras no sea la noche del link, esto no lleva acá.'}</p>
+      ${anotados} de ${cupo} anotados · quedan ${Math.max(0, cupo - anotados)} lugares</p>
     <div style="display:flex;gap:.6rem;flex-wrap:wrap">
       <button class="btn primario" id="btnMandarLink" style="flex:1">Mandar el link</button>
       <button class="btn" id="btnBajarQr" style="flex:1">Bajar el QR</button>
     </div>
+    <button class="btn ${abierto ? 'peligro' : 'primario'} ancho-full solo-gerente-inline"
+            id="btnAbrirRegistro" style="margin-top:.6rem">
+      ${abierto ? 'Cerrar el registro de esta noche' : 'Abrir el registro de esta noche'}</button>
     ${plegable('anotados', 'Quiénes se anotaron', dela, { abierto: estado.pliegues.anotados })}
     <p style="font-size:.74rem;color:var(--suave);margin:.7rem 0 0">
-      El link y el QR son siempre los mismos. La app no manda nada sola: elegís vos
-      por dónde compartirlo.</p>`;
+      Este link y este QR son <b>de esta noche</b>: no llevan a ninguna otra. La app
+      no manda nada sola: elegís vos por dónde compartirlo.</p>`;
 
   engancharPliegues($('#cuerpoInvitar'));
-  if ($('#btnActivarRegistro')) $('#btnActivarRegistro').onclick = (e) => activarRegistro(ev, e.currentTarget);
   $('#btnMandarLink').onclick = (e) => compartirRegistro(ev, e.currentTarget);
   $('#btnBajarQr').onclick = async () => {
     const a = document.createElement('a');
-    a.href = await qrRegistro();
+    a.href = await qrRegistro(ev.id);
     a.download = 'qr-' + String(ev.nombre).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.png';
     a.click();
   };
+  if ($('#btnAbrirRegistro')) $('#btnAbrirRegistro').onclick = (e) => abrirCerrarRegistro(ev, abierto, e.currentTarget);
 }
 
-// Pasar el registro a esta noche. Los que ya estaban anotados para ella se
-// vuelven a contar: el contador no puede arrancar de cero si ya hay gente.
-async function activarRegistro(ev, boton) {
-  const cupo = Number(ev.capacidad || 0);
-  if (!cupo) return;
-  if (boton) { boton.disabled = true; boton.textContent = 'Pasando…'; }
-  const yaAnotados = (estado.invitadosTodos || []).filter((i) => i.eventoId === ev.id).length;
+// Abrir o cerrar la lista de una noche, sin tocar las otras.
+async function abrirCerrarRegistro(ev, estaAbierto, boton) {
+  if (estaAbierto && !confirm(`¿Cerrar el registro de "${ev.nombre}"?\n\n`
+    + 'Su link deja de anotar gente. Los que ya están anotados siguen igual.')) return;
+  if (boton) boton.disabled = true;
   try {
-    await setDoc(doc(db, 'publico', 'registro'), {
-      eventoId: ev.id, nombre: ev.nombre, capacidad: cupo,
-      registrados: yaAnotados, abierto: true,
+    await setDoc(doc(db, 'registros', ev.id), {
+      eventoId: ev.id, nombre: ev.nombre, capacidad: Number(ev.capacidad || 0),
+      registrados: Number(estado.registros[ev.id]?.registrados
+        || (estado.invitadosTodos || []).filter((i) => i.eventoId === ev.id).length),
+      abierto: !estaAbierto,
     });
   } catch (e) {
-    if (boton) { boton.disabled = false; boton.textContent = 'Pasar el link a esta noche'; }
+    if (boton) boton.disabled = false;
     alert('No se pudo: ' + (e.code || e.message));
   }
 }
@@ -513,7 +550,7 @@ async function activarRegistro(ev, boton) {
 // El link de registro se comparte por donde el celular ofrezca: WhatsApp,
 // Instagram, lo que sea. La app no manda nada por su cuenta.
 async function compartirRegistro(ev, boton) {
-  const url = `${location.origin}/registro.html`;
+  const url = LINK_REGISTRO(ev.id);
   const texto = `Reservá tu lugar para ${ev?.nombre || 'la próxima noche'} en El Sótano`;
   if (navigator.share) {
     try { await navigator.share({ title: 'El Sótano', text: texto, url }); return; }
@@ -584,15 +621,26 @@ async function cerrarEvento() {
     : '';
   if (!confirm(`Cerrar "${estado.evento.nombre}"\n\n`
     + `${r.entregados} entregados · ${plata(r.facturado)}${aviso}\n\nNo se puede reabrir.`)) return;
+  // El id se guarda ACÁ: apenas la noche pasa a 'cerrado', el listener deja
+  // estado.evento en null y leerlo después de un await revienta a la mitad.
+  const id = estado.evento.id;
   try {
-    await updateDoc(doc(db, 'barra', 'eventos', 'items', estado.evento.id),
+    await updateDoc(doc(db, 'barra', 'eventos', 'items', id),
       { estado: 'cerrado', cerradoEn: serverTimestamp(), cierre: r });
     await marcarTurno(null, []);
-    // Cerrada la noche no se registra nadie más.
-    await setDoc(doc(db, 'publico', 'registro'),
-      { eventoId: null, nombre: null, capacidad: 0, registrados: 0, abierto: false });
-    await marcarTomandoPedidos(false);
-  } catch (e) { alert('No se pudo cerrar: ' + (e.code || e.message)); }
+    // Cerrada la noche no se registra nadie más: su link vence acá.
+    if (estado.registros[id]) {
+      await updateDoc(doc(db, 'registros', id), { abierto: false });
+      estado.registros[id] = { ...estado.registros[id], abierto: false };
+    }
+    await apuntarLinkViejo();
+  } catch (e) {
+    alert('No se pudo cerrar: ' + (e.code || e.message));
+  }
+  // Pase lo que pase con el registro, los pedidos se cortan: es lo que ve el
+  // cliente, y dejarlo tomando pedidos con la noche cerrada es peor.
+  try { await marcarTomandoPedidos(false); }
+  catch (e) { alert('Ojo: no pude cortar los pedidos. ' + (e.code || e.message)); }
 }
 
 function pintarEvento() {
@@ -666,11 +714,10 @@ function pintarEvento() {
       <div class="interruptor" style="margin-top:.9rem">
         <div>
           <b>Registro de invitados</b>
-          <span>${estado.registro?.eventoId === estado.evento.id
-            ? `${Number(estado.registro.registrados || 0)} de ${Number(estado.evento.capacidad)} anotados
-               · ${estado.invitados.filter((i) => i.ingresadoEn).length} adentro`
-            : 'El link está apuntando a otra noche. Tocá Invitaciones para pasarlo a esta.'}</span>
-          <span style="word-break:break-all;color:var(--oro)">${esc(location.origin)}/registro.html</span>
+          <span>${Number(estado.registros[estado.evento.id]?.registrados || 0)} de ${Number(estado.evento.capacidad)} anotados
+            · ${estado.invitados.filter((i) => i.ingresadoEn).length} adentro${
+            estado.registros[estado.evento.id]?.abierto === false ? ' · registro cerrado' : ''}</span>
+          <span style="word-break:break-all;color:var(--oro)">${esc(LINK_REGISTRO(estado.evento.id))}</span>
         </div>
         <button class="btn solo-gerente-inline" id="btnLinkRegistro">Invitaciones</button>
       </div>` : ''}
@@ -900,7 +947,7 @@ function filaNoche(e, hoy) {
       <div class="nombre">${esc(e.nombre)}</div>
       <div class="desc">${e._f.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
         · ${etiqueta}${e.capacidad ? ` · cupo ${e.capacidad}` : ''}${
-        estado.registro?.eventoId === e.id ? ` · ${Number(estado.registro.registrados || 0)} anotados` : ''}${
+        estado.registros[e.id] ? ` · ${Number(estado.registros[e.id].registrados || 0)} anotados` : ''}${
         e.estado === 'cerrado' ? ` · ${plata(e.cierre?.facturado || 0)}` : ''}</div>
     </div>
     <div class="acciones-noche">
@@ -925,11 +972,22 @@ function enganchatNoches(cont, hoy) {
 // ---------- puerta: quién entra ----------
 // La lista la ven la puerta y la casa. El invitado no: su token le abre su
 // pase y nada más.
+//
+// La puerta mira una noche: la que está en curso. Si todavía no arrancó, la
+// próxima agendada con cupo, que es la que está por entrar.
+function eventoDePuerta() {
+  if (estado.evento?.id) return estado.evento.id;
+  const proxima = [...(estado.agenda || [])]
+    .filter((e) => Number(e.capacidad || 0) > 0)
+    .sort((a, b) => (a.fecha?.toMillis?.() || 0) - (b.fecha?.toMillis?.() || 0))[0];
+  return proxima?.id || estado.registro?.eventoId || '';
+}
+
 function escucharInvitados() {
   onSnapshot(collection(db, 'invitados'), (snap) => {
     estado.invitadosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     estado.invitados = estado.invitadosTodos
-      .filter((i) => !estado.registro?.eventoId || i.eventoId === estado.registro.eventoId)
+      .filter((i) => !eventoDePuerta() || i.eventoId === eventoDePuerta())
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
     pintarPuerta();
     pintarInvitar();   // si está abierto el diálogo de una noche, su lista también
@@ -971,7 +1029,7 @@ $('#btnGuardarInvitado').onclick = async () => {
   }
   const entra = $('#inpInvEntra').checked;
   const btn = $('#btnGuardarInvitado');
-  const evento = estado.evento?.id || estado.registro?.eventoId || '';
+  const evento = eventoDePuerta();
 
   // Un teléfono, una anotación. Acá la casa sí puede forzarlo: pasa que dos
   // personas comparten un número. Pero que lo decida, no que se le escape.
@@ -997,9 +1055,9 @@ $('#btnGuardarInvitado').onclick = async () => {
       ...(entra ? { ingresadoEn: serverTimestamp(), ingresadoPor: estado.usuario || 'casa' } : {}),
     });
     // El contador también, para que el cupo siga cuadrando.
-    if (estado.registro?.eventoId) {
-      await updateDoc(doc(db, 'publico', 'registro'),
-        { registrados: Number(estado.registro.registrados || 0) + 1 }).catch(() => {});
+    if (estado.registros[evento]) {
+      await updateDoc(doc(db, 'registros', evento),
+        { registrados: Number(estado.registros[evento].registrados || 0) + 1 }).catch(() => {});
     }
     await mostrarPaseNuevo(id, nombre);
   } catch (e) {
@@ -1180,9 +1238,9 @@ async function sacarInvitado(inv) {
       if (libre) await deleteDoc(doc(db, 'anotados', libre.id));
     }
 
-    if (estado.registro?.eventoId === inv.eventoId) {
-      await updateDoc(doc(db, 'publico', 'registro'),
-        { registrados: Math.max(0, Number(estado.registro.registrados || 0) - 1) });
+    if (estado.registros[inv.eventoId]) {
+      await updateDoc(doc(db, 'registros', inv.eventoId),
+        { registrados: Math.max(0, Number(estado.registros[inv.eventoId].registrados || 0) - 1) });
     }
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
@@ -1206,7 +1264,7 @@ function pintarPuerta() {
   if (!cont) return;
   const invs = estado.invitados;
   const adentro = invs.filter((i) => i.ingresadoEn).length;
-  const cupo = Number(estado.registro?.capacidad || 0);
+  const cupo = Number(estado.registros[eventoDePuerta()]?.capacidad || 0);
   const lleno = cupo && adentro >= cupo;
   const busca = (estado.buscaInvitado || '').toLowerCase();
   const visibles = busca

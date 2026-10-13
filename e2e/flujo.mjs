@@ -664,6 +664,16 @@ await chequear('reabrir vuelve a habilitar los pedidos', async () => {
 
 await barra.click('#tabTablero');
 
+// El registro ahora es uno por noche: registros/<id del evento>.
+const idDeNoche = async (nombre) => {
+  const q = await db.collection('barra/eventos/items').where('nombre', '==', nombre).get();
+  return q.docs[0]?.id;
+};
+const registroDe = async (nombre) => {
+  const id = await idDeNoche(nombre);
+  return id ? (await db.doc(`registros/${id}`).get()).data() : null;
+};
+
 console.log('\nINVITADOS: registro, pase y puerta');
 let tokenInvitado = null;
 
@@ -685,12 +695,22 @@ await chequear('el admin abre un evento con cupo y eso abre el registro', async 
   // un instante después de que la tarjeta ya se dibujó.
   let r;
   for (let i = 0; i < 40; i++) {
-    r = (await db.doc('publico/registro').get()).data();
+    r = await registroDe('Noche con lista');
     if (r?.abierto === true) break;
     await new Promise((ok) => setTimeout(ok, 250));
   }
-  if (r?.abierto !== true) throw new Error('no abrió el registro');
+  if (r?.abierto !== true) throw new Error('no abrió el registro de esa noche');
   if (r?.capacidad !== 2) throw new Error('no guardó el cupo: ' + r?.capacidad);
+  // Y el link viejo, el que no dice de qué noche es, apunta a ella.
+  const suId = await idDeNoche('Noche con lista');
+  let puntero;
+  for (let i = 0; i < 40; i++) {
+    puntero = (await db.doc('publico/registro').get()).data();
+    if (puntero?.eventoId === suId) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (puntero?.eventoId !== suId)
+    throw new Error(`el puntero no quedó en esta noche: ${JSON.stringify(puntero)} vs ${suId}`);
 });
 
 await chequear('las invitaciones traen el link y el QR de la noche', async () => {
@@ -698,8 +718,10 @@ await chequear('las invitaciones traen el link y el QR de la noche', async () =>
     .locator('[data-invitar]').click();
   await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
   await barra.waitForSelector('#dlgInvitar .qr', { timeout: 10000 });
+  const idNoche = await idDeNoche('Noche con lista');
   const texto = await barra.textContent('#dlgInvitar');
-  if (!texto.includes('/registro.html')) throw new Error('no muestra el link: ' + texto);
+  if (!texto.includes(`/registro.html?ev=${idNoche}`))
+    throw new Error('el link no lleva la noche adentro: ' + texto);
   if (!texto.includes('0 de 2 anotados')) throw new Error('no muestra el contador: ' + texto);
 
   // Un QR con el logo encima que no se lee no sirve: se decodifica de verdad.
@@ -708,50 +730,56 @@ await chequear('las invitaciones traen el link y el QR de la noche', async () =>
   const jsQR = (await import('jsqr')).default;
   const img = PNG.sync.read(Buffer.from(src.split(',')[1], 'base64'));
   const leido = jsQR(new Uint8ClampedArray(img.data), img.width, img.height);
-  if (leido?.data !== `${BASE}/registro.html`) throw new Error('el QR dice: ' + leido?.data);
+  if (leido?.data !== `${BASE}/registro.html?ev=${idNoche}`)
+    throw new Error('el QR dice: ' + leido?.data);
   await barra.click('#btnCerrarInvitar');
 });
 
-await chequear('si el link quedó apuntando a otra noche, se puede volver a pasar', async () => {
-  const dePrimera = (await db.collection('barra/eventos/items')
-    .where('nombre', '==', 'Noche con lista').get()).docs[0].id;
+await chequear('una noche nueva NO se roba el link de la anterior', async () => {
+  const dePrimera = await idDeNoche('Noche con lista');
 
-  // Una segunda noche con cupo se lleva el link: es un registro solo para todas.
+  // Esto es lo que pasaba antes: al crear la segunda noche, el QR de la
+  // primera empezaba a llevar a la segunda. Ahora cada una tiene el suyo.
   await barra.click('#btnAgendar');
   await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
-  await barra.fill('#inpEvento', 'Noche que roba el link');
+  await barra.fill('#inpEvento', 'La noche siguiente');
   await barra.fill('#inpCapacidad', '3');
   await barra.click('#btnConfirmarEvento');
   await barra.waitForFunction(() =>
-    document.querySelector('#calendario')?.textContent.includes('Noche que roba el link'),
+    document.querySelector('#calendario')?.textContent.includes('La noche siguiente'),
     null, { timeout: 10000 });
+  const deSegunda = await idDeNoche('La noche siguiente');
 
-  await barra.locator('.item', { hasText: 'Noche con lista' })
-    .locator('[data-invitar]').click();
-  await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
-  await barra.waitForSelector('#btnActivarRegistro', { timeout: 10000 });
-  if (!(await barra.textContent('#dlgInvitar')).includes('Noche que roba el link'))
-    throw new Error('no avisa a qué noche está apuntando el link');
-
-  await barra.click('#btnActivarRegistro');
-  let r;
+  // Cada registro con su cupo y su cuenta, sin pisarse.
+  let uno, dos;
   for (let i = 0; i < 40; i++) {
-    r = (await db.doc('publico/registro').get()).data();
-    if (r?.eventoId === dePrimera) break;
+    uno = await registroDe('Noche con lista');
+    dos = await registroDe('La noche siguiente');
+    if (uno?.abierto && dos?.abierto) break;
     await new Promise((ok) => setTimeout(ok, 250));
   }
-  if (r?.eventoId !== dePrimera) throw new Error('no pasó el link: ' + r?.eventoId);
-  if (r?.capacidad !== 2 || r?.registrados !== 0) throw new Error('quedó mal el contador');
-  await barra.waitForSelector('#btnActivarRegistro', { state: 'detached', timeout: 10000 });
+  if (!uno?.abierto || !dos?.abierto) throw new Error('alguna de las dos no quedó abierta');
+  if (uno.capacidad !== 2 || dos.capacidad !== 3) throw new Error('se mezclaron los cupos');
+
+  // Y el QR de la primera sigue siendo el de la primera.
+  await barra.locator('.item', { hasText: 'Noche con lista' }).locator('[data-invitar]').click();
+  await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
+  await barra.waitForSelector('#dlgInvitar .qr', { timeout: 10000 });
+  const dice = await barra.textContent('#dlgInvitar');
+  if (!dice.includes(`?ev=${dePrimera}`) || dice.includes(`?ev=${deSegunda}`))
+    throw new Error('el link de la primera cambió: ' + dice);
   await barra.click('#btnCerrarInvitar');
 
   // La noche de prueba se saca para no dejarla dando vueltas en la agenda.
   barra.once('dialog', (d) => d.accept());
-  await barra.locator('.item', { hasText: 'Noche que roba el link' })
-    .locator('[data-quitar]').click();
+  await barra.locator('.item', { hasText: 'La noche siguiente' }).locator('[data-quitar]').click();
   await barra.waitForFunction(() =>
-    !document.querySelector('#calendario')?.textContent.includes('Noche que roba el link'),
+    !document.querySelector('#calendario')?.textContent.includes('La noche siguiente'),
     null, { timeout: 10000 });
+
+  // Y sacarla de la agenda no toca el registro de la otra.
+  const sigue = await registroDe('Noche con lista');
+  if (!sigue?.abierto) throw new Error('le cerró el registro a la primera');
 });
 
 const ctxInv = await navegador.newContext({ viewport: { width: 390, height: 844 } });
@@ -773,9 +801,9 @@ await chequear('un invitado se registra sin cuenta y recibe su pase con QR', asy
   tokenInvitado = new URL(invitado.url()).searchParams.get('i');
   if (!tokenInvitado || tokenInvitado.length < 16) throw new Error('token flojo: ' + tokenInvitado);
 
-  // El contador tiene que haber subido: es lo que cierra el cupo.
-  const r = await db.doc('publico/registro').get();
-  if (r.data()?.registrados !== 1) throw new Error('no contó el registro');
+  // El contador de ESA noche tiene que haber subido: es lo que cierra el cupo.
+  const r = await registroDe('Noche con lista');
+  if (r?.registrados !== 1) throw new Error('no contó el registro: ' + r?.registrados);
 });
 
 await chequear('el QR del pase codifica su token', async () => {
@@ -837,8 +865,8 @@ await chequear('el mismo teléfono no se anota dos veces, aunque lo escriba dist
   } finally { await ctxDup.close(); }
 
   // Y lo importante: el contador no se movió, así que no se comió un lugar.
-  const r = await db.doc('publico/registro').get();
-  if (r.data()?.registrados !== 1) throw new Error('el lote dejó algo a medias: ' + r.data()?.registrados);
+  const r = await registroDe('Noche con lista');
+  if (r?.registrados !== 1) throw new Error('el lote dejó algo a medias: ' + r?.registrados);
 });
 
 await chequear('si vuelve a abrir el link, ve su pase en vez del formulario', async () => {
@@ -995,7 +1023,7 @@ await chequear('la casa anota un invitado de último momento, con la lista llena
 });
 
 await chequear('la casa saca a alguien de la lista y le libera el teléfono', async () => {
-  const antes = (await db.doc('publico/registro').get()).data()?.registrados;
+  const antes = (await registroDe('Noche con lista'))?.registrados;
   const adentro = barra.locator('details[data-pliegue="adentro"]');
   if (!(await adentro.evaluate((d) => d.open))) await adentro.locator('summary').click();
   await barra.waitForSelector('details[data-pliegue="adentro"] .invitado', { timeout: 10000 });
@@ -1025,7 +1053,7 @@ await chequear('la casa saca a alguien de la lista y le libera el teléfono', as
   // El cupo tiene que aflojar uno.
   let r;
   for (let i = 0; i < 40; i++) {
-    r = (await db.doc('publico/registro').get()).data();
+    r = await registroDe('Noche con lista');
     if (Number(r?.registrados) === antes - 1) break;
     await new Promise((ok) => setTimeout(ok, 250));
   }

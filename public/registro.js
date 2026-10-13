@@ -29,13 +29,36 @@ function token() {
 
 let registro = null;
 
-onSnapshot(doc(db, 'publico', 'registro'), (d) => {
-  registro = d.exists() ? d.data() : null;
-  pintar();
-}, (e) => {
+const fallaCarga = (e) => {
   $('#pantalla').innerHTML =
     `<div class="aviso mal"><span>⚠</span><div>No pude cargar la noche.<br>${esc(e.code || e.message)}</div></div>`;
-});
+};
+
+// La noche viene en el link: /registro.html?ev=<id>. Cada noche tiene el suyo,
+// así el QR de una no manda a la de la semana que viene.
+//
+// Sin ?ev= es un link viejo, de cuando había uno solo: se mira a qué noche
+// apunta la casa y se sigue desde ahí.
+const cual = new URL(location.href).searchParams.get('ev');
+if (cual) {
+  escuchar(cual);
+} else {
+  onSnapshot(doc(db, 'publico', 'registro'), (d) => {
+    const ev = d.exists() ? d.data().eventoId : null;
+    if (ev) escuchar(ev);
+    else { registro = null; pintar(); }
+  }, fallaCarga);
+}
+
+let mirando = null;
+function escuchar(ev) {
+  if (mirando === ev) return;
+  mirando = ev;
+  onSnapshot(doc(db, 'registros', ev), (d) => {
+    registro = d.exists() ? { ...d.data(), eventoId: d.id } : null;
+    pintar();
+  }, fallaCarga);
+}
 
 // Si en este celular ya se anotó alguien para esta misma noche, se le muestra
 // su pase en vez del formulario: es la forma más común de anotarse dos veces,
@@ -136,7 +159,7 @@ async function registrar(e) {
       eventoId: registro.eventoId, nombre, telefono,
       creadoEn: serverTimestamp(), ingresadoEn: null,
     });
-    lote.update(doc(db, 'publico', 'registro'),
+    lote.update(doc(db, 'registros', registro.eventoId),
       { registrados: Number(registro.registrados || 0) + 1 });
     lote.set(doc(db, 'anotados', claveAnotado(registro.eventoId, telefono)), {
       eventoId: registro.eventoId, tel: digitosTel(telefono), creadoEn: serverTimestamp(),
@@ -151,7 +174,7 @@ async function registrar(e) {
     // los lugares, y si todavía quedan es que ese teléfono ya está anotado.
     let lleno = false;
     try {
-      const d = await getDoc(doc(db, 'publico', 'registro'));
+      const d = await getDoc(doc(db, 'registros', registro.eventoId));
       const r = d.data() || {};
       lleno = Number(r.registrados || 0) >= Number(r.capacidad || 0);
     } catch { /* si no se puede mirar, se asume lo más común */ }

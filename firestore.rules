@@ -211,9 +211,17 @@ service cloud.firestore {
 
     // El contador de registrados lo sube quien se registra, de a uno y solo
     // mientras quede lugar. Es lo único que un desconocido puede escribir.
-    match /publico/registro {
+    // ---------- el registro de cada noche ----------
+    // Uno por evento. El link de una noche no lleva a otra: por eso el id del
+    // evento es el nombre del documento y va en la URL.
+    match /registros/{ev} {
+      // Lo lee cualquiera: es lo que abre el link de esa noche.
+      allow get: if true;
+      allow list: if esBarra() || esPuerta();
+      allow create, delete: if esAdmin();
+      // El que se anota suma uno, y nada más, y solo si queda lugar.
       allow update: if esAdmin()
-        || (hayLugar()
+        || (hayLugarEn(ev)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['registrados'])
             && request.resource.data.registrados == resource.data.registrados + 1);
     }
@@ -227,14 +235,18 @@ service cloud.firestore {
     // se apoyan en el contador de publico/registro. Sirve para cerrar el
     // registro cuando se llena, no para blindarlo. El control real es la
     // puerta, que ve el total en vivo.
-    function registro() {
-      return get(/databases/$(database)/documents/publico/registro).data;
+    // Cada noche con cupo tiene su registro: registros/<id del evento>. Así dos
+    // noches abiertas a la vez tienen cada una su link, su QR y su cuenta.
+    // publico/registro quedó como puntero para el link viejo, sin números.
+    function registro(ev) {
+      return get(/databases/$(database)/documents/registros/$(ev)).data;
     }
 
-    function hayLugar() {
-      return exists(/databases/$(database)/documents/publico/registro)
-        && registro().get('abierto', false) == true
-        && registro().get('registrados', 0) < registro().get('capacidad', 0);
+    function hayLugarEn(ev) {
+      return ev is string && ev != ''
+        && exists(/databases/$(database)/documents/registros/$(ev))
+        && registro(ev).get('abierto', false) == true
+        && registro(ev).get('registrados', 0) < registro(ev).get('capacidad', 0);
     }
 
     function invitadoValido(d) {
@@ -254,7 +266,6 @@ service cloud.firestore {
     function candadoValido(clave, d) {
       return d.keys().hasOnly(['eventoId', 'tel', 'creadoEn'])
         && d.keys().hasAll(['eventoId', 'tel', 'creadoEn'])
-        && d.eventoId == registro().get('eventoId', '')
         && d.tel is string && d.tel.matches('^[0-9]{6,10}$')
         && clave == d.eventoId + '__' + d.tel
         && d.creadoEn == request.time;
@@ -284,8 +295,7 @@ service cloud.firestore {
       // y siempre contra el evento que publico/registro declara abierto.
       allow create: if (token.size() >= 16
           && invitadoValido(request.resource.data)
-          && hayLugar()
-          && request.resource.data.eventoId == registro().get('eventoId', ''))
+          && hayLugarEn(request.resource.data.eventoId))
         || (esAdmin() && token.size() >= 16 && invitadoDeLaCasa(request.resource.data));
 
       // Marcar el ingreso: puerta o casa. Nadie se marca su propia entrada.
@@ -314,7 +324,8 @@ service cloud.firestore {
     // teléfonos para averiguar quién está en la lista de esta noche.
     match /anotados/{clave} {
       allow get, list: if esBarra() || esPuerta();
-      allow create: if (hayLugar() && candadoValido(clave, request.resource.data))
+      allow create: if (hayLugarEn(request.resource.data.get('eventoId', ''))
+            && candadoValido(clave, request.resource.data))
         || (esAdmin()
             && request.resource.data.keys().hasOnly(['eventoId', 'tel', 'creadoEn'])
             && request.resource.data.creadoEn == request.time);

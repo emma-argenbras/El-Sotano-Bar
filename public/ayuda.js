@@ -75,11 +75,13 @@
         se anotaron. <b>Mandar el link</b> abre el menú de compartir de tu celular:
         elegís WhatsApp, Instagram o lo que sea. <b>La app no manda nada por su
         cuenta.</b></p>
-        <p>El link es <b>uno solo</b> para todo el bar y lleva a <b>una</b> noche:
-        la última que agendaste con cupo. Si tenés dos agendadas y querés que la
-        gente se anote a la otra, entrá a sus <b>Invitaciones</b> y tocá <b>Pasar
-        el link a esta noche</b>. El cartel rojo te avisa cuando el link está
-        apuntando a otra.</p>
+        <p><b>Cada noche tiene su propio link y su propio QR.</b> El de una no
+        lleva a la otra: podés tener dos noches anotando gente al mismo tiempo,
+        cada una con su cupo y su lista. Crear una noche nueva no le toca nada a
+        la anterior.</p>
+        <p>Ahí mismo podés <b>cerrar el registro de esa noche</b> cuando no
+        quieras más anotados, y volver a abrirlo. Al <b>cerrar el evento</b> se
+        cierra solo: el link de esa noche vence ahí.</p>
         <p>El invitado deja nombre y teléfono, y recibe <b>su pase con QR</b>. El
         teléfono entra de una sola manera: <b>diez números, sin el 0 y sin el
         15</b> (3454 18 9066). El formulario no deja escribirlo de otra forma y
