@@ -963,6 +963,45 @@ await chequear('la casa anota un invitado de último momento, con la lista llena
   if (g.docs[0].id.length < 16) throw new Error('token flojo: ' + g.docs[0].id);
 });
 
+await chequear('la casa saca a alguien de la lista y le libera el teléfono', async () => {
+  const antes = (await db.doc('publico/registro').get()).data()?.registrados;
+  const adentro = barra.locator('details[data-pliegue="adentro"]');
+  if (!(await adentro.evaluate((d) => d.open))) await adentro.locator('summary').click();
+  await barra.waitForSelector('details[data-pliegue="adentro"] .invitado', { timeout: 10000 });
+
+  barra.once('dialog', (d) => d.accept());
+  await barra.locator('.invitado', { hasText: 'Cami Última' }).locator('[data-sacar]').click();
+
+  // Se va de la base, no solo de la pantalla.
+  let quedan;
+  for (let i = 0; i < 40; i++) {
+    quedan = await db.collection('invitados').where('nombre', '==', 'Cami Última').get();
+    if (quedan.empty) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!quedan.empty) throw new Error('sigue en la lista');
+
+  // Y le libera el candado del teléfono: si vuelve, se puede anotar de nuevo.
+  // Va después de borrar al invitado, así que se espera por separado.
+  let candados;
+  for (let i = 0; i < 40; i++) {
+    candados = await db.collection('anotados').where('tel', '==', '1155557777').get();
+    if (candados.empty) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!candados.empty) throw new Error('le quedó el teléfono bloqueado');
+
+  // El cupo tiene que aflojar uno.
+  let r;
+  for (let i = 0; i < 40; i++) {
+    r = (await db.doc('publico/registro').get()).data();
+    if (Number(r?.registrados) === antes - 1) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (Number(r?.registrados) !== antes - 1)
+    throw new Error(`el contador no bajó: ${antes} -> ${r?.registrados}`);
+});
+
 await chequear('lo que pide el invitado queda a su nombre', async () => {
   await invitado.goto(`${BASE}/?inv=${tokenInvitado}`, { waitUntil: 'domcontentloaded' });
   await invitado.waitForSelector('text=Papas bravas', { timeout: 15000 });

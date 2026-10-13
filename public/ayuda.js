@@ -95,6 +95,9 @@
         búsqueda manda y no se pliega nada.</p>
         <p>Para ver quiénes se anotaron a una noche que todavía no arrancó, está
         adentro de sus <b>Invitaciones</b>, en <b>Quiénes se anotaron</b>.</p>
+        <p>La <b>✕</b> roja saca a alguien de la lista para siempre: se anotó dos
+        veces, se equivocó de noche. Su pase deja de servir y le libera el
+        teléfono para que se pueda anotar de nuevo.</p>
         <p>Si alguien aparece sin anotarse: <b>+ Invitado de último momento</b>.
         Entra aunque la lista esté llena. Le podés mandar su pase ahí mismo.</p>`,
     },
@@ -172,10 +175,15 @@
       titulo: 'Controlar la entrada',
       cuerpo: `
         <p><b>Escanear pase</b> abre la cámara. Apuntá al QR del invitado y se
-        marca solo. Si el pase ya se usó, te avisa.</p>
+        marca solo. Al marcarlo te muestra <b>el teléfono con el que se anotó</b>:
+        si dudás, pedile los últimos números.</p>
+        <p><b>Un pase, una entrada.</b> Si el QR ya se usó, el segundo que lo
+        muestre no entra, aunque sea otro celular: te dice a qué hora entró el
+        primero. No es la pantalla la que se acuerda, es la base.</p>
         <p>Si la cámara no abre o el QR no se lee, <b>buscalo por nombre o
         teléfono</b> y tocá <b>Entró</b>.</p>
-        <p>Te equivocaste: <b>Deshacer</b> lo saca.</p>
+        <p>Te equivocaste: <b>Deshacer</b> lo saca, y ahí sí puede volver a
+        entrar una vez.</p>
         <p>Arriba ves <b>cuántos entraron contra el cupo</b>. Cuando se llena,
         avisa en rojo.</p>
         <p>La lista va en dos grupos: <b>Faltan entrar</b> abierto y <b>Ya

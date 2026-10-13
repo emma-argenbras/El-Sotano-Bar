@@ -15,6 +15,7 @@
     "deploy:hosting": "npm run build && firebase deploy --only hosting",
     "crear:barra": "node scripts/crear-usuario-barra.mjs",
     "sellar:telefonos": "node scripts/sellar-telefonos.mjs",
+    "sacar:invitado": "node scripts/sacar-invitado.mjs",
     "iconos": "node scripts/generar-iconos.mjs",
     "qr": "node scripts/generar-qr.mjs",
     "qr:imprimir": "node scripts/hoja-qr.mjs",

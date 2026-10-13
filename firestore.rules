@@ -284,11 +284,20 @@ service cloud.firestore {
         || (esAdmin() && token.size() >= 16 && invitadoDeLaCasa(request.resource.data));
 
       // Marcar el ingreso: puerta o casa. Nadie se marca su propia entrada.
+      //
+      // Un pase, una entrada: solo se puede marcar lo que está sin marcar. Si
+      // alguien pasa su QR por WhatsApp, el segundo que lo muestre no entra, y
+      // no depende de que la pantalla se acuerde. Deshacer sí se puede: es para
+      // el error de la puerta, y vuelve a dejarlo entrar una vez.
       allow update: if (esPuerta() || esBarra())
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['ingresadoEn', 'ingresadoPor']);
+             .hasOnly(['ingresadoEn', 'ingresadoPor'])
+        && (resource.data.get('ingresadoEn', null) == null
+            || request.resource.data.get('ingresadoEn', null) == null);
 
-      allow delete: if esElDueno();
+      // Sacar a alguien de la lista es de la casa: se anotó dos veces, se
+      // equivocó de noche. No es borrar la base, es arreglar la lista.
+      allow delete: if esAdmin();
     }
 
     // ---------- un teléfono, una anotación por noche ----------

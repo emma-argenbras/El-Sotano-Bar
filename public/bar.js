@@ -6,7 +6,7 @@ import {
   sendPasswordResetEmail, setPersistence, browserLocalPersistence, connectAuthEmulator,
   createUserWithEmailAndPassword, deleteApp,
   getFirestore, connectFirestoreEmulator, collection, doc, query, where, orderBy,
-  onSnapshot, updateDoc, setDoc, Timestamp, addDoc, limit, serverTimestamp,
+  onSnapshot, updateDoc, setDoc, deleteDoc, getDocs, Timestamp, addDoc, limit, serverTimestamp,
 } from '/vendor/firebase.js';
 import { claveAnotado, digitosTel } from '/tel.js';
 
@@ -932,6 +932,7 @@ function escucharInvitados() {
       .filter((i) => !estado.registro?.eventoId || i.eventoId === estado.registro.eventoId)
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
     pintarPuerta();
+    pintarInvitar();   // si está abierto el diálogo de una noche, su lista también
   }, (e) => {
     if (e.code === 'permission-denied') { estado.invitados = []; pintarPuerta(); return; }
     fallo('#puerta')(e);
@@ -1099,12 +1100,17 @@ function resolverEscaneo(texto) {
     caja.innerHTML = `<div class="aviso mal"><span>✖</span><div>
       <b>Ese pase no es de esta noche.</b><br>Buscalo por nombre o que se registre.</div></div>`;
   } else if (inv.ingresadoEn) {
-    caja.innerHTML = `<div class="aviso mal"><span>⚠</span><div>
-      <b>${esc(inv.nombre)} ya entró.</b><br>Este pase se usó una vez.</div></div>`;
+    // Un pase, una entrada. El que lo reenvió por WhatsApp no pasa dos veces.
+    caja.innerHTML = `<div class="aviso mal"><span>✖</span><div>
+      <b>${esc(inv.nombre)} ya entró a las ${hora(inv.ingresadoEn)}.</b><br>
+      Este pase se usó. Si fue un error, buscalo en la lista y tocá Deshacer.</div></div>`;
   } else {
     marcarIngreso(inv.id, true);
+    // El teléfono que dejó al anotarse: sirve para chequear que el que muestra
+    // el QR es el que se registró, pidiéndole los últimos números.
     caja.innerHTML = `<div class="aviso ok"><span>✓</span><div>
-      <b>Adelante, ${esc(inv.nombre)}.</b><br>Entrada registrada.</div></div>`;
+      <b>Adelante, ${esc(inv.nombre)}.</b><br>
+      Se anotó con el <b>${esc(inv.telefono || 'sin teléfono')}</b>.</div></div>`;
   }
   caja.innerHTML += '<button class="btn primario ancho-full" id="btnSeguir" style="margin-top:.7rem">Escanear el siguiente</button>';
   $('#btnSeguir').onclick = () => { $('#escaneo').innerHTML = ''; abrirCamara(); };
@@ -1127,6 +1133,8 @@ function renglonInvitado(i, conBoton) {
     ${conBoton ? `<button class="btn ${i.ingresadoEn ? '' : 'primario'}" data-ingreso="${esc(i.id)}"
             style="padding:.4rem .7rem;font-size:.82rem">
       ${i.ingresadoEn ? 'Deshacer' : 'Entró'}</button>` : ''}
+    <button class="btn peligro solo-gerente-inline" data-sacar="${esc(i.id)}"
+            title="Sacarlo de la lista" style="padding:.4rem .6rem;font-size:.82rem">✕</button>
   </div>`;
 }
 
@@ -1147,7 +1155,37 @@ function plegable(clave, titulo, gente, { abierto = false, conBoton = false } = 
 
 // Abrir, cerrar y "ver todos" se recuerdan: el panel se repinta con cada
 // cambio en la base y sería insoportable que se cerrara solo todo el tiempo.
+// Sacar a alguien de la lista: se anotó dos veces, se equivocó de noche. Van
+// las tres cosas juntas: el invitado, el candado de su teléfono (para que se
+// pueda volver a anotar) y el contador del cupo.
+async function sacarInvitado(inv) {
+  if (!confirm(`¿Sacar a ${inv.nombre} de la lista?\n\nSu pase deja de servir.`)) return;
+  try {
+    await deleteDoc(doc(db, 'invitados', inv.id));
+
+    const tel = digitosTel(inv.telefono);
+    if (tel) {
+      // Si dos comparten teléfono porque la casa lo forzó, se libera uno solo:
+      // el que quede sigue bloqueando al número.
+      const candados = await getDocs(query(collection(db, 'anotados'),
+        where('eventoId', '==', inv.eventoId), where('tel', '==', tel)));
+      const libre = candados.docs
+        .sort((a, b) => b.id.length - a.id.length)[0];   // primero la del sufijo
+      if (libre) await deleteDoc(doc(db, 'anotados', libre.id));
+    }
+
+    if (estado.registro?.eventoId === inv.eventoId) {
+      await updateDoc(doc(db, 'publico', 'registro'),
+        { registrados: Math.max(0, Number(estado.registro.registrados || 0) - 1) });
+    }
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
 function engancharPliegues(cont) {
+  cont.querySelectorAll('[data-sacar]').forEach((b) => b.onclick = () => {
+    const i = (estado.invitadosTodos || []).find((x) => x.id === b.dataset.sacar);
+    if (i) sacarInvitado(i);
+  });
   cont.querySelectorAll('[data-pliegue]').forEach((d) => d.ontoggle = () => {
     estado.pliegues[d.dataset.pliegue] = d.open;
   });

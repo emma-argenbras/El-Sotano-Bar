@@ -294,6 +294,35 @@ describe('la puerta', () => {
     await assertSucceeds(updateDoc(doc(barra(), 'invitados/token-largo-de-prueba-2'),
       { ingresadoEn: serverTimestamp(), ingresadoPor: 'admin' }));
   });
+
+  // Un pase, una entrada: el que reenvía su QR no mete a un amigo.
+  it('un pase ya usado NO entra de nuevo', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'invitados/token-ya-uso-su-pase-xx'), {
+        eventoId: 'ev-1', nombre: 'Lu', telefono: '1155556666',
+        creadoEn: new Date(), ingresadoEn: new Date(), ingresadoPor: 'puerta',
+      }));
+    await assertFails(updateDoc(doc(puerta(), 'invitados/token-ya-uso-su-pase-xx'),
+      { ingresadoEn: serverTimestamp(), ingresadoPor: 'puerta' }));
+    await assertFails(updateDoc(doc(barra(), 'invitados/token-ya-uso-su-pase-xx'),
+      { ingresadoEn: serverTimestamp(), ingresadoPor: 'admin' }));
+  });
+
+  it('pero deshacer sí, que la puerta se equivoca', async () => {
+    await assertSucceeds(updateDoc(doc(puerta(), 'invitados/token-ya-uso-su-pase-xx'),
+      { ingresadoEn: null, ingresadoPor: null }));
+    // Y deshecho, vuelve a poder entrar una vez.
+    await assertSucceeds(updateDoc(doc(puerta(), 'invitados/token-ya-uso-su-pase-xx'),
+      { ingresadoEn: serverTimestamp(), ingresadoPor: 'puerta' }));
+  });
+
+  it('la puerta NO puede sacar a nadie de la lista', async () => {
+    await assertFails(deleteDoc(doc(puerta(), 'invitados/token-ya-uso-su-pase-xx')));
+  });
+
+  it('la casa sí: se anotó dos veces, se saca', async () => {
+    await assertSucceeds(deleteDoc(doc(barra(), 'invitados/token-ya-uso-su-pase-xx')));
+  });
 });
 
 describe('el barman entra solo la noche que trabaja', () => {
