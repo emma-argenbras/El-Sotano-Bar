@@ -205,6 +205,31 @@
 <!-- Invitaciones: el link y el QR de una noche ya creada, para volver a
      mandarlos cuando haga falta. -->
 <!-- Venta de mostrador: el que compra en la barra no usa la app. -->
+<!-- Alta de una cuenta del personal. Antes eran tres prompt() encadenados:
+     en el celular no se ve qué está mal hasta que ya es tarde. -->
+<dialog id="dlgPersona">
+  <h2 style="margin-top:0" id="tituloPersona">Registrar</h2>
+  <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 1rem" id="quePuedePersona"></p>
+  <label class="campo">
+    <span>Usuario <small>(sin espacios ni acentos)</small></span>
+    <input id="inpPersonaUsuario" maxlength="30" autocomplete="off"
+           autocapitalize="none" spellcheck="false" inputmode="text">
+    <small class="pista" id="pistaPersona">Entre 3 y 30: letras, números, punto, guión o guión bajo.</small>
+  </label>
+  <label class="campo">
+    <span>Contraseña <small>(mínimo 6)</small></span>
+    <input id="inpPersonaClave" type="text" maxlength="60" autocomplete="off"
+           autocapitalize="none" spellcheck="false">
+    <small class="pista">Se ve mientras la escribís, para que la puedas anotar.
+      <b>No se recupera</b>: si se pierde, se crea otra cuenta.</small>
+  </label>
+  <div class="aviso mal oculto" id="errorPersona"><span>⚠</span><div id="errorPersonaTexto"></div></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarPersona" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnConfirmarPersona" style="flex:1.4">Crear</button>
+  </div>
+</dialog>
+
 <dialog id="dlgVenta">
   <h2 style="margin-top:0">Venta en la barra</h2>
   <div id="cuerpoVenta"></div>

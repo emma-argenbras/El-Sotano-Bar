@@ -321,7 +321,10 @@ function abrirEvento(editando = null, cuando = null) {
 }
 
 function pintarElegirBarman(marcados = []) {
-  const equipo = estado.accesos.filter((a) => a.rol !== 'admin' && a.activo);
+  // El celular de la barra no hace turno: es el aparato del local y entra
+  // siempre. Listarlo acá era ofrecer asignar un mueble a una noche.
+  const equipo = estado.accesos.filter((a) =>
+    a.activo && a.rol !== 'admin' && a.rol !== 'barra');
   $('#elegirBarman').innerHTML = equipo.length
     ? equipo.map((b) => `<label><input type="checkbox" value="${esc(b.uid)}"
         ${marcados.includes(b.uid) ? 'checked' : ''}> ${esc(b.usuario)}
@@ -336,6 +339,14 @@ const barmanMarcados = () =>
 $('#btnCancelarEvento').onclick = () => $('#dlgEvento').close();
 $('#btnCerrarInvitar').onclick = () => { estado.invitandoA = null; $('#dlgInvitar').close(); };
 $('#btnQuienAtiende').onclick = elegirQuienAtiende;
+$('#btnCancelarPersona').onclick = () => $('#dlgPersona').close();
+$('#btnConfirmarPersona').onclick = crearPersona;
+$('#inpPersonaUsuario').oninput = () => {
+  const i = $('#inpPersonaUsuario');
+  const limpio = limpiarUsuario(i.value);
+  if (limpio !== i.value) i.value = limpio;
+  pistaPersona();
+};
 $('#btnVentaBarra').onclick = abrirVenta;
 $('#btnEfectivo').onclick = () => cerrarCobro('efectivo');
 $('#btnVirtual').onclick = () => cerrarCobro('virtual');
@@ -406,9 +417,13 @@ async function empezarNoche(ev) {
     await updateDoc(doc(db, 'barra', 'eventos', 'items', ev.id),
       { estado: 'abierto', abiertoEn: serverTimestamp() });
     await marcarTurno(ev.id, ev.barmanes || []);
-    // El link sin noche manda a la que está en curso.
-    await setDoc(doc(db, 'publico', 'registro'), { eventoId: ev.id, nombre: ev.nombre });
+    // Lo que ve el cliente va primero: si algo falla más atrás, la noche ya
+    // está tomando pedidos igual. Es el mismo cuidado que al cerrarla.
     await marcarTomandoPedidos(true, ev);
+    // El link sin noche manda a la que está en curso. Que no pueda tumbar lo
+    // de arriba: es lo de menos.
+    await setDoc(doc(db, 'publico', 'registro'),
+      { eventoId: ev.id, nombre: ev.nombre }).catch(() => {});
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 
@@ -1411,18 +1426,87 @@ function vigilarMiAcceso(uid) {
   }, () => {});
 }
 
-async function altaPersona(rol) {
-  const que = { admin: 'administrador', barman: 'barman', puerta: 'puerta',
-                barra: 'celular de la barra' }[rol];
-  const usuario = (prompt(`Usuario del ${que} (sin espacios ni acentos)`) || '').trim().toLowerCase();
-  if (!usuario) return;
-  if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(usuario)) {
-    alert('Entre 3 y 30 caracteres: letras, números, punto, guión o guión bajo.');
+const QUE_ES = {
+  admin: { nombre: 'administrador',
+           puede: 'Hace todo lo que hacés vos menos borrar la base. Cuenta permanente, no depende del evento.' },
+  barman: { nombre: 'barman',
+            puede: 'Mueve pedidos, cobra y marca agotado. Para su celular propio: solo entra la noche en que lo asignás.' },
+  puerta: { nombre: 'gente de puerta',
+            puede: 'Solo la pantalla de puerta: escanea pases y marca quién entró. No ve caja ni pedidos.' },
+  barra: { nombre: 'celular de la barra',
+           puede: 'La cuenta del aparato que queda en el local. Entra siempre, sin depender del turno, y adentro se elige quién está atendiendo.' },
+};
+
+// El usuario se acomoda solo mientras se escribe: lo que la gente tipea en un
+// celular trae mayúsculas, acentos y espacios, y antes eso era un cartel de
+// error después de haber cargado todo.
+function limpiarUsuario(txt) {
+  return String(txt || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // acentos fuera
+    .toLowerCase()
+    .replace(/ñ/g, 'n')
+    .replace(/[^a-z0-9._-]+/g, '-')                     // espacios y símbolos → guión
+    .replace(/^-+/, '')
+    .slice(0, 30);
+}
+
+const usuarioValido = (u) => /^[a-z0-9][a-z0-9._-]{2,29}$/.test(u);
+
+let altaRol = null;
+function altaPersona(rol) {
+  altaRol = rol;
+  const q = QUE_ES[rol] || QUE_ES.barman;
+  $('#tituloPersona').textContent = `Registrar ${q.nombre}`;
+  $('#quePuedePersona').textContent = q.puede;
+  $('#inpPersonaUsuario').value = rol === 'barra' ? 'barra' : '';
+  $('#inpPersonaClave').value = '';
+  $('#errorPersona').classList.add('oculto');
+  $('#btnConfirmarPersona').disabled = false;
+  $('#btnConfirmarPersona').textContent = 'Crear';
+  $('#dlgPersona').showModal();
+  pistaPersona();
+  if (rol !== 'barra') $('#inpPersonaUsuario').focus();
+  else $('#inpPersonaClave').focus();
+}
+
+function pistaPersona() {
+  const u = $('#inpPersonaUsuario').value;
+  const p = $('#pistaPersona');
+  if (!u) {
+    p.className = 'pista';
+    p.textContent = 'Entre 3 y 30: letras, números, punto, guión o guión bajo.';
     return;
   }
-  const clave = prompt(`Contraseña para "${usuario}" (mínimo 6)\n\n`
-    + 'Anotala: no se puede recuperar, se cambia creando otra cuenta.') || '';
-  if (clave.length < 6) { if (clave) alert('Mínimo 6 caracteres.'); return; }
+  const ok = usuarioValido(u);
+  p.className = 'pista ' + (ok ? 'bien' : 'mal');
+  p.textContent = ok
+    ? `✓ Va a entrar escribiendo "${u}"`
+    : (u.length < 3 ? 'Le faltan letras: mínimo 3.' : 'Tiene que empezar con una letra o un número.');
+}
+
+function fallaPersona(texto) {
+  $('#errorPersonaTexto').textContent = texto;
+  $('#errorPersona').classList.remove('oculto');
+}
+
+async function crearPersona() {
+  const usuario = limpiarUsuario($('#inpPersonaUsuario').value);
+  $('#inpPersonaUsuario').value = usuario;
+  const clave = $('#inpPersonaClave').value;
+  const q = QUE_ES[altaRol] || QUE_ES.barman;
+  if (!usuarioValido(usuario)) {
+    fallaPersona('El usuario tiene que tener entre 3 y 30 caracteres y empezar con letra o número.');
+    $('#inpPersonaUsuario').focus();
+    return;
+  }
+  if (clave.length < 6) {
+    fallaPersona('La contraseña necesita al menos 6 caracteres.');
+    $('#inpPersonaClave').focus();
+    return;
+  }
+  const btn = $('#btnConfirmarPersona');
+  btn.disabled = true; btn.textContent = 'Creando…';
+  $('#errorPersona').classList.add('oculto');
 
   // Una app aparte para el alta: createUser deja logueada a la cuenta nueva,
   // y si usáramos la principal te quedarías afuera de tu propio panel.
@@ -1432,16 +1516,20 @@ async function altaPersona(rol) {
   try {
     const cred = await createUserWithEmailAndPassword(authSec, aMail(usuario), clave);
     await setDoc(doc(db, 'accesosBarra', cred.user.uid), {
-      usuario, rol, activo: true, creadoEn: serverTimestamp(),
+      usuario, rol: altaRol, activo: true, creadoEn: serverTimestamp(),
     });
-    alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${que}\n\n`
-      + (rol === 'admin' || rol === 'barra' ? ''
+    $('#dlgPersona').close();
+    alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${q.nombre}\n\n`
+      + (altaRol === 'admin' || altaRol === 'barra' ? ''
         : 'Para que entre, asignalo al evento desde "De turno".\n\n')
       + `Que entre en:\n${location.origin}/bar.html`);
   } catch (e) {
-    alert(e.code === 'auth/email-already-in-use'
+    fallaPersona(e.code === 'auth/email-already-in-use'
       ? `Ya existe un usuario "${usuario}". Elegí otro nombre.`
-      : 'No se pudo crear: ' + (e.code || e.message));
+      : (e.code === 'auth/weak-password'
+        ? 'Esa contraseña es muy débil para Firebase. Probá con una más larga.'
+        : 'No se pudo crear: ' + (e.code || e.message)));
+    btn.disabled = false; btn.textContent = 'Crear';
   } finally {
     await signOut(authSec).catch(() => {});
     await deleteApp(secundaria).catch(() => {});
@@ -1647,7 +1735,9 @@ function pintarQuienAtiende() {
 // Los que pueden estar atendiendo: los asignados a la noche, y si no hay
 // noche abierta, todos los barmanes activos. El bar vende igual.
 function barmanesPosibles() {
-  const activos = estado.accesos.filter((a) => a.activo && a.rol !== 'puerta');
+  // Personas, no aparatos: el que atiende es alguien, no el celular mismo.
+  const activos = estado.accesos.filter((a) =>
+    a.activo && a.rol !== 'puerta' && a.rol !== 'barra');
   const delTurno = estado.evento?.barmanes || [];
   const deLaNoche = activos.filter((a) => delTurno.includes(a.uid));
   return (deLaNoche.length ? deLaNoche : activos).map((a) => a.usuario);

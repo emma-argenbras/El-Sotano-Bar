@@ -362,17 +362,69 @@ console.log('\nUSUARIO DE BARRA DEL TURNO');
 await chequear('el dueño crea un usuario de barra sin mail y sin perder su sesión', async () => {
   await barra.click('#tabEvento');
   await barra.waitForSelector('#btnAltaBarman', { timeout: 10000 });
-  const respuestas = ['barra-turno', 'clave-de-prueba'];
-  barra.on('dialog', async (d) => {
-    if (d.type() === 'prompt') await d.accept(respuestas.shift() ?? '');
-    else await d.accept();
-  });
+  barra.on('dialog', async (d) => d.accept());
   await barra.click('#btnAltaBarman');
+  await barra.waitForSelector('#dlgPersona[open]', { timeout: 10000 });
+
+  // Lo que escribe la gente en un celular: mayúsculas, acentos y espacios.
+  // El campo lo acomoda solo en vez de rebotarlo después de cargar todo.
+  await barra.fill('#inpPersonaUsuario', 'Barra Turno');
+  if ((await barra.inputValue('#inpPersonaUsuario')) !== 'barra-turno')
+    throw new Error('no acomodó el usuario: ' + (await barra.inputValue('#inpPersonaUsuario')));
+  if (!(await barra.textContent('#pistaPersona')).includes('barra-turno'))
+    throw new Error('no confirma con qué usuario va a entrar');
+
+  // Contraseña corta: lo dice ahí mismo y no crea nada.
+  await barra.fill('#inpPersonaClave', '123');
+  await barra.click('#btnConfirmarPersona');
+  await barra.waitForFunction(() =>
+    !document.querySelector('#errorPersona')?.classList.contains('oculto'), null, { timeout: 5000 });
+
+  await barra.fill('#inpPersonaClave', 'clave-de-prueba');
+  await barra.click('#btnConfirmarPersona');
   await barra.waitForFunction(() =>
     document.querySelector('#accesos')?.textContent.includes('barra-turno'), null, { timeout: 15000 });
   // El alta usa una app aparte justamente para esto: el dueño sigue adentro.
   if (await barra.locator('#vistaPanel').isHidden()) throw new Error('al dueño lo sacó de su propio panel');
   barra.removeAllListeners('dialog');
+});
+
+await chequear('el celular de la barra se registra y entra sin turno', async () => {
+  // El listener se saca pase lo que pase: si queda puesto, se come los
+  // confirm de los casos que siguen y los hace fallar sin motivo.
+  barra.on('dialog', async (d) => d.accept());
+  try {
+    await barra.click('#btnAltaAparato');
+    await barra.waitForSelector('#dlgPersona[open]', { timeout: 10000 });
+    // Viene con el nombre puesto: es el aparato del local, no una persona.
+    if ((await barra.inputValue('#inpPersonaUsuario')) !== 'barra')
+      throw new Error('no propone el usuario "barra"');
+    await barra.fill('#inpPersonaClave', 'clave-del-aparato');
+    await barra.click('#btnConfirmarPersona');
+    await barra.waitForFunction(() =>
+      document.querySelector('#accesos')?.textContent.includes('el aparato del local'),
+      null, { timeout: 15000 });
+  } finally { barra.removeAllListeners('dialog'); }
+
+  // Y entra sin estar asignado a ninguna noche: el bar vende todos los días.
+  const ctxAparato = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const cel = await ctxAparato.newPage();
+  try {
+    await cel.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+    await cel.fill('#inpMail', 'barra');
+    await cel.fill('#inpPass', 'clave-del-aparato');
+    await cel.click('#btnEntrar');
+    await cel.waitForSelector('#vistaPanel:not([hidden])', { timeout: 15000 });
+    // El permiso llega por su propio snapshot: hasta que no llega, el panel
+    // todavía no sabe que es el aparato de la barra.
+    await cel.waitForSelector('#btnQuienAtiende:not([hidden])', { timeout: 20000 });
+    if (await cel.locator('#tabCaja').isVisible())
+      throw new Error('el aparato no tiene que ver la caja general');
+    if (await cel.locator('#tabCalendario').isVisible())
+      throw new Error('el aparato no tiene que ver el calendario');
+    if (!(await cel.locator('#btnVentaBarra').isVisible()))
+      throw new Error('tiene que poder cargar una venta de mostrador');
+  } finally { await ctxAparato.close(); }
 });
 
 const ctxTurno = await navegador.newContext({ viewport: { width: 390, height: 844 } });
@@ -537,8 +589,11 @@ await chequear('abre un evento y la caja pasa a contar desde ahí', async () => 
   // Arrancar se hace desde el calendario; la noche en curso vive en Noche.
   await barra.click('#tabEvento');
   await barra.waitForSelector('#evento .caja-evento', { timeout: 15000 });
-  const t = await barra.textContent('#evento .caja-evento');
-  if (!t.includes('Prueba de noche')) throw new Error('no tomó el nombre: ' + t.slice(0, 120));
+  // Leer de una sola vez agarra el momento en que se está repintando: el panel
+  // redibuja con cada snapshot que llega.
+  await barra.waitForFunction(() =>
+    document.querySelector('#evento .caja-evento')?.textContent.includes('Prueba de noche'),
+    null, { timeout: 15000 });
 
   // abiertoEn es un serverTimestamp: hasta que vuelve del servidor llega null
   // y el tablero sigue mostrando el día entero. Esperamos a que se resuelva.
@@ -564,8 +619,15 @@ await chequear('un pedido nuevo entra al evento y suma a la caja al entregarlo',
   if (!t.includes('Papas bravas')) throw new Error('el ranking no lo listó');
 });
 await chequear('con el evento abierto, el cliente puede pedir', async () => {
-  const d = await db.doc('publico/estado').get();
-  if (d.data()?.tomandoPedidos !== true) throw new Error('abrir el evento no habilitó los pedidos');
+  // Arrancar son varias escrituras seguidas; la del interruptor puede llegar
+  // un instante después de que la tarjeta ya se dibujó.
+  let d;
+  for (let i = 0; i < 40; i++) {
+    d = (await db.doc('publico/estado').get()).data();
+    if (d?.tomandoPedidos === true) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (d?.tomandoPedidos !== true) throw new Error('abrir el evento no habilitó los pedidos');
 });
 await chequear('cerrar el evento congela la caja y lo manda al histórico', async () => {
   barra.once('dialog', (d) => d.accept());
@@ -636,8 +698,12 @@ await chequear('la caja general suma los eventos cerrados y los rankea', async (
   await barra.waitForFunction(() =>
     document.querySelector('#btnOrdenCaja')?.textContent.includes('Ver por fecha'),
     null, { timeout: 5000 });
-  const primero = await barra.textContent('#eventosPasados .item');
-  if (!primero.includes('Prueba de noche')) throw new Error('el ranking no ordena: ' + primero);
+  await barra.waitForFunction(() =>
+    document.querySelector('#eventosPasados .item')?.textContent.includes('Prueba de noche'),
+    null, { timeout: 10000 }).catch(async () => {
+      throw new Error('el ranking no ordena: '
+        + (await barra.textContent('#eventosPasados .item')));
+    });
 
   // Y el detalle de una noche muestra qué se vendió.
   await barra.locator('#eventosPasados [data-detalle]').first().click();
@@ -780,7 +846,8 @@ await chequear('el admin abre un evento con cupo y eso abre el registro', async 
   // así que el link tiene que estar a mano sin arrancarla.
   await barra.waitForSelector('[data-empezar]', { timeout: 10000 });
   await barra.waitForSelector('[data-invitar]', { timeout: 10000 });
-  const fila = await barra.locator('.item', { hasText: 'Noche con lista' }).textContent();
+  const fila = await barra.locator('#calendario .item', { hasText: 'Noche con lista' })
+    .first().textContent();
   if (!fila.includes('cupo 2')) throw new Error('la agenda no muestra el cupo: ' + fila);
   // Abrir el evento son varias escrituras; la del registro puede llegar
   // un instante después de que la tarjeta ya se dibujó.
@@ -805,8 +872,8 @@ await chequear('el admin abre un evento con cupo y eso abre el registro', async 
 });
 
 await chequear('las invitaciones traen el link y el QR de la noche', async () => {
-  await barra.locator('.item', { hasText: 'Noche con lista' })
-    .locator('[data-invitar]').click();
+  await barra.locator('#calendario .item', { hasText: 'Noche con lista' })
+    .first().locator('[data-invitar]').click();
   await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
   await barra.waitForSelector('#dlgInvitar .qr', { timeout: 10000 });
   const idNoche = await idDeNoche('Noche con lista');
@@ -853,7 +920,8 @@ await chequear('una noche nueva NO se roba el link de la anterior', async () => 
   if (uno.capacidad !== 2 || dos.capacidad !== 3) throw new Error('se mezclaron los cupos');
 
   // Y el QR de la primera sigue siendo el de la primera.
-  await barra.locator('.item', { hasText: 'Noche con lista' }).locator('[data-invitar]').click();
+  await barra.locator('#calendario .item', { hasText: 'Noche con lista' })
+    .first().locator('[data-invitar]').click();
   await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
   await barra.waitForSelector('#dlgInvitar .qr', { timeout: 10000 });
   const dice = await barra.textContent('#dlgInvitar');
@@ -863,7 +931,8 @@ await chequear('una noche nueva NO se roba el link de la anterior', async () => 
 
   // La noche de prueba se saca para no dejarla dando vueltas en la agenda.
   barra.once('dialog', (d) => d.accept());
-  await barra.locator('.item', { hasText: 'La noche siguiente' }).locator('[data-quitar]').click();
+  await barra.locator('#calendario .item', { hasText: 'La noche siguiente' })
+    .first().locator('[data-quitar]').click();
   await barra.waitForFunction(() =>
     !document.querySelector('#calendario')?.textContent.includes('La noche siguiente'),
     null, { timeout: 10000 });
@@ -1070,7 +1139,8 @@ await chequear('la lista de la puerta va plegada: faltan abierto, ya entraron ce
 
 await chequear('desde la noche se ve quiénes se anotaron', async () => {
   await barra.click('#tabCalendario');
-  await barra.locator('.item', { hasText: 'Noche con lista' }).locator('[data-invitar]').click();
+  await barra.locator('#calendario .item', { hasText: 'Noche con lista' })
+    .first().locator('[data-invitar]').click();
   await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
   const pliegue = barra.locator('#dlgInvitar details[data-pliegue="anotados"]');
   await pliegue.waitFor({ timeout: 10000 });
