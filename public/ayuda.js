@@ -69,9 +69,17 @@
       quien: ['admin'],
       titulo: 'Invitados y el link de registro',
       cuerpo: `
-        <p>En el <b>Calendario</b>, cada noche con cupo tiene <b>Link</b>. Eso abre
-        el menú de compartir de tu celular: elegís WhatsApp, Instagram o lo que
-        sea. <b>La app no manda nada por su cuenta.</b></p>
+        <p>Cada noche con cupo tiene <b>Invitaciones</b>: en el
+        <b>Calendario</b>, en su renglón, y en <b>Noche</b> si es la que está en
+        curso. Ahí adentro está el <b>link</b>, el <b>QR</b> para bajar y cuántos
+        se anotaron. <b>Mandar el link</b> abre el menú de compartir de tu celular:
+        elegís WhatsApp, Instagram o lo que sea. <b>La app no manda nada por su
+        cuenta.</b></p>
+        <p>El link es <b>uno solo</b> para todo el bar y lleva a <b>una</b> noche:
+        la última que agendaste con cupo. Si tenés dos agendadas y querés que la
+        gente se anote a la otra, entrá a sus <b>Invitaciones</b> y tocá <b>Pasar
+        el link a esta noche</b>. El cartel rojo te avisa cuando el link está
+        apuntando a otra.</p>
         <p>El invitado deja nombre y teléfono, y recibe <b>su pase con QR</b>.</p>
         <p>En <b>Puerta</b> ves la lista completa, quién entró, a qué hora y
         <b>cuánto consumió cada uno</b>.</p>

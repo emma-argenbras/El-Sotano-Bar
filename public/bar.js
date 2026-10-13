@@ -51,7 +51,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Instalada, la barra abre a pantalla completa y sin barra del navegador.
@@ -264,6 +264,7 @@ function escucharEvento() {
 
   onSnapshot(doc(db, 'publico', 'registro'), (d) => {
     estado.registro = d.exists() ? d.data() : null;
+    pintarInvitar();
     pintarPuerta(); pintarEvento(); pintarCalendario();
   }, () => {});
 
@@ -325,6 +326,7 @@ const barmanMarcados = () =>
   [...document.querySelectorAll('#elegirBarman input:checked')].map((i) => i.value);
 
 $('#btnCancelarEvento').onclick = () => $('#dlgEvento').close();
+$('#btnCerrarInvitar').onclick = () => { estado.invitandoA = null; $('#dlgInvitar').close(); };
 $('#btnConfirmarEvento').onclick = async () => {
   const nombre = $('#inpEvento').value.trim();
   if (!nombre) { $('#inpEvento').focus(); return; }
@@ -377,6 +379,127 @@ async function borrarAgendado(ev) {
         { eventoId: null, nombre: null, capacidad: 0, registrados: 0, abierto: false });
     }
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+// ---------- invitaciones: el link y el QR de una noche ya creada ----------
+// El link de registro es uno solo (/registro.html) y apunta a la noche que
+// tenga el registro abierto. Por eso acá no alcanza con mostrarlo: hay que
+// decir a qué noche está apuntando, y dejar pasarlo a esta.
+const LINK_REGISTRO = () => `${location.origin}/registro.html`;
+
+let qrGuardado = null;
+// El QR con el coquito en el medio, igual que el de la carta. Nivel H de
+// corrección: por eso el logo tapando el 20% del centro no lo rompe.
+async function qrRegistro() {
+  if (qrGuardado) return qrGuardado;
+  const { qrDataURL } = await import('/vendor/qr.js');
+  const base = await qrDataURL(LINK_REGISTRO(), {
+    width: 600, margin: 2, errorCorrectionLevel: 'H',
+    color: { dark: '#0d0b10', light: '#ffffff' },
+  });
+  try {
+    const cargar = (src) => new Promise((ok, mal) => {
+      const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = src;
+    });
+    const lienzo = document.createElement('canvas');
+    lienzo.width = lienzo.height = 600;
+    const cx = lienzo.getContext('2d');
+    cx.drawImage(await cargar(base), 0, 0, 600, 600);
+    const lado = 120, desde = (600 - lado) / 2;
+    cx.fillStyle = '#ffffff';
+    cx.fillRect(desde - 10, desde - 10, lado + 20, lado + 20);
+    cx.drawImage(await cargar('/iconos/icono.svg'), desde, desde, lado, lado);
+    qrGuardado = lienzo.toDataURL('image/png');
+  } catch { qrGuardado = base; }   // sin logo se lee igual
+  return qrGuardado;
+}
+
+function abrirInvitar(ev) {
+  if (!ev) return;
+  estado.invitandoA = ev;
+  $('#tituloInvitar').textContent = `Invitaciones · ${ev.nombre}`;
+  $('#cuerpoInvitar').innerHTML = '<div class="cargando">Armando el QR…</div>';
+  $('#dlgInvitar').showModal();
+  pintarInvitar();
+}
+
+async function pintarInvitar() {
+  const ev = estado.invitandoA;
+  if (!ev || !$('#dlgInvitar').open) return;
+  const url = LINK_REGISTRO();
+  const reg = estado.registro;
+  const esta = reg?.eventoId === ev.id;
+  const vivo = esta && reg.abierto !== false;
+  const anotados = Number(esta ? reg.registrados || 0 : 0);
+  const cupo = Number(ev.capacidad || 0);
+  const otra = reg?.eventoId && !esta && reg.abierto !== false ? reg.nombre : '';
+
+  // Sin cupo no hay lista: no tiene sentido mostrar un QR que no lleva a nada.
+  if (!cupo) {
+    $('#cuerpoInvitar').innerHTML = `<div class="aviso mal"><span>⚠</span><div>
+      <b>Esta noche no tiene cupo.</b> Sin cupo no hay lista de invitados: editala,
+      ponele una capacidad y el registro abre solo.</div></div>`;
+    return;
+  }
+
+  const img = await qrRegistro();
+  if (estado.invitandoA !== ev || !$('#dlgInvitar').open) return;  // cambió mientras cargaba
+
+  const aviso = vivo ? '' : `
+    <div class="aviso mal"><span>⚠</span><div>
+      ${otra
+        ? `<b>El link está apuntando a “${esc(otra)}”.</b> Si lo compartís así, la
+           gente se anota para esa noche.`
+        : '<b>El registro de esta noche está cerrado.</b> Así nadie puede anotarse.'}
+    </div></div>
+    <button class="btn primario ancho-full solo-gerente-inline" id="btnActivarRegistro"
+            style="margin:.7rem 0">Pasar el link a esta noche</button>`;
+
+  $('#cuerpoInvitar').innerHTML = `
+    ${aviso}
+    <div class="lienzo-pase" style="padding:.9rem">
+      <img class="qr" src="${img}" alt="QR para anotarse" style="max-width:240px">
+      <div class="pie-pase">Para anotarse a ${esc(ev.nombre)}</div>
+    </div>
+    <p style="font-size:.8rem;color:var(--oro);word-break:break-all;margin:.8rem 0 .2rem">${esc(url)}</p>
+    <p style="font-size:.78rem;color:var(--suave);margin:0 0 .8rem">
+      ${vivo
+        ? `${anotados} de ${cupo} anotados · quedan ${Math.max(0, cupo - anotados)} lugares`
+        : 'Mientras no sea la noche del link, esto no lleva acá.'}</p>
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+      <button class="btn primario" id="btnMandarLink" style="flex:1">Mandar el link</button>
+      <button class="btn" id="btnBajarQr" style="flex:1">Bajar el QR</button>
+    </div>
+    <p style="font-size:.74rem;color:var(--suave);margin:.7rem 0 0">
+      El link y el QR son siempre los mismos. La app no manda nada sola: elegís vos
+      por dónde compartirlo.</p>`;
+
+  if ($('#btnActivarRegistro')) $('#btnActivarRegistro').onclick = (e) => activarRegistro(ev, e.currentTarget);
+  $('#btnMandarLink').onclick = (e) => compartirRegistro(ev, e.currentTarget);
+  $('#btnBajarQr').onclick = async () => {
+    const a = document.createElement('a');
+    a.href = await qrRegistro();
+    a.download = 'qr-' + String(ev.nombre).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.png';
+    a.click();
+  };
+}
+
+// Pasar el registro a esta noche. Los que ya estaban anotados para ella se
+// vuelven a contar: el contador no puede arrancar de cero si ya hay gente.
+async function activarRegistro(ev, boton) {
+  const cupo = Number(ev.capacidad || 0);
+  if (!cupo) return;
+  if (boton) { boton.disabled = true; boton.textContent = 'Pasando…'; }
+  const yaAnotados = (estado.invitadosTodos || []).filter((i) => i.eventoId === ev.id).length;
+  try {
+    await setDoc(doc(db, 'publico', 'registro'), {
+      eventoId: ev.id, nombre: ev.nombre, capacidad: cupo,
+      registrados: yaAnotados, abierto: true,
+    });
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Pasar el link a esta noche'; }
+    alert('No se pudo: ' + (e.code || e.message));
+  }
 }
 
 // El link de registro se comparte por donde el celular ofrezca: WhatsApp,
@@ -531,15 +654,17 @@ function pintarEvento() {
         <div><b>${r.cancelados}</b><span>cancelados</span></div>
         <div class="plata"><b>${plata(r.facturado)}</b><span>caja</span></div>
       </div>
-      ${estado.registro?.eventoId === estado.evento.id && Number(estado.registro.capacidad) > 0 ? `
+      ${Number(estado.evento.capacidad || 0) > 0 ? `
       <div class="interruptor" style="margin-top:.9rem">
         <div>
           <b>Registro de invitados</b>
-          <span>${Number(estado.registro.registrados || 0)} de ${Number(estado.registro.capacidad)} anotados
-            · ${estado.invitados.filter((i) => i.ingresadoEn).length} adentro</span>
+          <span>${estado.registro?.eventoId === estado.evento.id
+            ? `${Number(estado.registro.registrados || 0)} de ${Number(estado.evento.capacidad)} anotados
+               · ${estado.invitados.filter((i) => i.ingresadoEn).length} adentro`
+            : 'El link está apuntando a otra noche. Tocá Invitaciones para pasarlo a esta.'}</span>
           <span style="word-break:break-all;color:var(--oro)">${esc(location.origin)}/registro.html</span>
         </div>
-        <button class="btn solo-gerente-inline" id="btnLinkRegistro">Compartir</button>
+        <button class="btn solo-gerente-inline" id="btnLinkRegistro">Invitaciones</button>
       </div>` : ''}
       <div class="interruptor" style="margin-top:.9rem">
         <div>
@@ -572,8 +697,7 @@ function pintarEvento() {
     </div>`;
   if ($('#btnCerrarEvento')) $('#btnCerrarEvento').onclick = cerrarEvento;
   if ($('#btnTurno')) $('#btnTurno').onclick = editarTurno;
-  if ($('#btnLinkRegistro')) $('#btnLinkRegistro').onclick = (e) =>
-    compartirRegistro(estado.evento, e.currentTarget);
+  if ($('#btnLinkRegistro')) $('#btnLinkRegistro').onclick = () => abrirInvitar(estado.evento);
   if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
     const prender = !estado.tomandoPedidos;
     if (!prender && !confirm('¿Cortar los pedidos?\n\nEl QR sigue andando, pero el cliente no va a poder mandar nada hasta que lo reabras.')) return;
@@ -769,9 +893,10 @@ function filaNoche(e, hoy) {
         estado.registro?.eventoId === e.id ? ` · ${Number(estado.registro.registrados || 0)} anotados` : ''}${
         e.estado === 'cerrado' ? ` · ${plata(e.cierre?.facturado || 0)}` : ''}</div>
     </div>
+    ${Number(e.capacidad || 0) > 0 && e.estado !== 'cerrado' ? `
+      <button class="btn" data-invitar="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">
+        Invitaciones</button>` : ''}
     ${e.estado === 'agendado' ? `
-      ${estado.registro?.eventoId === e.id && estado.registro.abierto
-        ? `<button class="btn" data-link="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">Link</button>` : ''}
       <button class="btn" data-editar="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">Editar</button>
       <button class="btn peligro" data-quitar="${esc(e.id)}" style="padding:.3rem .6rem;font-size:.78rem">✕</button>
       <button class="btn primario" data-empezar="${esc(e.id)}" style="padding:.3rem .7rem;font-size:.8rem">Arrancar</button>
@@ -781,7 +906,7 @@ function filaNoche(e, hoy) {
 
 function enganchatNoches(cont, hoy) {
   const buscar = (id) => noches().find((e) => e.id === id);
-  cont.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => compartirRegistro(buscar(b.dataset.link), b));
+  cont.querySelectorAll('[data-invitar]').forEach((b) => b.onclick = () => abrirInvitar(buscar(b.dataset.invitar)));
   cont.querySelectorAll('[data-editar]').forEach((b) => b.onclick = () => abrirEvento(buscar(b.dataset.editar)));
   cont.querySelectorAll('[data-quitar]').forEach((b) => b.onclick = () => borrarAgendado(buscar(b.dataset.quitar)));
   cont.querySelectorAll('[data-empezar]').forEach((b) => b.onclick = () => empezarNoche(buscar(b.dataset.empezar)));
@@ -792,7 +917,8 @@ function enganchatNoches(cont, hoy) {
 // pase y nada más.
 function escucharInvitados() {
   onSnapshot(collection(db, 'invitados'), (snap) => {
-    estado.invitados = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    estado.invitadosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    estado.invitados = estado.invitadosTodos
       .filter((i) => !estado.registro?.eventoId || i.eventoId === estado.registro.eventoId)
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
     pintarPuerta();

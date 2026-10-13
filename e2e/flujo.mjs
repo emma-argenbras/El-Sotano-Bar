@@ -678,7 +678,7 @@ await chequear('el admin abre un evento con cupo y eso abre el registro', async 
   // El registro abre al agendar: la gracia es que se anoten antes de la noche,
   // así que el link tiene que estar a mano sin arrancarla.
   await barra.waitForSelector('[data-empezar]', { timeout: 10000 });
-  await barra.waitForSelector('[data-link]', { timeout: 10000 });
+  await barra.waitForSelector('[data-invitar]', { timeout: 10000 });
   const fila = await barra.locator('.item', { hasText: 'Noche con lista' }).textContent();
   if (!fila.includes('cupo 2')) throw new Error('la agenda no muestra el cupo: ' + fila);
   // Abrir el evento son varias escrituras; la del registro puede llegar
@@ -691,6 +691,67 @@ await chequear('el admin abre un evento con cupo y eso abre el registro', async 
   }
   if (r?.abierto !== true) throw new Error('no abrió el registro');
   if (r?.capacidad !== 2) throw new Error('no guardó el cupo: ' + r?.capacidad);
+});
+
+await chequear('las invitaciones traen el link y el QR de la noche', async () => {
+  await barra.locator('.item', { hasText: 'Noche con lista' })
+    .locator('[data-invitar]').click();
+  await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
+  await barra.waitForSelector('#dlgInvitar .qr', { timeout: 10000 });
+  const texto = await barra.textContent('#dlgInvitar');
+  if (!texto.includes('/registro.html')) throw new Error('no muestra el link: ' + texto);
+  if (!texto.includes('0 de 2 anotados')) throw new Error('no muestra el contador: ' + texto);
+
+  // Un QR con el logo encima que no se lee no sirve: se decodifica de verdad.
+  const src = await barra.getAttribute('#dlgInvitar .qr', 'src');
+  const { PNG } = await import('pngjs');
+  const jsQR = (await import('jsqr')).default;
+  const img = PNG.sync.read(Buffer.from(src.split(',')[1], 'base64'));
+  const leido = jsQR(new Uint8ClampedArray(img.data), img.width, img.height);
+  if (leido?.data !== `${BASE}/registro.html`) throw new Error('el QR dice: ' + leido?.data);
+  await barra.click('#btnCerrarInvitar');
+});
+
+await chequear('si el link quedó apuntando a otra noche, se puede volver a pasar', async () => {
+  const dePrimera = (await db.collection('barra/eventos/items')
+    .where('nombre', '==', 'Noche con lista').get()).docs[0].id;
+
+  // Una segunda noche con cupo se lleva el link: es un registro solo para todas.
+  await barra.click('#btnAgendar');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  await barra.fill('#inpEvento', 'Noche que roba el link');
+  await barra.fill('#inpCapacidad', '3');
+  await barra.click('#btnConfirmarEvento');
+  await barra.waitForFunction(() =>
+    document.querySelector('#calendario')?.textContent.includes('Noche que roba el link'),
+    null, { timeout: 10000 });
+
+  await barra.locator('.item', { hasText: 'Noche con lista' })
+    .locator('[data-invitar]').click();
+  await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
+  await barra.waitForSelector('#btnActivarRegistro', { timeout: 10000 });
+  if (!(await barra.textContent('#dlgInvitar')).includes('Noche que roba el link'))
+    throw new Error('no avisa a qué noche está apuntando el link');
+
+  await barra.click('#btnActivarRegistro');
+  let r;
+  for (let i = 0; i < 40; i++) {
+    r = (await db.doc('publico/registro').get()).data();
+    if (r?.eventoId === dePrimera) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (r?.eventoId !== dePrimera) throw new Error('no pasó el link: ' + r?.eventoId);
+  if (r?.capacidad !== 2 || r?.registrados !== 0) throw new Error('quedó mal el contador');
+  await barra.waitForSelector('#btnActivarRegistro', { state: 'detached', timeout: 10000 });
+  await barra.click('#btnCerrarInvitar');
+
+  // La noche de prueba se saca para no dejarla dando vueltas en la agenda.
+  barra.once('dialog', (d) => d.accept());
+  await barra.locator('.item', { hasText: 'Noche que roba el link' })
+    .locator('[data-quitar]').click();
+  await barra.waitForFunction(() =>
+    !document.querySelector('#calendario')?.textContent.includes('Noche que roba el link'),
+    null, { timeout: 10000 });
 });
 
 const ctxInv = await navegador.newContext({ viewport: { width: 390, height: 844 } });
