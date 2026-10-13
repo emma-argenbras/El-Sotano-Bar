@@ -788,6 +788,41 @@ await chequear('el QR del pase codifica su token', async () => {
   if (leido?.data !== tokenInvitado) throw new Error('el QR dice: ' + leido?.data);
 });
 
+await chequear('el mismo teléfono no se anota dos veces, aunque lo escriba distinto', async () => {
+  const ctxDup = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const dup = await ctxDup.newPage();
+  try {
+    await dup.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await dup.waitForSelector('#formRegistro', { timeout: 15000 });
+    await dup.fill('#inpNombre', 'Ana De Nuevo');
+    // El mismo número de Ana con otro formato: +54 9, guiones, el 0 adelante.
+    await dup.fill('#inpTel', '+54 9 11 5555-0000');
+    await dup.click('#btnRegistrar');
+    await dup.waitForFunction(() =>
+      !document.querySelector('#error')?.classList.contains('oculto'), null, { timeout: 15000 });
+    const dice = await dup.textContent('#errorTexto');
+    if (!dice.includes('ya hay alguien anotado')) throw new Error('otro error: ' + dice);
+    if (dup.url().includes('pase.html')) throw new Error('la dejó anotarse igual');
+  } finally { await ctxDup.close(); }
+
+  // Y lo importante: el contador no se movió, así que no se comió un lugar.
+  const r = await db.doc('publico/registro').get();
+  if (r.data()?.registrados !== 1) throw new Error('el lote dejó algo a medias: ' + r.data()?.registrados);
+});
+
+await chequear('si vuelve a abrir el link, ve su pase en vez del formulario', async () => {
+  // En otra pestaña del mismo celular: el pase abierto se deja como está.
+  const otraPestania = await ctxInv.newPage();
+  try {
+    await otraPestania.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await otraPestania.waitForFunction(() =>
+      document.querySelector('#pantalla')?.textContent.includes('ya estás anotado'),
+      null, { timeout: 15000 });
+    if (await otraPestania.locator('#formRegistro').count())
+      throw new Error('le muestra el formulario igual');
+  } finally { await otraPestania.close(); }
+});
+
 await chequear('lleno el cupo, no se registra nadie más', async () => {
   // Queda uno: lo tomamos, y el siguiente tiene que rebotar.
   const ctx2 = await navegador.newContext({ viewport: { width: 390, height: 844 } });

@@ -6,6 +6,7 @@ import {
   initializeApp, getFirestore, initializeFirestore, connectFirestoreEmulator,
   doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp, writeBatch,
 } from '/vendor/firebase.js';
+import { claveAnotado, digitosTel } from '/tel.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
 const $ = (s) => document.querySelector(s);
@@ -35,6 +36,26 @@ onSnapshot(doc(db, 'publico', 'registro'), (d) => {
   $('#pantalla').innerHTML =
     `<div class="aviso mal"><span>⚠</span><div>No pude cargar la noche.<br>${esc(e.code || e.message)}</div></div>`;
 });
+
+// Si en este celular ya se anotó alguien para esta misma noche, se le muestra
+// su pase en vez del formulario: es la forma más común de anotarse dos veces,
+// volver a abrir el link.
+let yaMiro = false;
+async function miPaseDeEstaNoche() {
+  const id = localStorage.getItem('sotano:invitado');
+  if (!id || yaMiro || !registro?.eventoId) return;
+  yaMiro = true;
+  try {
+    const d = await getDoc(doc(db, 'invitados', id));
+    if (!d.exists() || d.data().eventoId !== registro.eventoId) return;
+    $('#pantalla').innerHTML = `
+      <div class="aviso ok"><span>✓</span><div>
+        <b>${esc(d.data().nombre)}, ya estás anotado para ${esc(registro.nombre)}.</b><br>
+        Una anotación por teléfono: con esta alcanza.</div></div>
+      <a class="btn primario ancho-full" style="margin-top:.9rem;display:block;text-align:center"
+         href="/pase.html?i=${encodeURIComponent(id)}">Ver mi pase</a>`;
+  } catch { /* si no se puede mirar, queda el formulario */ }
+}
 
 function pintar() {
   const cont = $('#pantalla');
@@ -75,6 +96,7 @@ function pintar() {
     </p>`;
 
   $('#formRegistro').onsubmit = registrar;
+  miPaseDeEstaNoche();
 }
 
 async function registrar(e) {
@@ -89,8 +111,10 @@ async function registrar(e) {
 
   const id = token();
   try {
-    // Las dos escrituras van juntas: el invitado y el contador. Si el cupo se
-    // llenó entre que cargó la página y tocó el botón, las reglas lo frenan.
+    // Las tres escrituras van juntas: el invitado, el contador y el candado
+    // del teléfono. Si el cupo se llenó entre que cargó la página y tocó el
+    // botón, o si ese número ya está anotado, las reglas frenan todo el lote
+    // y no queda nada a medias.
     const lote = writeBatch(db);
     lote.set(doc(db, 'invitados', id), {
       eventoId: registro.eventoId, nombre, telefono,
@@ -98,14 +122,26 @@ async function registrar(e) {
     });
     lote.update(doc(db, 'publico', 'registro'),
       { registrados: Number(registro.registrados || 0) + 1 });
+    lote.set(doc(db, 'anotados', claveAnotado(registro.eventoId, telefono)), {
+      eventoId: registro.eventoId, tel: digitosTel(telefono), creadoEn: serverTimestamp(),
+    });
     await lote.commit();
     localStorage.setItem('sotano:invitado', id);
     location.href = `/pase.html?i=${encodeURIComponent(id)}`;
   } catch (err) {
     btn.disabled = false; btn.textContent = 'Reservar mi lugar';
-    fallar(err.code === 'permission-denied'
+    if (err.code !== 'permission-denied') return fallar(err.code || err.message);
+    // El lote se cae por dos motivos y desde afuera no se ve cuál: se preguntan
+    // los lugares, y si todavía quedan es que ese teléfono ya está anotado.
+    let lleno = false;
+    try {
+      const d = await getDoc(doc(db, 'publico', 'registro'));
+      const r = d.data() || {};
+      lleno = Number(r.registrados || 0) >= Number(r.capacidad || 0);
+    } catch { /* si no se puede mirar, se asume lo más común */ }
+    fallar(lleno
       ? 'Justo se agotaron los lugares. Probá de nuevo por si se libera alguno.'
-      : (err.code || err.message));
+      : 'Con ese teléfono ya hay alguien anotado para esta noche. Si perdiste tu pase, escribinos y te lo reenviamos.');
   }
 }
 

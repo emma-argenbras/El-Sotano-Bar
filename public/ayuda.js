@@ -81,6 +81,12 @@
         el link a esta noche</b>. El cartel rojo te avisa cuando el link está
         apuntando a otra.</p>
         <p>El invitado deja nombre y teléfono, y recibe <b>su pase con QR</b>.</p>
+        <p><b>Un teléfono, una anotación por noche.</b> Si intenta de nuevo con el
+        mismo número —aunque lo escriba con +54, con 0 o con 15— le rebota, y si
+        vuelve a abrir el link desde el mismo celular ve su pase en vez del
+        formulario. Al anotar de último momento, si el número ya está en la lista
+        te avisa de quién es y vos decidís si lo anotás igual: hay parejas que
+        comparten teléfono.</p>
         <p>En <b>Puerta</b> ves la lista completa, quién entró, a qué hora y
         <b>cuánto consumió cada uno</b>.</p>
         <p>Si alguien aparece sin anotarse: <b>+ Invitado de último momento</b>.

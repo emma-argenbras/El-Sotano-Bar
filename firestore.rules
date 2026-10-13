@@ -247,6 +247,17 @@ service cloud.firestore {
         && d.get('ingresadoEn', null) == null;
     }
 
+    // El candado de "un teléfono, una anotación". La llave tiene que ser la
+    // noche y el número: así el documento que choca es siempre el mismo.
+    function candadoValido(clave, d) {
+      return d.keys().hasOnly(['eventoId', 'tel', 'creadoEn'])
+        && d.keys().hasAll(['eventoId', 'tel', 'creadoEn'])
+        && d.eventoId == registro().get('eventoId', '')
+        && d.tel is string && d.tel.matches('^[0-9]{6,10}$')
+        && clave == d.eventoId + '__' + d.tel
+        && d.creadoEn == request.time;
+    }
+
     // La casa anota a alguien de último momento aunque esté lleno y aunque el
     // registro esté cerrado: es su decisión. Y puede darlo por entrado en el
     // mismo acto, que es lo que pasa cuando alguien aparece en la puerta.
@@ -278,6 +289,25 @@ service cloud.firestore {
              .hasOnly(['ingresadoEn', 'ingresadoPor']);
 
       allow delete: if esElDueno();
+    }
+
+    // ---------- un teléfono, una anotación por noche ----------
+    // El candado de la lista. Se crea en el mismo lote que el invitado y el
+    // contador: como se puede crear pero nunca pisar, el segundo intento con
+    // el mismo número hace fallar el lote entero y no se anota nada.
+    //
+    // De afuera no se lee a propósito: si se pudiera, cualquiera probaría
+    // teléfonos para averiguar quién está en la lista de esta noche.
+    match /anotados/{clave} {
+      allow get, list: if esBarra() || esPuerta();
+      allow create: if (hayLugar() && candadoValido(clave, request.resource.data))
+        || (esAdmin()
+            && request.resource.data.keys().hasOnly(['eventoId', 'tel', 'creadoEn'])
+            && request.resource.data.creadoEn == request.time);
+      // Pisarlo seria desarmar el candado.
+      allow update: if false;
+      // La casa lo libera si anoto mal un numero.
+      allow delete: if esAdmin();
     }
 
     // ---------- el padrón: quién puede entrar al panel ----------

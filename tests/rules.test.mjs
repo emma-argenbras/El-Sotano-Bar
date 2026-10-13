@@ -168,6 +168,64 @@ describe('registro de invitados', () => {
   });
 });
 
+describe('un teléfono, una anotación', () => {
+  const candado = (extra = {}) => ({
+    eventoId: 'ev-1', tel: '1155553333', creadoEn: serverTimestamp(), ...extra,
+  });
+
+  it('el primero con ese teléfono entra', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'anotados/ev-1__1155553333'), candado()));
+  });
+
+  it('el segundo con el mismo teléfono rebota', async () => {
+    await assertFails(setDoc(doc(otroAnon(), 'anotados/ev-1__1155553333'), candado()));
+  });
+
+  it('el mismo teléfono en otra noche sí: el candado es por evento', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/registro'),
+        { eventoId: 'ev-2', nombre: 'Otra', capacidad: 3, registrados: 0, abierto: true }));
+    await assertSucceeds(setDoc(doc(anon(), 'anotados/ev-2__1155553333'),
+      candado({ eventoId: 'ev-2' })));
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'publico/registro'),
+        { eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 1, abierto: true }));
+  });
+
+  it('la llave tiene que ser la noche y el número, no cualquier cosa', async () => {
+    await assertFails(setDoc(doc(anon(), 'anotados/cualquier-cosa'), candado({ tel: '1155554444' })));
+    await assertFails(setDoc(doc(anon(), 'anotados/ev-1__1155554444'), candado({ tel: '1155559999' })));
+  });
+
+  it('no se puede anotar contra una noche que no es la del registro', async () => {
+    await assertFails(setDoc(doc(anon(), 'anotados/ev-9__1155554444'),
+      candado({ eventoId: 'ev-9', tel: '1155554444' })));
+  });
+
+  it('nadie de afuera puede leerlo: sería preguntar quién está en la lista', async () => {
+    await assertFails(getDoc(doc(anon(), 'anotados/ev-1__1155553333')));
+    await assertFails(getDocs(collection(anon(), 'anotados')));
+  });
+
+  it('la barra y la puerta sí lo leen', async () => {
+    await assertSucceeds(getDocs(collection(barra(), 'anotados')));
+    await assertSucceeds(getDocs(collection(puerta(), 'anotados')));
+  });
+
+  it('la casa lo libera si se anotó mal un número', async () => {
+    await assertSucceeds(deleteDoc(doc(barra(), 'anotados/ev-1__1155553333')));
+  });
+
+  it('pisarlo no se puede ni siendo la casa: eso desarmaría el candado', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) =>
+      setDoc(doc(ctx.firestore(), 'anotados/ev-1__1155558888'),
+        { eventoId: 'ev-1', tel: '1155558888', creadoEn: new Date() }));
+    await assertFails(updateDoc(doc(barra(), 'anotados/ev-1__1155558888'), { tel: '1155550001' }));
+    await assertFails(setDoc(doc(anon(), 'anotados/ev-1__1155558888'),
+      { eventoId: 'ev-1', tel: '1155558888', creadoEn: serverTimestamp() }));
+  });
+});
+
 describe('invitado de último momento', () => {
   it('la casa lo anota aunque esté lleno', async () => {
     await env.withSecurityRulesDisabled(async (ctx) =>

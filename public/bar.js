@@ -8,6 +8,7 @@ import {
   getFirestore, connectFirestoreEmulator, collection, doc, query, where, orderBy,
   onSnapshot, updateDoc, setDoc, Timestamp, addDoc, limit, serverTimestamp,
 } from '/vendor/firebase.js';
+import { claveAnotado, digitosTel } from '/tel.js';
 
 // Las cuentas del turno no tienen mail: el usuario escribe "barra-lunes" y
 // por detrás va "barra-lunes@barra.local". El dominio no existe ni tiene que
@@ -954,12 +955,27 @@ $('#btnGuardarInvitado').onclick = async () => {
   if (nombre.length < 2) { $('#inpInvNombre').focus(); return; }
   const entra = $('#inpInvEntra').checked;
   const btn = $('#btnGuardarInvitado');
+  const evento = estado.evento?.id || estado.registro?.eventoId || '';
+
+  // Un teléfono, una anotación. Acá la casa sí puede forzarlo: pasa que dos
+  // personas comparten un número. Pero que lo decida, no que se le escape.
+  const repetido = digitosTel(telefono) && (estado.invitadosTodos || []).find(
+    (i) => i.eventoId === evento && digitosTel(i.telefono) === digitosTel(telefono));
+  let sufijo = '';
+  if (repetido) {
+    if (!confirm(`Con ese teléfono ya está anotado ${repetido.nombre}.\n\n¿Anotarlo igual?`)) return;
+    sufijo = String(Date.now());
+  }
   btn.disabled = true; btn.textContent = 'Anotando…';
 
   const id = tokenInvitado();
   try {
+    if (digitosTel(telefono)) {
+      await setDoc(doc(db, 'anotados', claveAnotado(evento, telefono, sufijo)),
+        { eventoId: evento, tel: digitosTel(telefono), creadoEn: serverTimestamp() });
+    }
     await setDoc(doc(db, 'invitados', id), {
-      eventoId: estado.evento?.id || estado.registro?.eventoId || '',
+      eventoId: evento,
       nombre, telefono,
       creadoEn: serverTimestamp(),
       ...(entra ? { ingresadoEn: serverTimestamp(), ingresadoPor: estado.usuario || 'casa' } : {}),
@@ -972,7 +988,9 @@ $('#btnGuardarInvitado').onclick = async () => {
     await mostrarPaseNuevo(id, nombre);
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Anotar';
-    alert('No se pudo: ' + (e.code || e.message));
+    alert(e.code === 'permission-denied' && digitosTel(telefono)
+      ? 'Ese teléfono ya está anotado para esta noche.'
+      : 'No se pudo: ' + (e.code || e.message));
   }
 };
 
