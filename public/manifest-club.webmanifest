@@ -1,7 +1,7 @@
 {
   "id": "/pase.html",
-  "name": "Club Sótano",
-  "short_name": "Club",
+  "name": "Sótano Club",
+  "short_name": "Sótano Club",
   "description": "Tu pase de entrada y la próxima noche de Sótano.",
   "start_url": "/pase.html",
   "scope": "/pase.html",

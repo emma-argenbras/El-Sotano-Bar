@@ -1744,13 +1744,13 @@ await chequear('la casa saca a alguien de la lista y le libera el teléfono', as
     throw new Error(`el contador no bajó: ${antes} -> ${r?.registrados}`);
 });
 
-await chequear('el club se arma solo con los que se anotaron', async () => {
+await chequear('Sótano Club se arma solo con los que se anotaron', async () => {
   // No hay una base de clientes aparte: anotarse a una noche YA es el alta.
   // La lista junta por teléfono, no por nombre, porque cada uno lo escribe
   // distinto cada vez.
   await barra.click('#tabCalendario');
   await barra.waitForFunction(() =>
-    document.querySelector('#calendario')?.textContent.includes('El club'),
+    document.querySelector('#calendario')?.textContent.includes('Sótano Club'),
     null, { timeout: 15000 });
   const club = await barra.textContent('#calendario');
   if (!club.includes('Ana Prueba'))
@@ -1773,7 +1773,7 @@ await chequear('el club se arma solo con los que se anotaron', async () => {
   await barra.fill('#buscaClub', '');
 });
 
-await chequear('el pase es la app del club: ícono y nombre propios', async () => {
+await chequear('el pase es Sótano Club: ícono y nombre propios', async () => {
   // En la pantalla de inicio hay tres apps de la casa. Esta es la del
   // invitado y no puede llamarse igual ni verse igual que las otras dos.
   const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
@@ -1783,12 +1783,12 @@ await chequear('el pase es la app del club: ícono y nombre propios', async () =
     const href = await pg.getAttribute('link[rel=manifest]', 'href');
     if (href !== '/manifest-club.webmanifest') throw new Error('manifest: ' + href);
     const m = await pg.evaluate((u) => fetch(u).then((r) => r.json()), href);
-    if (m.short_name !== 'Club') throw new Error('short_name: ' + m.short_name);
+    if (m.short_name !== 'Sótano Club') throw new Error('short_name: ' + m.short_name);
     if (m.start_url !== '/pase.html') throw new Error('start_url: ' + m.start_url);
     if (m.id === '/index.html' || m.id === '/bar.html')
       throw new Error('comparte id con otra app: se instalaría una sola');
     const tituloIOS = await pg.getAttribute('meta[name="apple-mobile-web-app-title"]', 'content');
-    if (tituloIOS !== 'Club') throw new Error('nombre en iOS: ' + tituloIOS);
+    if (tituloIOS !== 'Sótano Club') throw new Error('nombre en iOS: ' + tituloIOS);
     if (!m.icons.some((i) => i.purpose === 'maskable')) throw new Error('sin ícono maskable');
     // Y los íconos que declara existen y son los del club, no los de la carta.
     const faltan = await pg.evaluate(async (iconos) => {

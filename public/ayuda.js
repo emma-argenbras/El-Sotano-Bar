@@ -111,12 +111,12 @@
         <p>Si alguien aparece sin anotarse: <b>+ Invitado de último momento</b>.
         Mismo formato de teléfono, o dejalo vacío si no hay.
         Entra aunque la lista esté llena. Le podés mandar su pase ahí mismo.</p>
-        <p><b>El club</b> está abajo de todo en <b>Calendario</b>: todos los que
+        <p><b>Sótano Club</b> está abajo de todo en <b>Calendario</b>: todos los que
         se anotaron alguna vez, juntados por teléfono. No hay que darlos de
         alta — anotarse a una noche ya es el alta. De cada uno ves cuántas
         noches vino, cuántas veces entró y cuándo fue la última. Se busca por
         nombre o por teléfono.</p>
-        <p>Del lado de la persona, su pase <b>es</b> la app del club: la puede
+        <p>Del lado de la persona, su pase <b>es</b> la app de Sótano Club: la puede
         instalar en su celular desde el pase, queda con su propio ícono claro
         —distinto del de la carta y del de la barra— y abre directo en su
         entrada, aunque abajo no haya señal.</p>`,

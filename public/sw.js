@@ -1,7 +1,7 @@
 // Service worker de Sótano.
 // El local es un sótano: la señal se corta. El cascarón de la app tiene que
 // abrir igual, y Firestore ya resuelve sus datos con su propio cache.
-const VERSION = 'sotano-8d6b2701ac5e';
+const VERSION = 'sotano-ff730ad28ce6';
 const ESENCIALES = [
   '/', '/index.html', '/bar.html', '/estilos.css', '/app.js', '/bar.js',
   '/config.js', '/actualizar.js', '/ayuda.js', '/tel.js', '/instalar.js',

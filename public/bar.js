@@ -912,9 +912,9 @@ function pintarCalendario() {
   engancharClub(cont);
 }
 
-// ---------- el club ----------
+// ---------- Sótano Club ----------
 // No hay una base de clientes aparte: anotarse a una noche YA es el alta. La
-// gente del club son los invitados de todas las noches, juntados por teléfono
+// gente de Sótano Club son los invitados de todas las noches, juntados por teléfono
 // —que es el único dato que no se repite— y no por nombre, que cada uno
 // escribe distinto cada vez.
 //
@@ -948,7 +948,7 @@ function genteDelClub() {
 function bloqueClub() {
   const todos = genteDelClub();
   if (!todos.length) {
-    return `<div class="grupo-personal">El club</div>
+    return `<div class="grupo-personal">Sótano Club</div>
       <p style="color:var(--suave);font-size:.9rem;margin:0">
         Todavía no se anotó nadie. Cada persona que se anota a una noche entra
         acá sola.</p>`;
@@ -964,7 +964,7 @@ function bloqueClub() {
   const repiten = todos.filter((p) => p.noches > 1).length;
 
   return `
-    <div class="grupo-personal">El club · ${todos.length}</div>
+    <div class="grupo-personal">Sótano Club · ${todos.length}</div>
     <p style="color:var(--suave);font-size:.86rem;margin:0 0 .6rem">
       Todos los que se anotaron alguna vez, juntados por teléfono.${
       repiten ? ` <b>${repiten}</b> volvieron más de una noche.` : ''}
