@@ -71,6 +71,14 @@
     <div id="misPedidos"><div class="cargando">Buscando tus pedidos…</div></div>
   </section>
 
+  <!-- Va al final y no arriba: el que llega quiere ver la carta, no que le
+       pidan instalar nada. Se esconde sola si ya está instalada. -->
+  <div class="instalar oculto" style="margin-bottom:1.4rem">
+    <b style="font-size:.95rem">Guardala en tu celular</b>
+    <small>1. Instalala · 2. Pedí desde la mesa · 3. Te avisamos cuando está listo</small>
+    <button class="btn primario ancho-full" data-instalar-btn>⬇ Instalar</button>
+  </div>
+
 </main>
 
 <div class="carrito" id="carrito" aria-live="polite">
@@ -119,9 +127,19 @@
   <div style="font-size:.78rem;color:var(--suave);margin-top:.7rem;word-break:break-all" id="dlgMesaLink"></div>
 </dialog>
 
+<dialog id="dlgInstalar">
+  <h2 style="margin-top:0">Instalar Sótano</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin-top:0">
+    Queda como una app más: abre a pantalla completa y entrás a la carta de una.
+  </p>
+  <div id="pasosInstalar" style="font-size:.92rem;line-height:1.6"></div>
+  <button class="btn primario ancho-full" id="btnCerrarInstalar" style="margin-top:1.2rem">Listo</button>
+</dialog>
+
 <script src="/version.js"></script>
 <script src="/config.js"></script>
 <script type="module" src="/app.js"></script>
+<script src="/instalar.js"></script>
 <script src="/actualizar.js"></script>
 </body>
 </html>

@@ -291,6 +291,29 @@ await chequear(`entra al panel con ${MAIL_BARRA}`, async () => {
   await barra.click('#btnEntrar');
   await barra.waitForSelector('#vistaPanel:not([hidden])', { timeout: 15000 });
 });
+await chequear('el cliente también puede guardarse la carta, con los pasos', async () => {
+  // En iPhone el navegador NUNCA ofrece instalar solo: hay que ir a Compartir
+  // → Agregar a inicio, y nadie lo sabe. Sin este botón, el cliente no tiene
+  // forma de guardarse la app.
+  const caja = cliente.locator('.instalar');
+  if (await caja.evaluate((e) => e.classList.contains('oculto')))
+    throw new Error('el ofrecimiento para instalar quedó escondido');
+  const pasos = await caja.textContent();
+  for (const paso of ['Instalala', 'Pedí desde la mesa', 'listo'])
+    if (!pasos.includes(paso)) throw new Error('le falta el paso: ' + paso);
+
+  await cliente.locator('.instalar [data-instalar-btn]').click();
+  await cliente.waitForSelector('#dlgInstalar[open]', { timeout: 5000 });
+  if (!(await cliente.textContent('#pasosInstalar')).trim())
+    throw new Error('el instructivo quedó vacío');
+  await cliente.click('#btnCerrarInstalar');
+  if (await cliente.locator('#dlgInstalar').evaluate((d) => d.open))
+    throw new Error('no cerró');
+  // Y no se comió la carta que la persona estaba mirando.
+  if (!(await cliente.textContent('#carta')).trim())
+    throw new Error('se perdió la carta');
+});
+
 await chequear('adentro del panel se puede instalar, sin depender del navegador', async () => {
   const boton = barra.locator('header.tope [data-instalar-btn]');
   if (!(await boton.isVisible())) throw new Error('no hay botón de instalar estando logueado');
