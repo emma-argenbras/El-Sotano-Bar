@@ -191,12 +191,10 @@
         <p>De acá se ven <b>Pedidos</b>, <b>Carta</b> (con el stock y el conteo),
         <b>Depósito</b> y <b>Noche</b>. La caja general, el calendario y la
         puerta son de otras cuentas.</p>
-        <p>Desde el <b>Depósito</b> cargás la mercadería: es este celular el
-        que tiene las botellas delante. Alta de insumos, carga inicial e
-        ingresos <b>a cuenta</b> del proveedor.</p>
-        <p>Lo que se paga en el momento lo carga la casa, no vos: ese gasto
-        sale de la caja, y la caja no se maneja desde acá. Por eso tampoco
-        aparece lo que se les debe a los proveedores.</p>
+        <p>El <b>Depósito</b> es para mirar: lo que hay guardado y qué se está
+        por acabar, para no prometer un trago que no se puede hacer. No se
+        carga mercadería desde acá, ni se ven precios ni lo que se le debe a
+        los proveedores — eso es de la casa.</p>
         <p><b>No toques Salir</b> salvo que la casa te lo pida: para volver a
         entrar hace falta la contraseña del local.</p>`,
     },
@@ -294,13 +292,11 @@
         registrado con tu nombre. Si un trago de la carta sale de ese insumo,
         no te deja hasta que lo saques de la receta — si no, el trago se
         agotaría solo y nadie entendería por qué.</p>
-        <p>Esto lo cargás vos, un administrador, o <b>el celular del local</b>,
-        que es el que tiene las botellas delante y hace la carga inicial. Lo
-        único que no puede desde ahí es un ingreso <b>Pagado</b>: ese sale de
-        la caja, y la caja es de la casa. Tampoco ve lo que se les debe a los
-        proveedores.</p>
-        <p>El <b>barman de turno</b> no carga nada del depósito: pasa una noche
-        y se va. Solo descuenta al entregar.</p>`,
+        <p>Esto lo cargás vos o un administrador con su cuenta. <b>Desde el
+        celular de la barra no se puede</b>: ese aparato ve el depósito para
+        saber qué hay —sin precios, sin compras y sin la deuda— y descuenta al
+        entregar, pero no da de alta mercadería ni le pone precio. Vive
+        prendido arriba del mostrador y lo levanta cualquiera.</p>`,
     },
     {
       quien: ['admin', 'puerta'],

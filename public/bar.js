@@ -1575,7 +1575,7 @@ function aplicarRol() {
   estado.esAparato = !estado.dueno && estado.rol === 'barra';
   b.toggle('es-aparato', estado.esAparato);
   pintarQuienAtiende();
-  if (estado.dueno || estado.rol === 'admin' || estado.esAparato) escucharPlataDeposito();
+  if (estado.dueno || estado.rol === 'admin') escucharPlataDeposito();
   $('#tabCaja').hidden = !(estado.dueno || estado.rol === 'admin');
   // El depósito también lo ve el celular de la barra: necesita saber qué hay
   // para no prometer un trago que no se puede hacer. Lo ve de mirar nada más
@@ -2355,23 +2355,8 @@ function escucharPlataDeposito() {
   if (yaEscuchaPlataDeposito) return;
   yaEscuchaPlataDeposito = true;
 
-  // Proveedores y compras los lee quien maneja el depósito: el celular del
-  // local también, porque carga la mercadería.
-  onSnapshot(collection(db, 'proveedores'), (snap) => {
-    estado.proveedores = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
-    pintarDeposito();
-  }, () => {});
-  onSnapshot(collection(db, 'compras'), (snap) => {
-    estado.compras = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0));
-    pintarDeposito();
-  }, () => {});
-
-  // Los gastos son plata de la caja: solo la casa. Son los pagos a cuenta que
-  // bajan la deuda, y hacen falta completos, no solo los del rango que esté
-  // mirando la caja.
-  if (!estado.dueno && estado.rol !== 'admin') return;
+  // Los gastos con proveedor apuntado son los pagos a cuenta: hacen falta
+  // completos, no solo los del rango que esté mirando la caja.
   onSnapshot(collection(db, 'egresos'), (snap) => {
     estado.egresosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     pintarDeposito();
@@ -2383,6 +2368,16 @@ function escucharPlataDeposito() {
   onSnapshot(doc(db, 'publico', 'pagos'), (d) => {
     estado.pagos = d.exists() ? d.data() : {};
     pintarCajaGeneral();
+  }, () => {});
+  onSnapshot(collection(db, 'proveedores'), (snap) => {
+    estado.proveedores = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    pintarDeposito();
+  }, () => {});
+  onSnapshot(collection(db, 'compras'), (snap) => {
+    estado.compras = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0));
+    pintarDeposito();
   }, () => {});
 }
 
@@ -2408,15 +2403,10 @@ function pintarDeposito() {
     .filter((p) => Math.abs(p.saldo) > 0.5);
   const deuda = conDeuda.reduce((a, p) => a + p.saldo, 0);
 
-  // El celular del local también maneja el depósito: es el que tiene las
-  // botellas delante y hace la carga inicial.
-  //
-  // Lo único que no ve es la deuda con proveedores: para calcularla hacen
-  // falta los pagos, que son gastos de la caja, y la caja no es suya. Con
-  // media cuenta el número daría mal, y un número que miente es peor que
-  // ninguno.
-  const soloMira = false;
-  const sinDeuda = estado.esAparato;
+  // El celular de la barra mira y nada más: no da de alta mercadería, no
+  // carga compras y no ve la plata. Mostrarle esos botones sería ofrecerle
+  // algo que las reglas le van a negar.
+  const soloMira = estado.esAparato;
 
   cont.innerHTML = `
     ${soloMira ? '' : `
@@ -2431,7 +2421,7 @@ function pintarDeposito() {
     ${bajos.length ? `<div class="aviso mal"><span>⚠</span><div>
       <b>Se está por acabar:</b> ${bajos.map((i) => esc(i.nombre)).join(', ')}.</div></div>` : ''}
 
-    ${deuda && !sinDeuda ? `<div class="caja-evento" style="margin-bottom:.9rem">
+    ${deuda && !soloMira ? `<div class="caja-evento" style="margin-bottom:.9rem">
       <div class="titulo">Deuda con proveedores</div>
       <div class="numeros"><div class="plata"><b>${plata(deuda)}</b><span>se debe</span></div></div>
       <table class="ranking"><tbody>${conDeuda.map((p) => `
@@ -2622,12 +2612,7 @@ function pintarCompra() {
     <div class="campo">
       <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">Qué es</span>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-        ${[['cuenta', 'A cuenta'], ['contado', 'Pagada'], ['inicial', 'Carga inicial']]
-          // "Pagada" sale de la caja, y la caja no es del celular del local:
-          // la compra entraría y el gasto no, y la plata se perdería de los
-          // libros. Desde ahí se carga stock, no se gasta plata.
-          .filter(([k]) => k !== 'contado' || !estado.esAparato)
-          .map(([k, t]) => `
+        ${[['cuenta', 'A cuenta'], ['contado', 'Pagada'], ['inicial', 'Carga inicial']].map(([k, t]) => `
           <button type="button" class="btn ${c.condicion === k ? 'primario' : ''}"
                   data-condicion="${k}" style="flex:1;font-size:.84rem">${t}</button>`).join('')}
       </div>
@@ -2635,8 +2620,7 @@ function pintarCompra() {
         cuenta: 'Suma stock y queda como deuda con el proveedor.',
         contado: 'Suma stock y sale de la caja ahora.',
         inicial: 'Solo suma stock: es lo que ya tenías, no plata que salió.',
-      }[c.condicion]}${estado.esAparato
-        ? ' Lo que se paga en el momento lo carga la casa.' : ''}</small>
+      }[c.condicion]}</small>
     </div>
 
     ${c.condicion === 'contado' ? `

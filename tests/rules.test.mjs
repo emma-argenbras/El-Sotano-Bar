@@ -233,12 +233,10 @@ describe('el depósito', () => {
     await assertFails(setDoc(doc(barra(), 'insumos/malo-2'), insumo({ stock: -5 })));
   });
 
-  // El barman de turno pasa una noche y se va: descuenta al entregar y nada
-  // más. El celular del local es otra cosa — vive ahí y carga el depósito.
-  it('el barman de turno descuenta al entregar, y nada más', async () => {
-    await assertSucceeds(updateDoc(doc(turnoOk(), 'insumos/fernet-750'), { stock: 48 }));
+  it('la barra descuenta al entregar, y nada más', async () => {
+    await assertSucceeds(updateDoc(doc(aparato(), 'insumos/fernet-750'), { stock: 49 }));
+    await assertFails(updateDoc(doc(aparato(), 'insumos/fernet-750'), { costo: 1 }));
     await assertFails(updateDoc(doc(turnoOk(), 'insumos/fernet-750'), { medidas: 99 }));
-    await assertFails(setDoc(doc(turnoOk(), 'insumos/nuevo-del-turno'), insumo()));
   });
 
   it('un cliente no ve el depósito', async () => {
@@ -259,11 +257,8 @@ describe('el depósito', () => {
   // El celular de la barra vive prendido arriba del mostrador y sin clave:
   // descuenta al entregar y nada más. Dar de alta mercadería y ponerle precio
   // es de quien se loguea con su cuenta.
-  // Es el que tiene las botellas delante y hace la carga inicial.
-  it('el celular del local da de alta y corrige mercadería', async () => {
-    await assertSucceeds(setDoc(doc(aparato(), 'insumos/gin-700'), insumo({ nombre: 'Gin 700' })));
-    await assertSucceeds(setDoc(doc(aparato(), 'insumos/gin-700'),
-      insumo({ nombre: 'Gin 700', costo: 20000 })));
+  it('el celular de la barra NO da de alta mercadería', async () => {
+    await assertFails(setDoc(doc(aparato(), 'insumos/trucho'), insumo()));
   });
 });
 
@@ -298,23 +293,10 @@ describe('ingresos de mercadería y proveedores', () => {
     await assertFails(setDoc(doc(barra(), 'compras/mala-2'), compra({ items: [] })));
   });
 
-  // El celular del local carga mercadería, así que ve lo que cargó. Lo que no
-  // puede es gastar: 'contado' sale de la caja, y la caja no es suya — la
-  // compra entraría y el gasto no, y la plata se perdería de los libros.
-  it('el celular del local carga stock pero no gasta plata', async () => {
-    await assertSucceeds(getDocs(collection(aparato(), 'compras')));
-    await assertSucceeds(setDoc(doc(aparato(), 'compras/inicial-del-local'),
-      compra({ condicion: 'inicial', total: 0 })));
-    await assertSucceeds(setDoc(doc(aparato(), 'compras/a-cuenta-del-local'),
-      compra({ condicion: 'cuenta' })));
-    await assertFails(setDoc(doc(aparato(), 'compras/pagada-del-local'),
-      compra({ condicion: 'contado', pago: 'efectivo' })));
-    await assertFails(deleteDoc(doc(aparato(), 'compras/compra-1')));
-  });
-
-  it('el barman de turno no ve ni carga compras: pasa una noche', async () => {
+  it('la barra NO ve las compras: es plata, no servicio', async () => {
     await assertFails(getDocs(collection(turnoOk(), 'compras')));
-    await assertFails(setDoc(doc(turnoOk(), 'compras/trucha'), compra()));
+    await assertFails(getDocs(collection(aparato(), 'compras')));
+    await assertFails(setDoc(doc(aparato(), 'compras/trucha'), compra()));
   });
 
   it('el proveedor lo da de alta la casa y lo lee la barra', async () => {
@@ -324,14 +306,11 @@ describe('ingresos de mercadería y proveedores', () => {
     await assertFails(setDoc(doc(turnoOk(), 'proveedores/prov-2'), { nombre: 'Mía' }));
   });
 
-  it('y un administrador también lo da de alta, y el celular del local', async () => {
+  it('y un administrador también lo da de alta', async () => {
     await assertSucceeds(setDoc(doc(gerente(), 'proveedores/prov-3'),
       { nombre: 'Bebidas del Centro', creadoEn: serverTimestamp() }));
-    // Carga mercadería, así que da de alta a quien se la trae.
-    await assertSucceeds(setDoc(doc(aparato(), 'proveedores/prov-4'),
-      { nombre: 'El de las cervezas' }));
-    // El barman de turno no.
-    await assertFails(setDoc(doc(turnoOk(), 'proveedores/prov-5'), { nombre: 'Mía' }));
+    // Pero el celular de la barra no: lo lee y nada más.
+    await assertFails(setDoc(doc(aparato(), 'proveedores/prov-4'), { nombre: 'Trucha' }));
   });
 
   it('un pago a cuenta es un gasto con el proveedor apuntado', async () => {
@@ -359,14 +338,10 @@ describe('bajas del depósito', () => {
     await assertFails(setDoc(doc(barra(), 'bajas/mala-2'), baja({ motivo: 'x' })));
   });
 
-  it('el celular del local también da de baja: es el que se equivoca cargando', async () => {
-    await assertSucceeds(setDoc(doc(aparato(), 'bajas/baja-del-local'), baja()));
-    await assertSucceeds(getDoc(doc(aparato(), 'bajas/baja-1')));
-  });
-
-  it('el barman de turno no da de baja nada, ni lo lee', async () => {
+  it('la barra no da de baja nada, ni lo lee', async () => {
+    await assertFails(setDoc(doc(aparato(), 'bajas/trucha'), baja()));
+    await assertFails(getDoc(doc(aparato(), 'bajas/baja-1')));
     await assertFails(setDoc(doc(turnoOk(), 'bajas/trucha-2'), baja()));
-    await assertFails(getDoc(doc(turnoOk(), 'bajas/baja-1')));
   });
 
   it('un cliente no ve las bajas', async () => {
@@ -379,9 +354,8 @@ describe('bajas del depósito', () => {
     await assertFails(deleteDoc(doc(barra(), 'bajas/baja-1')));
   });
 
-  it('el insumo lo borra quien maneja el depósito, no el barman de turno', async () => {
-    await assertFails(deleteDoc(doc(turnoOk(), 'insumos/fernet-750')));
-    await assertSucceeds(deleteDoc(doc(aparato(), 'insumos/gin-700')));
+  it('el insumo lo borra la casa, no la barra', async () => {
+    await assertFails(deleteDoc(doc(aparato(), 'insumos/fernet-750')));
     await assertSucceeds(deleteDoc(doc(gerente(), 'insumos/gancia-1l')));
   });
 });
