@@ -23,7 +23,7 @@ try {
     emailVerified: true,
     // Descartable: se reemplaza con el link de abajo y nunca se muestra.
     password: randomBytes(24).toString('base64url'),
-    displayName: 'Barra — El Sótano',
+    displayName: 'Barra — Sótano',
   });
   console.log(`✓ Usuario creado: ${mail} (uid ${usuario.uid})`);
 }

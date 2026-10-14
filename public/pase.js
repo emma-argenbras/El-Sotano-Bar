@@ -45,7 +45,7 @@ async function pintar(inv) {
   const adentro = !!inv.ingresadoEn;
   $('#pase').innerHTML = `
     <div class="lienzo-pase ${adentro ? 'usado' : ''}">
-      <img class="logo" src="/iconos/logo-horizontal-claro.svg" alt="El Sótano" width="560" height="120">
+      <img class="logo" src="/iconos/logo-horizontal-claro.svg" alt="Sótano" width="443" height="120">
       <img class="qr" src="${img}" alt="Tu QR de entrada">
       <div class="quien">${esc(inv.nombre)}</div>
       <div class="pie-pase">${adentro
@@ -63,7 +63,7 @@ async function pintar(inv) {
   $('#btnCompartir').onclick = async () => {
     const url = `${location.origin}/pase.html?i=${encodeURIComponent(inv.id)}`;
     if (navigator.share) {
-      try { await navigator.share({ title: 'Mi pase — El Sótano', url }); return; }
+      try { await navigator.share({ title: 'Mi pase — Sótano', url }); return; }
       catch (e) { if (e.name === 'AbortError') return; }
     }
     try { await navigator.clipboard.writeText(url); $('#btnCompartir').textContent = 'Link copiado ✓'; }

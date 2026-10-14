@@ -1,7 +1,7 @@
 {
   "id": "/index.html",
-  "name": "El Sótano Bar",
-  "short_name": "El Sótano",
+  "name": "Sótano Bar",
+  "short_name": "Sótano",
   "description": "Pedí desde la mesa, sin esperar al mozo.",
   "start_url": "/index.html",
   "scope": "/",

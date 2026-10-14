@@ -1,8 +1,8 @@
 {
   "id": "/bar.html",
-  "name": "El Sótano",
-  "short_name": "El Sótano",
-  "description": "Tablero de pedidos de El Sótano: entran, se preparan, salen.",
+  "name": "Sótano",
+  "short_name": "Sótano",
+  "description": "Tablero de pedidos de Sótano: entran, se preparan, salen.",
   "start_url": "/bar.html",
   "scope": "/bar.html",
   "display": "standalone",

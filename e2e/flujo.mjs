@@ -200,11 +200,11 @@ await chequear('la barra se puede instalar como app aparte', async () => {
   if (m.id === '/index.html') throw new Error('comparte id con la carta: se instalaría una sola');
   if (!m.icons.some((i) => i.purpose === 'maskable')) throw new Error('sin ícono maskable');
 
-  // En la pantalla de inicio tiene que decir "El Sótano", sin que nadie lo
-  // reescriba a mano al instalarlo.
-  if (m.short_name !== 'El Sótano') throw new Error('short_name: ' + m.short_name);
+  // En la pantalla de inicio tiene que decir "Sótano" —la marca le sacó el
+  // "El"—, sin que nadie lo reescriba a mano al instalarlo.
+  if (m.short_name !== 'Sótano') throw new Error('short_name: ' + m.short_name);
   const tituloIOS = await barra.getAttribute('meta[name="apple-mobile-web-app-title"]', 'content');
-  if (tituloIOS !== 'El Sótano') throw new Error('nombre en iOS: ' + tituloIOS);
+  if (tituloIOS !== 'Sótano') throw new Error('nombre en iOS: ' + tituloIOS);
 
   // Cada ícono declarado tiene que existir de verdad.
   const faltan = await barra.evaluate(async (iconos) => {
@@ -222,6 +222,36 @@ await chequear('la barra se puede instalar como app aparte', async () => {
     navigator.serviceWorker.ready.then(() => true, () => false));
   if (!conSw) throw new Error('/bar.html no registra el service worker');
 });
+
+await chequear('el logo dice SÓTANO y el marcado le reserva el lugar justo', async () => {
+  // La marca le sacó el "EL". Si alguien toca el generador y no vuelve a
+  // correrlo, los SVG quedan con la marca vieja y nadie se entera hasta que
+  // está impreso.
+  for (const cual of ['/iconos/logo.svg', '/iconos/logo-horizontal.svg',
+                      '/iconos/logo-horizontal-claro.svg']) {
+    const svg = await barra.evaluate((u) => fetch(u).then((r) => r.text()), cual);
+    if (!svg.includes('>SÓTANO<')) throw new Error(cual + ' no dice SÓTANO');
+    if (svg.includes('EL SÓTANO')) throw new Error(cual + ' todavía dice EL SÓTANO');
+  }
+
+  // Los width/height del marcado son la proporción que el navegador reserva
+  // antes de bajar el SVG. Si no coinciden con el viewBox, el encabezado
+  // salta al cargar — y se desincronizan solos cuando cambia la palabra.
+  const malos = await barra.evaluate(async () => {
+    const fallas = [];
+    for (const img of document.querySelectorAll('img[src$=".svg"]')) {
+      const txt = await fetch(img.getAttribute('src')).then((r) => r.text());
+      const vb = (txt.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/) || []).slice(1);
+      if (!vb.length) continue;
+      const w = img.getAttribute('width'), h = img.getAttribute('height');
+      if (w !== vb[0] || h !== vb[1])
+        fallas.push(`${img.getAttribute('src')}: el marcado dice ${w}×${h} y el SVG mide ${vb[0]}×${vb[1]}`);
+    }
+    return fallas;
+  });
+  if (malos.length) throw new Error(malos.join(' · '));
+});
+
 await chequear('el ojo deja ver la contraseña antes de entrar', async () => {
   await barra.fill('#inpPass', 'lo-que-escribi');
   if ((await barra.getAttribute('#inpPass', 'type')) !== 'password')

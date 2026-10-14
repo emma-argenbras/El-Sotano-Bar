@@ -32,12 +32,19 @@ console.log(`✓ ${salidaQr} — ${(statSync(salidaQr).size / 1024).toFixed(0)} 
 // El sw sirve los estáticos de cache primero. Si la versión no cambia, el
 // navegador se queda con el app.js viejo para siempre y un deploy no se ve.
 // El hash la cambia sola cada vez que cambia algo que el cliente descarga.
+// Va TODO lo que el cliente descarga: si algo queda afuera y un día cambia
+// solo eso, la versión no se mueve y el celular se queda con la copia vieja
+// para siempre. Las páginas del invitado son las que más duelen: las abre una
+// vez, desde un celular ajeno, y no vuelve.
 const SELLADOS = [
   'public/index.html', 'public/bar.html', 'public/qr.html',
+  'public/registro.html', 'public/pase.html',
   'public/app.js', 'public/bar.js', 'public/actualizar.js', 'public/estilos.css',
   'public/registro.js', 'public/pase.js', 'public/ayuda.js', 'public/tel.js',
   'public/manifest.webmanifest', 'public/manifest-barra.webmanifest',
-  'public/iconos/icono.svg', 'public/iconos/logo-horizontal.svg',
+  'public/iconos/icono.svg', 'public/iconos/icono-barra.svg',
+  'public/iconos/logo.svg', 'public/iconos/logo-horizontal.svg',
+  'public/iconos/logo-horizontal-claro.svg',
   salida,
 ];
 const hash = createHash('sha256');

@@ -1,4 +1,4 @@
-// El Sótano — cliente. Carta, carrito y seguimiento de pedidos propios.
+// Sótano — cliente. Carta, carrito y seguimiento de pedidos propios.
 // Auth anónima automática: nadie quiere registrarse para pedir una cerveza.
 // El SDK viene empaquetado en /vendor (ver src/firebase.js), no del CDN.
 import {
@@ -114,7 +114,7 @@ $('#btnCerrarMesa').onclick = () => $('#dlgMesa').close();
 $('#btnCompartirMesa').onclick = async () => {
   const url = location.origin;
   if (navigator.share) {
-    try { await navigator.share({ title: 'El Sótano', text: 'Pedí desde tu celular en El Sótano', url }); return; }
+    try { await navigator.share({ title: 'Sótano', text: 'Pedí desde tu celular en Sótano', url }); return; }
     catch (e) { if (e.name === 'AbortError') return; }
   }
   const b = $('#btnCompartirMesa');

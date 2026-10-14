@@ -1,4 +1,4 @@
-// El Sótano — panel de barra. Tablero en vivo, cambio de estado y control de stock.
+// Sótano — panel de barra. Tablero en vivo, cambio de estado y control de stock.
 // El SDK viene empaquetado en /vendor (ver src/firebase.js), no del CDN.
 import {
   initializeApp,
@@ -602,9 +602,9 @@ async function abrirCerrarRegistro(ev, estaAbierto, boton) {
 // Instagram, lo que sea. La app no manda nada por su cuenta.
 async function compartirRegistro(ev, boton) {
   const url = LINK_REGISTRO(ev.id);
-  const texto = `Reservá tu lugar para ${ev?.nombre || 'la próxima noche'} en El Sótano`;
+  const texto = `Reservá tu lugar para ${ev?.nombre || 'la próxima noche'} en Sótano`;
   if (navigator.share) {
-    try { await navigator.share({ title: 'El Sótano', text: texto, url }); return; }
+    try { await navigator.share({ title: 'Sótano', text: texto, url }); return; }
     catch (e) { if (e.name === 'AbortError') return; }
   }
   try {
@@ -1141,7 +1141,7 @@ async function mostrarPaseNuevo(id, nombre) {
     <p style="font-size:.78rem;color:var(--suave);word-break:break-all;margin:.6rem 0 0">${esc(url)}</p>`;
   $('#btnPasarPase').onclick = async () => {
     if (navigator.share) {
-      try { await navigator.share({ title: 'Tu pase — El Sótano', url }); return; }
+      try { await navigator.share({ title: 'Tu pase — Sótano', url }); return; }
       catch (e) { if (e.name === 'AbortError') return; }
     }
     try { await navigator.clipboard.writeText(url); $('#btnPasarPase').textContent = 'Link copiado ✓'; }

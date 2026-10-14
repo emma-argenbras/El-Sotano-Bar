@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>QR por mesa — El Sótano</title>
+<title>QR por mesa — Sótano</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0d0b10">
 <link rel="icon" href="/iconos/icono.svg" type="image/svg+xml">
@@ -27,7 +27,7 @@
 <body>
 
 <header class="tope">
-  <a class="marca" href="/" aria-label="El Sótano"><img src="/iconos/logo-horizontal.svg" alt="El Sótano" width="560" height="120"></a><span class="rotulo">QR</span>
+  <a class="marca" href="/" aria-label="Sótano"><img src="/iconos/logo-horizontal.svg" alt="Sótano" width="443" height="120"></a><span class="rotulo">QR</span>
   <div class="relleno"></div>
   <a class="btn" href="/bar.html">Barra</a>
 </header>
@@ -42,7 +42,7 @@
 
   <section id="panel" hidden>
     <div class="lienzo">
-      <img class="logo" src="/iconos/logo-horizontal-claro.svg" alt="El Sótano" width="560" height="120">
+      <img class="logo" src="/iconos/logo-horizontal-claro.svg" alt="Sótano" width="443" height="120">
       <img id="imgQr" alt="">
       <div class="cual" id="cual"></div>
       <div class="pie">Escaneá y pedí desde tu celular</div>
@@ -95,11 +95,11 @@ function mostrar(m) {
 
 $('#btnCompartir').onclick = async () => {
   const texto = /^\d+$/.test(elegido.mesa)
-    ? `Pedí desde la mesa ${elegido.mesa} de El Sótano`
-    : 'Pedí desde tu celular en El Sótano';
+    ? `Pedí desde la mesa ${elegido.mesa} de Sótano`
+    : 'Pedí desde tu celular en Sótano';
   // navigator.share solo existe en celulares y requiere https.
   if (navigator.share) {
-    try { await navigator.share({ title: 'El Sótano', text: texto, url: elegido.url }); return; }
+    try { await navigator.share({ title: 'Sótano', text: texto, url: elegido.url }); return; }
     catch (e) { if (e.name === 'AbortError') return; }
   }
   copiar();

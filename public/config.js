@@ -13,7 +13,7 @@ window.CONFIG_FIREBASE = {
 
 // Ajustes del local
 window.CONFIG_BAR = {
-  nombre: "El Sótano",
+  nombre: "Sótano",
   moneda: "$",
   // Mesas que existen en el salón (para el QR y el panel de barra)
   mesas: ["1","2","3","4","5","6","7","8","9","10","Barra","Para llevar"],

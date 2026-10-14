@@ -18,7 +18,7 @@ const PARA_PEGAR = mesas.filter((m) => !/para llevar/i.test(m.mesa));
 
 const tarjetas = PARA_PEGAR.map(({ mesa, archivo }) => `
   <div class="tarjeta">
-    <img class="marca" src="data:image/svg+xml;base64,${LOGO_B64}" alt="El Sótano">
+    <img class="marca" src="data:image/svg+xml;base64,${LOGO_B64}" alt="Sótano">
     <img src="data:image/png;base64,${readFileSync(`${ORIGEN}/${archivo}`).toString('base64')}" alt="QR ${mesa}">
     <div class="mesa">${/^\d+$/.test(mesa) ? 'MESA ' + mesa : mesa.toUpperCase()}</div>
     <div class="pie">Escaneá y pedí desde tu celular</div>
@@ -26,7 +26,7 @@ const tarjetas = PARA_PEGAR.map(({ mesa, archivo }) => `
 
 mkdirSync(SALIDA, { recursive: true });
 writeFileSync(`${SALIDA}/imprimir.html`, `<!doctype html><html lang="es"><meta charset="utf-8">
-<title>QR por mesa — El Sótano</title>
+<title>QR por mesa — Sótano</title>
 <style>
   @page { size: A4; margin: 8mm; }
   * { box-sizing: border-box; }
