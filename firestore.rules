@@ -90,6 +90,13 @@ service cloud.firestore {
       return esAdmin() || barmanDeTurno() || esAparatoDeBarra();
     }
 
+    // Quién maneja el depósito: la casa y el celular del local, que es el que
+    // tiene las botellas delante y hace la carga inicial. No el barman de
+    // turno ni la puerta: pasan una noche y se van.
+    function manejaDeposito() {
+      return esAdmin() || esAparatoDeBarra();
+    }
+
     // La puerta solo trabaja la noche en que está asignada, igual que el barman.
     function esPuerta() {
       return miRol() == 'puerta'
@@ -445,10 +452,11 @@ service cloud.firestore {
     // precio el administrador; la barra solo descuenta al entregar.
     match /insumos/{id} {
       allow read: if esBarra();
-      allow create: if esAdmin() && insumoValido(request.resource.data);
-      allow update: if (esAdmin() && insumoValido(request.resource.data))
+      allow create: if manejaDeposito() && insumoValido(request.resource.data);
+      allow update: if (manejaDeposito() && insumoValido(request.resource.data))
+        // El barman de turno no carga el depósito, pero descuenta al entregar.
         || (esBarra() && soloStockInsumo());
-      allow delete: if esAdmin();
+      allow delete: if manejaDeposito();
     }
 
     // ---------- ingresos de mercadería ----------
@@ -456,15 +464,19 @@ service cloud.firestore {
     // caja; si fue a cuenta, queda como deuda con el proveedor hasta que se
     // le pague. La plata es de la casa: esto no lo carga la barra.
     match /compras/{id} {
-      allow read: if esAdmin();
-      allow create, update: if esAdmin() && compraValida(request.resource.data);
+      allow read: if manejaDeposito();
+      // 'contado' sale de la caja, y la caja no es del celular del local: la
+      // compra entraría y el gasto no, y la plata se perdería de los libros.
+      // Carga inicial y a cuenta mueven stock, no plata: esas sí.
+      allow create, update: if manejaDeposito() && compraValida(request.resource.data)
+        && (esAdmin() || request.resource.data.condicion != 'contado');
       allow delete: if esAdmin();
     }
 
     match /proveedores/{id} {
       // La barra lo lee para saber de quién es cada cosa; la cuenta no.
       allow read: if esBarra();
-      allow create, update: if esAdmin()
+      allow create, update: if manejaDeposito()
         && request.resource.data.nombre is string
         && request.resource.data.nombre.size() >= 2
         && request.resource.data.nombre.size() <= 60;
@@ -476,8 +488,8 @@ service cloud.firestore {
     // desapareció algo que estaba. Cada baja queda acá con su motivo, quién la
     // hizo y cuánto había. Es historia: se escribe una vez y no se toca más.
     match /bajas/{id} {
-      allow read: if esAdmin();
-      allow create: if esAdmin()
+      allow read: if manejaDeposito();
+      allow create: if manejaDeposito()
         && request.resource.data.keys().hasAll(['nombre', 'motivo', 'quien', 'cuando'])
         && request.resource.data.keys().hasOnly(['nombre', 'motivo', 'quien', 'cuando',
                                                  'insumoId', 'stock', 'unidad'])

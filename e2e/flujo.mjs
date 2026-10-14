@@ -1269,12 +1269,13 @@ await chequear('el administrador carga el depósito con su cuenta, de punta a pu
   } finally { await ctxGer.close(); }
 });
 
-await chequear('el celular de la barra ve el depósito, pero solo de mirar', async () => {
-  // Necesita saber qué hay para no prometer un trago que no se puede hacer.
-  // Pero es el aparato que vive prendido arriba del mostrador y sin clave: no
-  // da de alta mercadería, no carga compras y no ve plata.
+await chequear('el celular del local carga el depósito, pero no gasta plata', async () => {
+  // Es el que tiene las botellas delante: hace la carga inicial y da de alta
+  // lo que entra. Lo que no puede es gastar de la caja, que no es suya.
   const ctxCel = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const cel = await ctxCel.newPage();
+  let seQuejo = '';
+  cel.on('dialog', async (d) => { seQuejo = d.message(); await d.accept(); });
   try {
     await cel.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
     await cel.fill('#inpMail', 'barra');
@@ -1284,25 +1285,42 @@ await chequear('el celular de la barra ve el depósito, pero solo de mirar', asy
 
     await cel.waitForFunction(() =>
       document.querySelector('#tabDeposito')?.hidden === false, null, { timeout: 15000 })
-      .catch(() => { throw new Error('el celular de la barra no ve la pestaña Depósito'); });
+      .catch(() => { throw new Error('el celular del local no ve la pestaña Depósito'); });
     await cel.click('#tabDeposito');
+    await cel.waitForSelector('#btnNuevoInsumo', { timeout: 15000 })
+      .catch(() => { throw new Error('no puede dar de alta mercadería'); });
+
+    // Da de alta un insumo, como en la carga inicial.
+    await cel.click('#btnNuevoInsumo');
+    await cel.waitForSelector('#dlgInsumo[open]', { timeout: 5000 });
+    await cel.fill('#inpInsNombre', 'Cerveza del local');
+    await cel.fill('#inpInsUnidad', 'lata');
+    await cel.fill('#inpInsMedidas', '1');
+    await cel.fill('#inpInsCosto', '2500');
+    await cel.click('#btnGuardarInsumo');
     await cel.waitForFunction(() =>
-      document.querySelector('#deposito')?.textContent.includes('Fernet 750'),
-      null, { timeout: 15000 }).catch(async () => {
-        throw new Error('no ve lo que hay guardado: '
-          + (await cel.textContent('#deposito')).slice(0, 200));
+      document.querySelector('#deposito')?.textContent.includes('Cerveza del local'),
+      null, { timeout: 15000 }).catch(() => {
+        throw new Error('no pudo dar de alta el insumo'
+          + (seQuejo ? ` · dijo: "${seQuejo}"` : ''));
       });
 
-    // Nada de lo que no puede hacer.
-    for (const q of ['#btnNuevoInsumo', '#btnNuevaCompra', '[data-editar-insumo]', '[data-baja-insumo]'])
-      if (await cel.locator(q).count()) throw new Error('le muestra ' + q);
-    const dice = await cel.textContent('#deposito');
-    if (dice.includes('Deuda con proveedores')) throw new Error('le muestra la deuda');
-    if (/12\.000|\bc\/u\b/.test(dice)) throw new Error('le muestra lo que costó: ' + dice.slice(0, 200));
+    // "Pagada" sale de la caja: desde acá no se ofrece.
+    await cel.click('#btnNuevaCompra');
+    await cel.waitForSelector('#dlgCompra[open]', { timeout: 5000 });
+    if (await cel.locator('[data-condicion="contado"]').count())
+      throw new Error('le ofrece pagar de la caja, que no es suya');
+    for (const k of ['inicial', 'cuenta'])
+      if (!(await cel.locator(`[data-condicion="${k}"]`).count()))
+        throw new Error('le falta la opción ' + k);
+    await cel.click('#btnCancelarCompra');
 
-    // Y la caja sigue sin ser suya.
+    // Y la deuda no: para calcularla hacen falta los pagos, que son de la caja.
+    const dice = await cel.textContent('#deposito');
+    if (dice.includes('Deuda con proveedores'))
+      throw new Error('le muestra una deuda que no puede calcular bien');
     if (await cel.locator('#tabCaja').isVisible())
-      throw new Error('el celular de la barra ve la caja');
+      throw new Error('el celular del local ve la caja');
   } finally { await ctxCel.close(); }
 });
 
