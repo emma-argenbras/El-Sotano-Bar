@@ -207,6 +207,13 @@ await chequear('la barra se puede instalar como app aparte', async () => {
   const tituloIOS = await barra.getAttribute('meta[name="apple-mobile-web-app-title"]', 'content');
   if (tituloIOS !== 'Barra') throw new Error('nombre en iOS: ' + tituloIOS);
 
+  // Instalada en una computadora, el navegador pega el nombre de la app y el
+  // título de la página uno detrás del otro. Si no son el mismo texto, arriba
+  // quedan dos nombres: "Sótano Barra - Barra — Sótano".
+  const tituloPagina = await barra.title();
+  if (tituloPagina !== m.name)
+    throw new Error(`el título de la página ("${tituloPagina}") no es el nombre de la app ("${m.name}")`);
+
   const mCarta = await barra.evaluate(() =>
     fetch('/manifest.webmanifest').then((r) => r.json()));
   if (mCarta.name !== 'Sótano' || mCarta.short_name !== 'Sótano')

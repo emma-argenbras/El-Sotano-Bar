@@ -11,7 +11,7 @@ import { createContext, runInContext } from 'node:vm';
 import QRCode from 'qrcode';
 import { chromium } from 'playwright';
 
-const BASE = process.argv[2] || 'https://el-sotano-bar.web.app';
+const BASE = process.argv[2] || 'https://sotano.web.app';
 const SALIDA = 'public/qr';
 
 // Las mesas son las de config.js: una sola fuente de verdad.
