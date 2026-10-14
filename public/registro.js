@@ -28,17 +28,60 @@ function token() {
 }
 
 let registro = null;
+let yaPinto = false;
 
-const fallaCarga = (e) => {
-  $('#pantalla').innerHTML =
-    `<div class="aviso mal"><span>⚠</span><div>No pude cargar la noche.<br>${esc(e.code || e.message)}</div></div>`;
+// Un error al arrancar el módulo dejaba la pantalla en "Buscando la noche…"
+// sin decir nada. Ahora se ve: es la pantalla que abre gente de afuera, una
+// sola vez, y si no funciona no vuelve.
+//
+// Va acá abajo a propósito: 'yaPinto' tiene que estar declarado antes, o el
+// aviso que avisa de los errores se cae con el mismo error que vino a contar.
+addEventListener('error', (e) => {
+  if (yaPinto) return;
+  avisar('Se rompió algo al abrir la página.', e.message, true);
+});
+
+const recargar = () => {
+  const u = new URL(location.href);
+  u.searchParams.set('v', Date.now().toString(36));
+  location.replace(u.toString());
 };
+
+function avisar(titulo, detalle, conReintento) {
+  yaPinto = true;
+  const cont = $('#pantalla');
+  if (!cont) return;
+  cont.innerHTML = `
+    <div class="aviso mal"><span>⚠</span><div><b>${esc(titulo)}</b>${
+      detalle ? '<br>' + esc(detalle) : ''}</div></div>
+    ${conReintento ? `<button class="btn primario ancho-full" id="btnReintentar"
+      style="margin-top:.9rem">Reintentar</button>` : ''}`;
+  if ($('#btnReintentar')) $('#btnReintentar').onclick = recargar;
+}
+
+const fallaCarga = (e) =>
+  avisar('No pude cargar la noche.', e.code || e.message, true);
+
+// Si en diez segundos no se pintó nada, algo no llegó: el bundle, la señal,
+// la base. Peor que un error es un "Buscando la noche…" eterno, que no le
+// dice a nadie qué hacer.
+setTimeout(() => {
+  if (yaPinto) return;
+  avisar('No pude conectarme.',
+    'Revisá que tengas internet y tocá Reintentar. Si sigue igual, avisanos.', true);
+}, 10000);
 
 // La noche viene en el link: /registro.html?ev=<id>. Cada noche tiene el suyo,
 // así el QR de una no manda a la de la semana que viene.
 //
 // Sin ?ev= es un link viejo, de cuando había uno solo: se mira a qué noche
 // apunta la casa y se sigue desde ahí.
+// OJO con el orden: escuchar() se llama acá mismo, al cargar el módulo, y
+// usa 'mirando'. Si la declaración quedara más abajo, el let todavía está en
+// su zona muerta y tira ReferenceError antes de abrir ningún listener: la
+// página se queda en "Buscando la noche…" para siempre y nadie se entera.
+let mirando = null;
+
 const cual = new URL(location.href).searchParams.get('ev');
 if (cual) {
   escuchar(cual);
@@ -50,12 +93,24 @@ if (cual) {
   }, fallaCarga);
 }
 
-let mirando = null;
 function escuchar(ev) {
   if (mirando === ev) return;
   mirando = ev;
   onSnapshot(doc(db, 'registros', ev), (d) => {
-    registro = d.exists() ? { ...d.data(), eventoId: d.id } : null;
+    // Firestore aplica la escritura propia en local antes de que el servidor
+    // la confirme. Durante ese rato el contador sube y la noche puede parecer
+    // completa por un instante; si se repintara, se borraría el formulario
+    // que la persona está usando. Lo propio sin confirmar no se dibuja.
+    if (d.metadata.hasPendingWrites && $('#formRegistro')) return;
+    if (!d.exists()) {
+      // El link apunta a una noche que no está: se dice, en vez de hacerlo
+      // pasar por "no hay ninguna noche abierta", que manda a buscar donde no es.
+      registro = null;
+      avisar('No encontré esa noche.',
+        'El link puede ser viejo o estar cortado. Pedinos el link de la noche que viene.', false);
+      return;
+    }
+    registro = { ...d.data(), eventoId: d.id };
     pintar();
   }, fallaCarga);
 }
@@ -82,10 +137,35 @@ async function miPaseDeEstaNoche() {
 
 function pintar() {
   const cont = $('#pantalla');
-  if (!registro || !registro.abierto) {
+  yaPinto = true;
+
+  // El contador cambia cada vez que alguien se anota — y también cuando la
+  // propia anotación de esta persona se escribe local y el servidor después
+  // la rechaza. Si se redibujara la pantalla entera, se borraría lo que está
+  // escribiendo y el cartel de error que acaba de aparecer. Así que mientras
+  // el formulario esté en pantalla y la noche siga tomando gente, se toca
+  // solo el número.
+  const hayForm = !!$('#formRegistro');
+  const quedanAhora = registro
+    ? Math.max(0, Number(registro.capacidad || 0) - Number(registro.registrados || 0))
+    : 0;
+  if (hayForm && registro && registro.abierto && quedanAhora > 0) {
+    const n = $('#quedanLugares');
+    if (n) n.textContent = quedanAhora;
+    return;
+  }
+
+  if (!registro) {
     cont.innerHTML = `<div class="aviso"><span>🌙</span><div>
       <b>Por ahora no hay noche abierta para registrarse.</b><br>
       Seguinos y te avisamos cuando abra la próxima.</div></div>`;
+    return;
+  }
+  if (!registro.abierto) {
+    // La noche existe pero ya no toma gente: no es lo mismo y se nota.
+    cont.innerHTML = `<div class="aviso mal"><span>🔒</span><div>
+      <b>${esc(registro.nombre || 'Esa noche')} ya no toma anotaciones.</b><br>
+      Si creés que es un error, escribinos.</div></div>`;
     return;
   }
   const quedan = Math.max(0, Number(registro.capacidad || 0) - Number(registro.registrados || 0));
@@ -98,7 +178,7 @@ function pintar() {
   cont.innerHTML = `
     <h1 style="font-size:1.4rem;margin:.4rem 0 .2rem">${esc(registro.nombre)}</h1>
     <p style="color:var(--suave);margin:0 0 1.2rem">
-      Quedan <b style="color:var(--oro)">${quedan}</b> lugares.
+      Quedan <b style="color:var(--oro)" id="quedanLugares">${quedan}</b> lugares.
       Dejanos tu nombre y tu teléfono y te damos el pase de entrada.
     </p>
     <form id="formRegistro">
@@ -138,6 +218,22 @@ function pintar() {
   miPaseDeEstaNoche();
 }
 
+// El lote: el invitado, el contador y el candado del teléfono, todo junto.
+// Si algo lo rechaza, no queda nada a medias.
+function loteDeAnotacion(id, nombre, telefono, registrados) {
+  const lote = writeBatch(db);
+  lote.set(doc(db, 'invitados', id), {
+    eventoId: registro.eventoId, nombre, telefono,
+    creadoEn: serverTimestamp(), ingresadoEn: null,
+  });
+  lote.update(doc(db, 'registros', registro.eventoId),
+    { registrados: Number(registrados) + 1 });
+  lote.set(doc(db, 'anotados', claveAnotado(registro.eventoId, telefono)), {
+    eventoId: registro.eventoId, tel: digitosTel(telefono), creadoEn: serverTimestamp(),
+  });
+  return lote.commit();
+}
+
 async function registrar(e) {
   e.preventDefault();
   const btn = $('#btnRegistrar');
@@ -149,39 +245,49 @@ async function registrar(e) {
   btn.disabled = true; btn.textContent = 'Reservando…';
 
   const id = token();
-  try {
-    // Las tres escrituras van juntas: el invitado, el contador y el candado
-    // del teléfono. Si el cupo se llenó entre que cargó la página y tocó el
-    // botón, o si ese número ya está anotado, las reglas frenan todo el lote
-    // y no queda nada a medias.
-    const lote = writeBatch(db);
-    lote.set(doc(db, 'invitados', id), {
-      eventoId: registro.eventoId, nombre, telefono,
-      creadoEn: serverTimestamp(), ingresadoEn: null,
-    });
-    lote.update(doc(db, 'registros', registro.eventoId),
-      { registrados: Number(registro.registrados || 0) + 1 });
-    lote.set(doc(db, 'anotados', claveAnotado(registro.eventoId, telefono)), {
-      eventoId: registro.eventoId, tel: digitosTel(telefono), creadoEn: serverTimestamp(),
-    });
-    await lote.commit();
-    localStorage.setItem('sotano:invitado', id);
-    location.href = `/pase.html?i=${encodeURIComponent(id)}`;
-  } catch (err) {
-    btn.disabled = false; btn.textContent = 'Reservar mi lugar';
-    if (err.code !== 'permission-denied') return fallar(err.code || err.message);
-    // El lote se cae por dos motivos y desde afuera no se ve cuál: se preguntan
-    // los lugares, y si todavía quedan es que ese teléfono ya está anotado.
-    let lleno = false;
+  // El contador sube de a uno y las reglas exigen que el número que se manda
+  // sea exactamente el que hay más uno. Cuando dos se anotan en el mismo
+  // segundo —que es lo que pasa justo cuando se comparte el link— el segundo
+  // choca aunque haya lugar de sobra. Por eso se reintenta con el número
+  // fresco en vez de echarlo.
+  let ultimo = null;
+  for (let intento = 0; intento < 4; intento++) {
     try {
-      const d = await getDoc(doc(db, 'registros', registro.eventoId));
-      const r = d.data() || {};
-      lleno = Number(r.registrados || 0) >= Number(r.capacidad || 0);
-    } catch { /* si no se puede mirar, se asume lo más común */ }
-    fallar(lleno
-      ? 'Justo se agotaron los lugares. Probá de nuevo por si se libera alguno.'
-      : 'Con ese teléfono ya hay alguien anotado para esta noche. Si perdiste tu pase, escribinos y te lo reenviamos.');
+      await loteDeAnotacion(id, nombre, telefono, registro.registrados || 0);
+      localStorage.setItem('sotano:invitado', id);
+      location.href = `/pase.html?i=${encodeURIComponent(id)}`;
+      return;
+    } catch (err) {
+      ultimo = err;
+      if (err.code !== 'permission-denied') break;
+      // Releer el estado real: si se llenó, no hay nada que reintentar; si
+      // todavía hay lugar, se perdió una carrera y se vuelve a probar.
+      let r;
+      try { r = (await getDoc(doc(db, 'registros', registro.eventoId))).data(); }
+      catch { break; }
+      if (!r || r.abierto === false) break;
+      if (Number(r.registrados || 0) >= Number(r.capacidad || 0)) {
+        registro = { ...registro, ...r };
+        break;
+      }
+      registro = { ...registro, ...r };
+      await new Promise((ok) => setTimeout(ok, 150 + Math.random() * 350));
+    }
   }
+
+  btn.disabled = false; btn.textContent = 'Reservar mi lugar';
+  if (ultimo && ultimo.code !== 'permission-denied') {
+    return fallar(ultimo.code || ultimo.message);
+  }
+  // Agotados los reintentos: o se llenó, o ese teléfono ya está anotado.
+  // Desde afuera no se ve cuál, así que se mira el cupo para decidir.
+  const quedan = Number(registro.capacidad || 0) - Number(registro.registrados || 0);
+  if (registro.abierto === false) {
+    return fallar('Esa noche dejó de tomar anotaciones mientras completabas.');
+  }
+  fallar(quedan <= 0
+    ? 'Justo se agotaron los lugares. Probá de nuevo por si se libera alguno.'
+    : 'Con ese teléfono ya hay alguien anotado para esta noche. Si perdiste tu pase, escribinos y te lo reenviamos.');
 }
 
 function fallar(texto) {

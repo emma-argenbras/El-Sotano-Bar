@@ -126,6 +126,14 @@ $('#btnCompartirMesa').onclick = async () => {
 pintarChipMesa();
 
 // ---------- auth ----------
+// El cliente entra anónimo y su uid ES su identidad: "Mis pedidos" son los
+// pedidos de ese uid y nada más.
+//
+// OJO: entrar se pide SOLO acá adentro, cuando ya se sabe que no hay sesión.
+// Llamar a signInAnonymously al cargar, en paralelo, era una carrera contra
+// la sesión guardada: si ganaba la llamada, Firebase creaba un uid nuevo y la
+// persona perdía sus pedidos al recargar — le quedaba "Mis pedidos" vacío y
+// nunca le llegaba el aviso de que su trago estaba listo.
 onAuthStateChanged(auth, (u) => {
   if (!u) { signInAnonymously(auth).catch(mostrarFalloAuth); return; }
   estado.uid = u.uid;
@@ -133,7 +141,6 @@ onAuthStateChanged(auth, (u) => {
   escucharCarta();
   escucharMisPedidos();
 });
-signInAnonymously(auth).catch(mostrarFalloAuth);
 
 function mostrarFalloAuth(e) {
   $('#carta').innerHTML =

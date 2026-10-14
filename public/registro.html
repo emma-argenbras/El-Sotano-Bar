@@ -17,6 +17,15 @@
 </header>
 
 <main class="envoltorio" style="padding-bottom:2rem">
+  <!-- Si lo que corre quedó viejo, el invitado tiene que poder destrabarlo
+       solo: es la pantalla que más se abre desde un celular ajeno, una vez,
+       con la versión que le haya quedado guardada. -->
+  <div class="aviso oculto" id="avisoVersion">
+    <span>⬆</span>
+    <div style="flex:1"><b>Hay una versión nueva.</b> Tocá actualizar para traerla.</div>
+    <button class="btn primario" data-actualizar style="padding:.4rem .8rem">Actualizar</button>
+  </div>
+
   <div id="pantalla"><div class="cargando">Buscando la noche…</div></div>
 </main>
 

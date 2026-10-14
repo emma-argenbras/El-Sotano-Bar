@@ -161,6 +161,20 @@ await chequear('el botón de actualizar recarga la app y la deja limpia', async 
   if (new URL(barra.url()).searchParams.has('v')) throw new Error('dejó el cache-buster en la URL');
 });
 
+await chequear('actualizar NO le cambia la identidad: sus pedidos siguen siendo suyos', async () => {
+  // Si al recargar se crea un uid nuevo, "Mis pedidos" queda vacío y el aviso
+  // de "tu trago está listo" no llega nunca. Pasaba de a ratos, que es peor.
+  await cliente.waitForFunction(() =>
+    document.querySelector('#misPedidos')?.textContent.includes('Tomado'),
+    null, { timeout: 15000 });
+  await cliente.reload({ waitUntil: 'domcontentloaded' });
+  await cliente.waitForFunction(() =>
+    document.querySelector('#misPedidos')?.textContent.includes('Tomado'),
+    null, { timeout: 20000 }).catch(() => {
+      throw new Error('al recargar perdió sus pedidos: le cambió el uid');
+    });
+});
+
 await chequear('avisa cuando la versión que corre quedó vieja', async () => {
   await barra.waitForSelector('#formLogin', { timeout: 15000 });
   await barra.evaluate(() => {
@@ -943,10 +957,17 @@ await chequear('un gasto baja la caja y el efectivo del cajón', async () => {
   if (despues !== antes - 3000)
     throw new Error(`el efectivo del cajón no bajó: ${antes} -> ${despues}`);
 
-  // Y queda en la base con quién lo cargó.
-  const q = await db.collection('egresos').get();
-  const e = q.docs[0]?.data();
-  if (!e || e.monto !== 3000) throw new Error('no se guardó el gasto');
+  // Y queda en la base con quién lo cargó. Se busca por concepto y se espera:
+  // la pantalla lo muestra apenas se escribe local, y el servidor confirma
+  // un instante después.
+  let e;
+  for (let i = 0; i < 40; i++) {
+    const q = await db.collection('egresos').where('concepto', '==', 'Hielo de la noche').get();
+    e = q.docs[0]?.data();
+    if (e) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!e || e.monto !== 3000) throw new Error('no se guardó el gasto: ' + JSON.stringify(e));
   if (e.pago !== 'efectivo') throw new Error('no guardó cómo se pagó');
   if (!e.cargadoPor) throw new Error('no dice quién lo cargó');
 });
@@ -1206,11 +1227,121 @@ await chequear('el teléfono se escribe de una sola manera: sin 0 y sin 15', asy
   } finally { await ctxTel.close(); }
 });
 
+await chequear('dos personas se anotan al mismo tiempo y entran las dos', async () => {
+  // Es lo que pasa justo cuando se comparte el link: todos a la vez. El
+  // contador sube de a uno y las reglas exigen el numero exacto, asi que sin
+  // reintento el segundo rebota aunque haya lugar.
+  await barra.click('#tabCalendario');
+  await barra.click('#btnAgendar');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  await barra.fill('#inpEvento', 'Noche de la avalancha');
+  await barra.fill('#inpCapacidad', '5');
+  await barra.click('#btnConfirmarEvento');
+  const idAval = await (async () => {
+    for (let i = 0; i < 40; i++) {
+      const x = await idDeNoche('Noche de la avalancha');
+      if (x) return x;
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+  })();
+  if (!idAval) throw new Error('no se agendó la noche de prueba');
+  // El registro de esa noche es una escritura aparte: hasta que no está, la
+  // página del invitado no tiene qué mostrar.
+  for (let i = 0; i < 40; i++) {
+    if ((await db.doc(`registros/${idAval}`).get()).exists) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!(await db.doc(`registros/${idAval}`).get()).exists)
+    throw new Error('la noche quedó sin registro: el link no lleva a ningún lado');
+
+  const dos = await Promise.all([1, 2].map(async (n) => {
+    const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+    const pg = await ctx.newPage();
+    await pg.goto(`${BASE}/registro.html?ev=${idAval}`, { waitUntil: 'domcontentloaded' });
+    await pg.waitForSelector('#formRegistro', { timeout: 15000 }).catch(async () => {
+      throw new Error('la página del invitado no mostró el formulario. Dice: '
+        + (await pg.textContent('#pantalla')).trim().slice(0, 160));
+    });
+    await pg.fill('#inpNombre', `Simultaneo ${n}`);
+    await pg.fill('#inpTel', `11555566${n}${n}`);
+    return { ctx, pg };
+  }));
+  // Los dos botones, al mismo tiempo.
+  await Promise.all(dos.map(({ pg }) => pg.click('#btnRegistrar')));
+  try {
+    for (const { pg } of dos) {
+      await pg.waitForURL(/pase\.html/, { timeout: 20000 }).catch(() => {});
+    }
+    const anotados = await db.collection('invitados').where('eventoId', '==', idAval).get();
+    if (anotados.size !== 2)
+      throw new Error(`entraron ${anotados.size} de 2: el segundo rebotó por la carrera`);
+    const reg = (await db.doc(`registros/${idAval}`).get()).data();
+    if (Number(reg.registrados) !== 2)
+      throw new Error('el contador no cuadra: ' + reg.registrados);
+  } finally { await Promise.all(dos.map(({ ctx }) => ctx.close())); }
+});
+
+await chequear('con el cupo justo, el que llega segundo no entra', async () => {
+  const idAval = await idDeNoche('Noche de la avalancha');
+  // Se deja un solo lugar: 5 de capacidad, 4 tomados.
+  await db.doc(`registros/${idAval}`).update({ registrados: 4 });
+
+  const dos = await Promise.all([3, 4].map(async (n) => {
+    const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+    const pg = await ctx.newPage();
+    await pg.goto(`${BASE}/registro.html?ev=${idAval}`, { waitUntil: 'domcontentloaded' });
+    await pg.waitForSelector('#formRegistro', { timeout: 15000 });
+    await pg.fill('#inpNombre', `Ultimo ${n}`);
+    await pg.fill('#inpTel', `11555577${n}${n}`);
+    return { ctx, pg };
+  }));
+  await Promise.all(dos.map(({ pg }) => pg.click('#btnRegistrar')));
+  try {
+    await new Promise((ok) => setTimeout(ok, 6000));
+    const reg = (await db.doc(`registros/${idAval}`).get()).data();
+    if (Number(reg.registrados) > Number(reg.capacidad))
+      throw new Error(`el cupo se paso: ${reg.registrados} de ${reg.capacidad}`);
+    if (Number(reg.registrados) !== 5)
+      throw new Error('tenia que entrar exactamente uno: quedo en ' + reg.registrados);
+  } finally { await Promise.all(dos.map(({ ctx }) => ctx.close())); }
+
+  // La noche de la avalancha se saca de la agenda: si queda, la Puerta empieza
+  // a mirarla a ella —es la próxima agendada con cupo— y los casos que siguen
+  // no encuentran a sus invitados.
+  await barra.click('#tabCalendario');
+  barra.once('dialog', (d) => d.accept());
+  await barra.locator('#calendario .item', { hasText: 'Noche de la avalancha' })
+    .first().locator('[data-quitar]').click();
+  await barra.waitForFunction(() =>
+    !document.querySelector('#calendario')?.textContent.includes('Noche de la avalancha'),
+    null, { timeout: 10000 });
+  // Y el link viejo vuelve a la noche con lista, que es la que sigue en juego.
+  await barra.waitForFunction(() => true, null, { timeout: 1000 }).catch(() => {});
+});
+
+await chequear('un link a una noche que no existe lo dice, no se queda colgado', async () => {
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  try {
+    await pg.goto(`${BASE}/registro.html?ev=no-existe-esta-noche`, { waitUntil: 'domcontentloaded' });
+    await pg.waitForFunction(() =>
+      document.querySelector('#pantalla')?.textContent.includes('No encontré esa noche'),
+      null, { timeout: 15000 });
+    if ((await pg.textContent('#pantalla')).includes('Buscando la noche'))
+      throw new Error('se quedó colgado en el cartel de carga');
+  } finally { await ctx.close(); }
+});
+
+// De acá en adelante se usa el link propio de la noche, que es el que se
+// reparte: el viejo sin ?ev= ya quedó probado más arriba, y además ahora
+// apunta a la noche de la carrera, que se llenó a propósito.
+const idConLista = await idDeNoche('Noche con lista');
+
 await chequear('el mismo teléfono no se anota dos veces, aunque lo escriba distinto', async () => {
   const ctxDup = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const dup = await ctxDup.newPage();
   try {
-    await dup.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await dup.goto(`${BASE}/registro.html?ev=${idConLista}`, { waitUntil: 'domcontentloaded' });
     await dup.waitForSelector('#formRegistro', { timeout: 15000 });
     await dup.fill('#inpNombre', 'Ana De Nuevo');
     // El mismo número de Ana, escrito con guiones y espacios.
@@ -1232,7 +1363,7 @@ await chequear('si vuelve a abrir el link, ve su pase en vez del formulario', as
   // En otra pestaña del mismo celular: el pase abierto se deja como está.
   const otraPestania = await ctxInv.newPage();
   try {
-    await otraPestania.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await otraPestania.goto(`${BASE}/registro.html?ev=${idConLista}`, { waitUntil: 'domcontentloaded' });
     await otraPestania.waitForFunction(() =>
       document.querySelector('#pantalla')?.textContent.includes('ya estás anotado'),
       null, { timeout: 15000 });
@@ -1246,7 +1377,7 @@ await chequear('lleno el cupo, no se registra nadie más', async () => {
   const ctx2 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const p2 = await ctx2.newPage();
   try {
-    await p2.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await p2.goto(`${BASE}/registro.html?ev=${idConLista}`, { waitUntil: 'domcontentloaded' });
     await p2.waitForSelector('#formRegistro', { timeout: 15000 });
     await p2.fill('#inpNombre', 'Beto Prueba');
     await p2.fill('#inpTel', '11 5555 1111');
@@ -1257,7 +1388,7 @@ await chequear('lleno el cupo, no se registra nadie más', async () => {
   const ctx3 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const p3 = await ctx3.newPage();
   try {
-    await p3.goto(`${BASE}/registro.html`, { waitUntil: 'domcontentloaded' });
+    await p3.goto(`${BASE}/registro.html?ev=${idConLista}`, { waitUntil: 'domcontentloaded' });
     await p3.waitForFunction(() =>
       document.querySelector('#pantalla')?.textContent.includes('completo'), null, { timeout: 15000 });
     if (await p3.locator('#formRegistro').count()) throw new Error('deja anotarse igual');
