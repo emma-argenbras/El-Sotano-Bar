@@ -55,7 +55,7 @@
           "destination": "/index.html"
         }
       ],
-      "site": "sotano-club"
+      "site": "sotano"
     },
     {
       "public": "public",
@@ -108,7 +108,7 @@
           "destination": "/index.html"
         }
       ],
-      "site": "sotano"
+      "site": "sotano-club"
     },
     {
       "public": "public",
