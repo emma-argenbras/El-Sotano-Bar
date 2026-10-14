@@ -471,6 +471,24 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // ---------- bajas del depósito ----------
+    // Borrar un insumo no deja rastro, y a veces hace falta saber por qué
+    // desapareció algo que estaba. Cada baja queda acá con su motivo, quién la
+    // hizo y cuánto había. Es historia: se escribe una vez y no se toca más.
+    match /bajas/{id} {
+      allow read: if esAdmin();
+      allow create: if esAdmin()
+        && request.resource.data.keys().hasAll(['nombre', 'motivo', 'quien', 'cuando'])
+        && request.resource.data.keys().hasOnly(['nombre', 'motivo', 'quien', 'cuando',
+                                                 'insumoId', 'stock', 'unidad'])
+        && request.resource.data.motivo is string
+        && request.resource.data.motivo.size() >= 3
+        && request.resource.data.motivo.size() <= 200
+        && request.resource.data.cuando == request.time;
+      // No se edita ni se borra: si se pudiera, no serviría de nada.
+      allow update, delete: if false;
+    }
+
     // ---------- el conteo de la noche ----------
     // Control, no inventario: lo que se cuenta a mano al abrir y al cerrar.
     // NO mueve el stock de la carta — ese baja solo al entregar. Sirve para

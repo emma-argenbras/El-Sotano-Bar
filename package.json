@@ -22,7 +22,8 @@
     "qr:imprimir": "node scripts/hoja-qr.mjs",
     "build": "node scripts/build.mjs",
     "e2e": "firebase emulators:exec --only firestore,auth,hosting --project el-sotano-bar \"node e2e/flujo.mjs\"",
-    "completar:registros": "node scripts/completar-registros.mjs"
+    "completar:registros": "node scripts/completar-registros.mjs",
+    "auditar:barra": "firebase emulators:exec --only firestore --project demo-el-sotano \"node scripts/auditar-barra.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

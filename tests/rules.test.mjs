@@ -322,6 +322,44 @@ describe('ingresos de mercadería y proveedores', () => {
   });
 });
 
+describe('bajas del depósito', () => {
+  const baja = (extra = {}) => ({
+    insumoId: 'fernet-750', nombre: 'Fernet 750', unidad: 'botella', stock: 3,
+    motivo: 'lo cargué mal', quien: 'guille', cuando: serverTimestamp(), ...extra,
+  });
+
+  it('la casa da de baja un insumo y queda el motivo', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'bajas/baja-1'), baja()));
+    await assertSucceeds(setDoc(doc(gerente(), 'bajas/baja-2'), baja()));
+  });
+
+  it('sin motivo NO: es lo único que queda después', async () => {
+    await assertFails(setDoc(doc(barra(), 'bajas/mala-1'), baja({ motivo: '' })));
+    await assertFails(setDoc(doc(barra(), 'bajas/mala-2'), baja({ motivo: 'x' })));
+  });
+
+  it('la barra no da de baja nada, ni lo lee', async () => {
+    await assertFails(setDoc(doc(aparato(), 'bajas/trucha'), baja()));
+    await assertFails(getDoc(doc(aparato(), 'bajas/baja-1')));
+    await assertFails(setDoc(doc(turnoOk(), 'bajas/trucha-2'), baja()));
+  });
+
+  it('un cliente no ve las bajas', async () => {
+    await assertFails(getDocs(collection(anon(), 'bajas')));
+  });
+
+  // Si se pudiera editar o borrar, no serviría de nada guardarla.
+  it('una baja no se edita ni se borra, ni por el dueño', async () => {
+    await assertFails(updateDoc(doc(barra(), 'bajas/baja-1'), { motivo: 'otra cosa' }));
+    await assertFails(deleteDoc(doc(barra(), 'bajas/baja-1')));
+  });
+
+  it('el insumo lo borra la casa, no la barra', async () => {
+    await assertFails(deleteDoc(doc(aparato(), 'insumos/fernet-750')));
+    await assertSucceeds(deleteDoc(doc(gerente(), 'insumos/gancia-1l')));
+  });
+});
+
 describe('el conteo de la noche', () => {
   const conteo = (extra = {}) => ({
     cajaId: 'ev-1', nombre: 'Noche',

@@ -2354,6 +2354,8 @@ function pintarDeposito() {
         </div>
         <button class="btn" data-editar-insumo="${esc(i.id)}"
                 style="padding:.3rem .6rem;font-size:.78rem">Editar</button>
+        <button class="btn peligro solo-gerente-inline" data-baja-insumo="${esc(i.id)}"
+                title="Darlo de baja" style="padding:.3rem .55rem;font-size:.78rem">✕</button>
       </div>`;
     }).join('')
       : `<div class="vacio">El depósito está vacío.<br>
@@ -2375,9 +2377,85 @@ function pintarDeposito() {
 
   $('#btnNuevoInsumo').onclick = () => abrirInsumo(null);
   $('#btnNuevaCompra').onclick = abrirCompra;
+  cont.querySelectorAll('[data-baja-insumo]').forEach((b) => b.onclick = () =>
+    abrirBaja(estado.insumos.find((i) => i.id === b.dataset.bajaInsumo)));
   cont.querySelectorAll('[data-editar-insumo]').forEach((b) => b.onclick = () =>
     abrirInsumo(estado.insumos.find((i) => i.id === b.dataset.editarInsumo)));
 }
+
+// ---------- dar de baja un insumo ----------
+// Borrar y listo no sirve: dentro de un mes nadie se acuerda por qué
+// desapareció una botella del depósito. El motivo es obligatorio y queda.
+//
+// Y antes de borrar se mira quién depende de él: si un trago de la carta sale
+// de ese insumo, borrarlo lo dejaría sin de dónde salir y el producto se
+// agotaría solo, sin que nadie entienda por qué.
+let dandoDeBaja = null;
+
+function quienUsa(insumoId) {
+  return estado.carta
+    .filter((c) => (c.receta || []).some((r) => r.insumoId === insumoId))
+    .map((c) => c.nombre || c.id);
+}
+
+function abrirBaja(ins) {
+  if (!ins) return;
+  dandoDeBaja = ins;
+  const usan = quienUsa(ins.id);
+  $('#queSeDaDeBaja').innerHTML = `<b>${esc(ins.nombre)}</b> — ${esc(comoSeDice(ins))} en el depósito.`
+    + (usan.length
+      ? `<br><span style="color:var(--naranja)">Ojo: ${esc(usan.join(', '))} ${
+          usan.length === 1 ? 'sale' : 'salen'} de acá.</span>`
+      : '');
+  $('#inpMotivoBaja').value = '';
+  $('#errorBaja').classList.add('oculto');
+  $('#btnConfirmarBaja').disabled = false;
+  $('#btnConfirmarBaja').textContent = 'Dar de baja';
+  $('#dlgBaja').showModal();
+  $('#inpMotivoBaja').focus();
+}
+
+$('#btnCancelarBaja').onclick = () => { dandoDeBaja = null; $('#dlgBaja').close(); };
+$('#btnConfirmarBaja').onclick = async () => {
+  const ins = dandoDeBaja;
+  if (!ins) return;
+  const motivo = $('#inpMotivoBaja').value.trim();
+  const fallar = (t) => {
+    $('#errorBajaTexto').textContent = t;
+    $('#errorBaja').classList.remove('oculto');
+  };
+  if (motivo.length < 3) {
+    fallar('Escribí el motivo: es lo único que queda después.');
+    $('#inpMotivoBaja').focus();
+    return;
+  }
+  // Un trago que sale de este insumo quedaría sin de dónde salir: se frena
+  // acá, con el nombre del producto, en vez de romperlo en silencio.
+  const usan = quienUsa(ins.id);
+  if (usan.length) {
+    fallar(`Primero sacalo de la receta de ${usan.join(', ')}, en Carta y stock.`);
+    return;
+  }
+  const btn = $('#btnConfirmarBaja');
+  btn.disabled = true; btn.textContent = 'Dando de baja…';
+  try {
+    // Primero queda la historia; recién después desaparece el insumo. Si se
+    // cayera en el medio, es preferible una baja anotada de más que una
+    // botella que desapareció sin explicación.
+    await addDoc(collection(db, 'bajas'), {
+      insumoId: ins.id, nombre: ins.nombre || ins.id,
+      unidad: ins.unidad || 'unidad', stock: Number(ins.stock || 0),
+      motivo, quien: quienAtiende() || estado.usuario || 'la casa',
+      cuando: serverTimestamp(),
+    });
+    await deleteDoc(doc(db, 'insumos', ins.id));
+    dandoDeBaja = null;
+    $('#dlgBaja').close();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Dar de baja';
+    fallar('No se pudo: ' + (e.code || e.message));
+  }
+};
 
 let editandoInsumo = null;
 function abrirInsumo(ins) {

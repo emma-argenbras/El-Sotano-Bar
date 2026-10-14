@@ -1051,6 +1051,73 @@ await chequear('la carta se queda sin stock sola cuando el depósito se vacía',
   });
 });
 
+await chequear('un insumo cargado por error se da de baja, con el motivo', async () => {
+  // Pasó de verdad: cargaron mal un insumo y no había forma de sacarlo.
+  await barra.click('#tabDeposito');
+  await barra.waitForSelector('#btnNuevoInsumo', { timeout: 10000 });
+  await barra.click('#btnNuevoInsumo');
+  await barra.waitForSelector('#dlgInsumo[open]', { timeout: 5000 });
+  await barra.fill('#inpInsNombre', 'Cargado por error');
+  await barra.fill('#inpInsUnidad', 'botella');
+  await barra.fill('#inpInsMedidas', '1');
+  await barra.fill('#inpInsCosto', '1');
+  await barra.click('#btnGuardarInsumo');
+  await barra.waitForFunction(() =>
+    document.querySelector('#deposito')?.textContent.includes('Cargado por error'),
+    null, { timeout: 10000 });
+
+  const fila = barra.locator('#deposito .item', { hasText: 'Cargado por error' });
+  await fila.locator('[data-baja-insumo]').click();
+  await barra.waitForSelector('#dlgBaja[open]', { timeout: 5000 });
+
+  // Sin motivo no se puede: es lo único que queda después.
+  await barra.click('#btnConfirmarBaja');
+  await barra.waitForFunction(() =>
+    !document.querySelector('#errorBaja')?.classList.contains('oculto'), null, { timeout: 5000 });
+  if (!(await barra.textContent('#deposito')).includes('Cargado por error'))
+    throw new Error('lo borró sin motivo');
+
+  await barra.fill('#inpMotivoBaja', 'me equivoqué al cargarlo');
+  await barra.click('#btnConfirmarBaja');
+  await barra.waitForFunction(() =>
+    !document.querySelector('#deposito')?.textContent.includes('Cargado por error'),
+    null, { timeout: 10000 }).catch(async () => {
+      throw new Error('no se fue del depósito: '
+        + (await barra.textContent('#errorBaja')).slice(0, 160));
+    });
+
+  // Y queda el por qué, con quién lo hizo.
+  let b;
+  for (let i = 0; i < 40; i++) {
+    const q = await db.collection('bajas').where('nombre', '==', 'Cargado por error').get();
+    b = q.docs[0]?.data();
+    if (b) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!b) throw new Error('no quedó registrada la baja');
+  if (b.motivo !== 'me equivoqué al cargarlo') throw new Error('guardó otro motivo: ' + b.motivo);
+  if (!b.quien) throw new Error('no dice quién la dio de baja');
+});
+
+await chequear('un insumo del que sale un trago NO se puede dar de baja', async () => {
+  // Borrarlo dejaría al trago sin de dónde salir, y se agotaría solo sin que
+  // nadie entienda por qué. Se frena con el nombre del producto.
+  const fila = barra.locator('#deposito .item', { hasText: 'Fernet 750' });
+  await fila.locator('[data-baja-insumo]').click();
+  await barra.waitForSelector('#dlgBaja[open]', { timeout: 5000 });
+  if (!(await barra.textContent('#queSeDaDeBaja')).includes('Fernet con coca'))
+    throw new Error('no avisa qué producto depende de él');
+  await barra.fill('#inpMotivoBaja', 'probando');
+  await barra.click('#btnConfirmarBaja');
+  await barra.waitForFunction(() =>
+    !document.querySelector('#errorBaja')?.classList.contains('oculto'), null, { timeout: 5000 });
+  if (!(await barra.textContent('#errorBajaTexto')).includes('Fernet con coca'))
+    throw new Error('el error no dice de qué receta sacarlo');
+  await barra.click('#btnCancelarBaja');
+  if (!(await barra.textContent('#deposito')).includes('Fernet 750'))
+    throw new Error('lo borró igual');
+});
+
 await chequear('el administrador carga el depósito con su cuenta, de punta a punta', async () => {
   // El depósito real no lo carga el dueño: lo carga un administrador, parado
   // en la barra, con su usuario y contraseña. Hasta acá todo el depósito se

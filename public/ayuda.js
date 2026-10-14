@@ -284,6 +284,10 @@
         entregarlo, baja <b>una medida</b> del depósito, no una botella.</p>
         <p>Un producto sin receta no toca el depósito. Eso está bien para cosas
         que no salen de una botella.</p>
+        <p>La <b>✕</b> roja da de baja un insumo: pide el motivo, que queda
+        registrado con tu nombre. Si un trago de la carta sale de ese insumo,
+        no te deja hasta que lo saques de la receta — si no, el trago se
+        agotaría solo y nadie entendería por qué.</p>
         <p>Esto lo cargás vos o un administrador con su cuenta. <b>Desde el
         celular de la barra no se puede</b>: ese aparato mira el depósito y
         descuenta al entregar, pero no da de alta mercadería ni le pone precio.

@@ -384,6 +384,23 @@
   <button class="btn ancho-full" id="btnCerrarInvitar" style="margin-top:.9rem">Listo</button>
 </dialog>
 
+<!-- Dar de baja un insumo: el motivo es obligatorio porque es lo único que
+     queda después. -->
+<dialog id="dlgBaja">
+  <h2 style="margin-top:0">Dar de baja un insumo</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin-top:0" id="queSeDaDeBaja"></p>
+  <label class="campo">
+    <span>¿Por qué? <small>(queda registrado)</small></span>
+    <input id="inpMotivoBaja" maxlength="200" autocomplete="off"
+           placeholder="Ej: lo cargué mal, se rompió, no lo vendemos más">
+  </label>
+  <div class="aviso mal oculto" id="errorBaja"><span>⚠</span><div id="errorBajaTexto"></div></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarBaja" style="flex:1">Volver</button>
+    <button class="btn peligro" id="btnConfirmarBaja" style="flex:1.4">Dar de baja</button>
+  </div>
+</dialog>
+
 <dialog id="dlgInstalar">
   <h2 style="margin-top:0">Instalar la Barra</h2>
   <p style="color:var(--suave);font-size:.9rem;margin-top:0">
