@@ -188,9 +188,13 @@
         <p>Por eso, antes de arrancar el turno tocá <b>👤</b> arriba y elegí
         <b>quién está atendiendo</b>. Eso queda guardado en cada venta y es lo
         que después muestra el ranking de la casa.</p>
-        <p>De acá se ven <b>Pedidos</b>, <b>Carta</b> (con el stock y el conteo)
-        y <b>Noche</b>. La caja general, el calendario y la puerta son de otras
-        cuentas.</p>
+        <p>De acá se ven <b>Pedidos</b>, <b>Carta</b> (con el stock y el conteo),
+        <b>Depósito</b> y <b>Noche</b>. La caja general, el calendario y la
+        puerta son de otras cuentas.</p>
+        <p>El <b>Depósito</b> es para mirar: lo que hay guardado y qué se está
+        por acabar, para no prometer un trago que no se puede hacer. No se
+        carga mercadería desde acá, ni se ven precios ni lo que se le debe a
+        los proveedores — eso es de la casa.</p>
         <p><b>No toques Salir</b> salvo que la casa te lo pida: para volver a
         entrar hace falta la contraseña del local.</p>`,
     },
@@ -289,9 +293,10 @@
         no te deja hasta que lo saques de la receta — si no, el trago se
         agotaría solo y nadie entendería por qué.</p>
         <p>Esto lo cargás vos o un administrador con su cuenta. <b>Desde el
-        celular de la barra no se puede</b>: ese aparato mira el depósito y
-        descuenta al entregar, pero no da de alta mercadería ni le pone precio.
-        Vive prendido arriba del mostrador y lo levanta cualquiera.</p>`,
+        celular de la barra no se puede</b>: ese aparato ve el depósito para
+        saber qué hay —sin precios, sin compras y sin la deuda— y descuenta al
+        entregar, pero no da de alta mercadería ni le pone precio. Vive
+        prendido arriba del mostrador y lo levanta cualquiera.</p>`,
     },
     {
       quien: ['admin', 'puerta'],

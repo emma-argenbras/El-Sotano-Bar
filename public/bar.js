@@ -1575,8 +1575,12 @@ function aplicarRol() {
   estado.esAparato = !estado.dueno && estado.rol === 'barra';
   b.toggle('es-aparato', estado.esAparato);
   pintarQuienAtiende();
+  if (estado.dueno || estado.rol === 'admin') escucharPlataDeposito();
   $('#tabCaja').hidden = !(estado.dueno || estado.rol === 'admin');
-  $('#tabDeposito').hidden = !(estado.dueno || estado.rol === 'admin');
+  // El depósito también lo ve el celular de la barra: necesita saber qué hay
+  // para no prometer un trago que no se puede hacer. Lo ve de mirar nada más
+  // —adentro no hay ningún botón suyo—, y las reglas lo frenan igual.
+  $('#tabDeposito').hidden = !(estado.dueno || estado.rol === 'admin' || estado.esAparato);
   // El celular de la barra atiende la barra: pedidos, carta y la noche. La
   // puerta es de la gente de la puerta, con su propia cuenta.
   $('#tabPuerta').hidden = estado.esAparato;
@@ -2329,6 +2333,28 @@ async function sincronizarCartaConDeposito() {
 }
 
 function escucharDeposito() {
+  // El insumo lo lee toda la barra: es lo que hay guardado. Lo demás —compras,
+  // gastos, proveedores— es plata, y el celular de la barra no lo puede leer.
+  // Pedirlo igual sería un permission-denied cada vez que arranca.
+  onSnapshot(collection(db, 'insumos'), (snap) => {
+    estado.insumos = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    pintarDeposito(); pintarConteo(); sincronizarCartaConDeposito();
+  }, fallo('#deposito'));
+
+}
+
+// La plata del depósito —compras, gastos, proveedores— va aparte: el celular
+// de la barra no la puede leer, y pedirla igual es un permission-denied cada
+// vez que arranca.
+//
+// Se engancha cuando se sabe el rol, no al cargar: al cargar todavía no se
+// sabe quién entró, y gatear acá dejaba al dueño sin sus propias compras.
+let yaEscuchaPlataDeposito = false;
+function escucharPlataDeposito() {
+  if (yaEscuchaPlataDeposito) return;
+  yaEscuchaPlataDeposito = true;
+
   // Los gastos con proveedor apuntado son los pagos a cuenta: hacen falta
   // completos, no solo los del rango que esté mirando la caja.
   onSnapshot(collection(db, 'egresos'), (snap) => {
@@ -2336,11 +2362,6 @@ function escucharDeposito() {
     pintarDeposito();
   }, () => {});
 
-  onSnapshot(collection(db, 'insumos'), (snap) => {
-    estado.insumos = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
-    pintarDeposito(); pintarConteo(); sincronizarCartaConDeposito();
-  }, fallo('#deposito'));
   // El alias al que transfieren la entrada. Vive en publico/ porque el
   // invitado lo tiene que poder leer sin cuenta: es lo único que necesita
   // para pagar.
@@ -2382,16 +2403,25 @@ function pintarDeposito() {
     .filter((p) => Math.abs(p.saldo) > 0.5);
   const deuda = conDeuda.reduce((a, p) => a + p.saldo, 0);
 
+  // El celular de la barra mira y nada más: no da de alta mercadería, no
+  // carga compras y no ve la plata. Mostrarle esos botones sería ofrecerle
+  // algo que las reglas le van a negar.
+  const soloMira = estado.esAparato;
+
   cont.innerHTML = `
+    ${soloMira ? '' : `
     <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem">
       <button class="btn primario" id="btnNuevaCompra" style="flex:1">+ Ingreso de mercadería</button>
       <button class="btn" id="btnNuevoInsumo" style="flex:1">+ Insumo</button>
-    </div>
+    </div>`}
+
+    ${soloMira ? `<p style="color:var(--suave);font-size:.86rem;margin:0 0 .9rem">
+      Lo que hay guardado, para saber qué se puede hacer. Lo carga la casa.</p>` : ''}
 
     ${bajos.length ? `<div class="aviso mal"><span>⚠</span><div>
       <b>Se está por acabar:</b> ${bajos.map((i) => esc(i.nombre)).join(', ')}.</div></div>` : ''}
 
-    ${deuda ? `<div class="caja-evento" style="margin-bottom:.9rem">
+    ${deuda && !soloMira ? `<div class="caja-evento" style="margin-bottom:.9rem">
       <div class="titulo">Deuda con proveedores</div>
       <div class="numeros"><div class="plata"><b>${plata(deuda)}</b><span>se debe</span></div></div>
       <table class="ranking"><tbody>${conDeuda.map((p) => `
@@ -2409,12 +2439,14 @@ function pintarDeposito() {
           <div class="nombre">${esc(i.nombre)}</div>
           <div class="desc">${comoSeDice(i)}${
             Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}${
-            i.costo ? ` · ${plata(i.costo)} c/u` : ''}</div>
+            // Lo que costó es plata de la casa: en el celular del mostrador no va.
+            i.costo && !soloMira ? ` · ${plata(i.costo)} c/u` : ''}</div>
         </div>
+        ${soloMira ? '' : `
         <button class="btn" data-editar-insumo="${esc(i.id)}"
                 style="padding:.3rem .6rem;font-size:.78rem">Editar</button>
         <button class="btn peligro solo-gerente-inline" data-baja-insumo="${esc(i.id)}"
-                title="Darlo de baja" style="padding:.3rem .55rem;font-size:.78rem">✕</button>
+                title="Darlo de baja" style="padding:.3rem .55rem;font-size:.78rem">✕</button>`}
       </div>`;
     }).join('')
       : `<div class="vacio">El depósito está vacío.<br>
@@ -2434,8 +2466,10 @@ function pintarDeposito() {
           <div class="total">${c.condicion === 'inicial' ? '—' : plata(c.total)}</div>
         </div>`).join('')}` : ''}`;
 
-  $('#btnNuevoInsumo').onclick = () => abrirInsumo(null);
-  $('#btnNuevaCompra').onclick = abrirCompra;
+  // Para el celular de la barra estos botones no existen: se engancha lo que
+  // haya, no lo que debería haber.
+  if ($('#btnNuevoInsumo')) $('#btnNuevoInsumo').onclick = () => abrirInsumo(null);
+  if ($('#btnNuevaCompra')) $('#btnNuevaCompra').onclick = abrirCompra;
   cont.querySelectorAll('[data-baja-insumo]').forEach((b) => b.onclick = () =>
     abrirBaja(estado.insumos.find((i) => i.id === b.dataset.bajaInsumo)));
   cont.querySelectorAll('[data-editar-insumo]').forEach((b) => b.onclick = () =>

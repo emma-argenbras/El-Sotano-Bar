@@ -1269,10 +1269,10 @@ await chequear('el administrador carga el depósito con su cuenta, de punta a pu
   } finally { await ctxGer.close(); }
 });
 
-await chequear('el celular de la barra NO carga el depósito: lo mira y descuenta', async () => {
-  // Es el aparato que vive prendido arriba del mostrador y sin clave. Si
-  // desde ahí se pudiera dar de alta mercadería y ponerle precio, lo haría
-  // cualquiera que lo levante.
+await chequear('el celular de la barra ve el depósito, pero solo de mirar', async () => {
+  // Necesita saber qué hay para no prometer un trago que no se puede hacer.
+  // Pero es el aparato que vive prendido arriba del mostrador y sin clave: no
+  // da de alta mercadería, no carga compras y no ve plata.
   const ctxCel = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const cel = await ctxCel.newPage();
   try {
@@ -1281,9 +1281,26 @@ await chequear('el celular de la barra NO carga el depósito: lo mira y descuent
     await cel.fill('#inpPass', 'clave-del-aparato');
     await cel.click('#btnEntrar');
     await cel.waitForSelector('#vistaPanel', { state: 'visible', timeout: 20000 });
+
     await cel.waitForFunction(() =>
-      document.querySelector('#tabDeposito')?.hidden === true, null, { timeout: 15000 })
-      .catch(() => { throw new Error('el celular de la barra ve la pestaña Depósito'); });
+      document.querySelector('#tabDeposito')?.hidden === false, null, { timeout: 15000 })
+      .catch(() => { throw new Error('el celular de la barra no ve la pestaña Depósito'); });
+    await cel.click('#tabDeposito');
+    await cel.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('Fernet 750'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('no ve lo que hay guardado: '
+          + (await cel.textContent('#deposito')).slice(0, 200));
+      });
+
+    // Nada de lo que no puede hacer.
+    for (const q of ['#btnNuevoInsumo', '#btnNuevaCompra', '[data-editar-insumo]', '[data-baja-insumo]'])
+      if (await cel.locator(q).count()) throw new Error('le muestra ' + q);
+    const dice = await cel.textContent('#deposito');
+    if (dice.includes('Deuda con proveedores')) throw new Error('le muestra la deuda');
+    if (/12\.000|\bc\/u\b/.test(dice)) throw new Error('le muestra lo que costó: ' + dice.slice(0, 200));
+
+    // Y la caja sigue sin ser suya.
     if (await cel.locator('#tabCaja').isVisible())
       throw new Error('el celular de la barra ve la caja');
   } finally { await ctxCel.close(); }
