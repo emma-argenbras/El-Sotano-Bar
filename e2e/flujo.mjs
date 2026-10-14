@@ -200,12 +200,11 @@ await chequear('la barra se puede instalar como app aparte', async () => {
   if (m.id === '/index.html') throw new Error('comparte id con la carta: se instalaría una sola');
   if (!m.icons.some((i) => i.purpose === 'maskable')) throw new Error('sin ícono maskable');
 
-  // En la pantalla de inicio hay dos apps de la casa: la carta y esta. La
-  // carta dice "Sótano" —la marca le sacó el "El"— y esta dice "Barra", o en
-  // el celular de Guille quedan dos íconos con el mismo nombre debajo.
-  if (m.short_name !== 'Barra') throw new Error('short_name: ' + m.short_name);
+  // Abajo del ícono va la marca, no la función: "Sótano". De la carta se
+  // distingue por el color del ícono —dorado y oscuro—, no por el texto.
+  if (m.short_name !== 'Sótano') throw new Error('short_name: ' + m.short_name);
   const tituloIOS = await barra.getAttribute('meta[name="apple-mobile-web-app-title"]', 'content');
-  if (tituloIOS !== 'Barra') throw new Error('nombre en iOS: ' + tituloIOS);
+  if (tituloIOS !== 'Sótano') throw new Error('nombre en iOS: ' + tituloIOS);
 
   // Instalada en una computadora, el navegador pega el nombre de la app y el
   // título de la página uno detrás del otro. Si no son el mismo texto, arriba
