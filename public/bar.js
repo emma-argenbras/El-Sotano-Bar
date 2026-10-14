@@ -264,7 +264,14 @@ const barmanMarcados = () =>
   [...document.querySelectorAll('#elegirBarman input:checked')].map((i) => i.value);
 
 $('#btnCancelarEvento').onclick = () => $('#dlgEvento').close();
-$('#btnCerrarInvitar').onclick = () => { estado.invitandoA = null; $('#dlgInvitar').close(); };
+$('#btnCerrarInvitar').onclick = () => {
+  estado.invitandoA = null;
+  // Se vacía al cerrar: si no, la lista de esa noche queda en el DOM —con sus
+  // nombres y teléfonos— detrás de un diálogo cerrado, y la próxima vez que
+  // se abre se ve un instante la noche anterior.
+  $('#cuerpoInvitar').innerHTML = '';
+  $('#dlgInvitar').close();
+};
 // Ver lo que se escribe: la contraseña de la barra la comparte gente que la
 // tipea en un celular, y a ciegas se equivoca y no sabe por qué no entra.
 $('#btnVerPass').onclick = () => {
@@ -1268,15 +1275,27 @@ const TOPE_LISTA = 20;
 
 function renglonInvitado(i, conBoton) {
   const gastó = consumoDe(i.id);
+  const esperaPago = i.pago === 'virtual' && !i.pagadoEn;
+  // Cuántos días lleva anotado sin pagar: a los dos o tres, conviene
+  // escribirle o liberarle el lugar con la ✕.
+  const desde = i.creadoEn?.toMillis?.() || 0;
+  const dias = esperaPago && desde
+    ? Math.floor((Date.now() - desde) / 86400000) : 0;
   return `<div class="item invitado ${i.ingresadoEn ? 'adentro' : ''}">
     <div class="cuerpo">
       <div class="nombre">${esc(i.nombre)}</div>
       <div class="desc">${esc(i.telefono)}${i.ingresadoEn ? ' · entró ' + hora(i.ingresadoEn) : ''}${
         gastó ? ' · consumió ' + plata(gastó) : ''}${
-        // Cómo DIJO que iba a pagar la entrada. Es un aviso para quien está en
-        // la puerta —pedile el comprobante—, no un cobro hecho.
-        i.pago === 'virtual' && !i.ingresadoEn ? ' · <b style="color:var(--oro)">dijo transferencia</b>' : ''}</div>
+        // Quien dijo que transfiere no tiene QR hasta que alguien confirme que
+        // la plata llegó. Hasta entonces ocupa un lugar sin haber pagado.
+        esperaPago ? ` · <b style="color:var(--naranja)">esperando pago${
+          dias ? ' · hace ' + dias + (dias === 1 ? ' día' : ' días') : ''}</b>` : ''}${
+        i.pago === 'virtual' && i.pagadoEn ? ' · <b style="color:var(--verde)">pagó</b>' : ''}</div>
     </div>
+    ${i.pago === 'virtual' ? `<button class="btn ${esperaPago ? 'primario' : ''}" data-cobrado="${esc(i.id)}"
+            title="${esperaPago ? 'Confirmar que llegó la transferencia' : 'Deshacer: no había llegado'}"
+            style="padding:.4rem .7rem;font-size:.82rem">
+      ${esperaPago ? 'Cobrado' : 'Sin cobrar'}</button>` : ''}
     ${conBoton ? `<button class="btn ${i.ingresadoEn ? '' : 'primario'}" data-ingreso="${esc(i.id)}"
             style="padding:.4rem .7rem;font-size:.82rem">
       ${i.ingresadoEn ? 'Deshacer' : 'Entró'}</button>` : ''}
@@ -1328,7 +1347,32 @@ async function sacarInvitado(inv) {
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 
+// Confirmar que la transferencia llegó. Lo hace una persona mirando el banco:
+// una transferencia a un alias no le avisa a la app, no hay nada que escuchar.
+//
+// Apenas se escribe, el pase del invitado lo ve —está escuchando su documento—
+// y su QR aparece solo, sin que tenga que recargar ni volver a buscar el link.
+async function marcarCobrado(id, boton) {
+  const i = (estado.invitadosTodos || []).find((x) => x.id === id);
+  if (!i) return;
+  const yaPago = !!i.pagadoEn;
+  if (yaPago && !confirm(`¿Marcar a "${i.nombre}" como NO pagado?\n\n`
+    + 'Su QR de acceso desaparece hasta que lo vuelvas a confirmar.')) return;
+  if (boton) boton.disabled = true;
+  try {
+    await updateDoc(doc(db, 'invitados', id), yaPago
+      ? { pagadoEn: null, pagadoPor: null }
+      : { pagadoEn: serverTimestamp(), pagadoPor: quienAtiende() || estado.usuario || 'la casa' });
+  } catch (e) {
+    alert('No se pudo: ' + (e.code || e.message));
+  } finally {
+    if (boton) boton.disabled = false;
+  }
+}
+
 function engancharPliegues(cont) {
+  cont.querySelectorAll('[data-cobrado]').forEach((b) => b.onclick = () =>
+    marcarCobrado(b.dataset.cobrado, b));
   cont.querySelectorAll('[data-sacar]').forEach((b) => b.onclick = () => {
     const i = (estado.invitadosTodos || []).find((x) => x.id === b.dataset.sacar);
     if (i) sacarInvitado(i);
@@ -1413,6 +1457,8 @@ function pintarPuerta() {
     const nuevo = $('#inpBuscaInv');
     nuevo.focus(); nuevo.setSelectionRange(pos, pos);
   };
+  cont.querySelectorAll('[data-cobrado]').forEach((b) => b.onclick = () =>
+    marcarCobrado(b.dataset.cobrado, b));
   cont.querySelectorAll('[data-ingreso]').forEach((b) => b.onclick = () => {
     const i = estado.invitados.find((x) => x.id === b.dataset.ingreso);
     marcarIngreso(i.id, !i.ingresadoEn);

@@ -76,6 +76,38 @@ function cuando(f) {
   return txt[0].toUpperCase() + txt.slice(1);
 }
 
+// Todavía no confirmamos su pago: en vez del QR, adónde transferir y qué va a
+// pasar después. Esta pantalla se actualiza sola cuando la casa confirma —está
+// escuchando el documento—, así que el QR le aparece sin hacer nada.
+function pintarEsperandoPago(inv, noche, fecha, entrada, al) {
+  $('#pase').innerHTML = `
+    <div class="aviso" style="margin-bottom:.9rem"><span>⏳</span><div>
+      <b>${esc(inv.nombre)}, tu lugar está guardado.</b><br>
+      ${esc(noche.nombre || 'La noche')}${fecha ? ' · ' + esc(fecha) : ''}</div></div>
+
+    ${al.alias ? `
+      <div class="aviso"><span>🎟</span><div style="flex:1">
+        <b>Transferí ${plata(entrada)} a:</b><br>
+        <b style="color:var(--oro);font-size:1.15rem;word-break:break-all">${esc(al.alias)}</b>
+        ${al.titular ? `<br><small>A nombre de ${esc(al.titular)}</small>` : ''}
+      </div></div>
+      <button class="btn ancho-full" id="btnCopiarAlias" style="margin-top:.5rem">Copiar el alias</button>` : `
+      <div class="aviso mal"><span>⚠</span><div>
+        <b>Todavía no hay alias cargado.</b> Escribinos y lo arreglamos.</div></div>`}
+
+    <div class="aviso" style="margin-top:.9rem"><span>📲</span><div>
+      <b>Ni bien confirmemos tu pago te avisamos por acá.</b><br>
+      Instalate la app y tu QR de acceso aparece solo en esta misma pantalla:
+      no tenés que hacer nada ni volver a buscar el link.</div></div>`;
+
+  if ($('#btnCopiarAlias')) $('#btnCopiarAlias').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(al.alias);
+      $('#btnCopiarAlias').textContent = 'Alias copiado ✓';
+    } catch { $('#btnCopiarAlias').textContent = al.alias; }
+  };
+}
+
 async function pintar(inv) {
   // El QR lleva solo el token: la puerta lo busca contra su lista.
   const img = await qrDataURL(inv.id, {
@@ -88,8 +120,11 @@ async function pintar(inv) {
   const fecha = cuando(noche.fecha);
   // Si dijo que transfiere, acá tiene que estar el alias: si no, el pase le
   // dice cuánto pagar y no adónde.
-  const porTransferencia = inv.pago === 'virtual' && entrada > 0 && !adentro;
-  const al = porTransferencia ? await aliasDePago() : {};
+  // Quien dijo que transfiere no tiene QR hasta que la casa confirme que la
+  // plata llegó: el banco no le avisa a la app, lo confirma una persona.
+  if (inv.pago === 'virtual' && entrada > 0 && !inv.pagadoEn) {
+    return pintarEsperandoPago(inv, noche, fecha, entrada, await aliasDePago());
+  }
   $('#pase').innerHTML = `
     <div class="lienzo-pase ${adentro ? 'usado' : ''}">
       <img class="logo" src="/iconos/logo-horizontal-claro.svg" alt="Sótano" width="443" height="120">
@@ -101,20 +136,13 @@ async function pintar(inv) {
         ? '✓ Ya entraste. ¡Buena noche!'
         : 'Mostrá esta pantalla en la puerta'}</div>
     </div>
-    ${entrada && !adentro && !porTransferencia ? `
+    ${entrada && !adentro && inv.pago !== 'virtual' ? `
       <div class="aviso" style="margin-top:.9rem"><span>🎟</span><div>
         <b>Entrada ${plata(entrada)}</b>, se paga en la puerta.</div></div>` : ''}
-    ${porTransferencia ? (al.alias ? `
-      <div class="aviso" style="margin-top:.9rem"><span>🎟</span><div style="flex:1">
-        <b>Entrada ${plata(entrada)}</b> — transferí a:<br>
-        <b style="color:var(--oro);font-size:1.05rem;word-break:break-all">${esc(al.alias)}</b>
-        ${al.titular ? `<br><small>A nombre de ${esc(al.titular)}</small>` : ''}
-        <br><small>Mostrá el comprobante en la puerta junto con este pase.</small>
-      </div></div>
-      <button class="btn ancho-full" id="btnCopiarAlias" style="margin-top:.5rem">Copiar el alias</button>` : `
-      <div class="aviso mal" style="margin-top:.9rem"><span>⚠</span><div>
-        <b>Entrada ${plata(entrada)}</b>, pero todavía no hay alias cargado.<br>
-        Pagala en la puerta o escribinos.</div></div>`) : ''}
+    ${entrada && inv.pago === 'virtual' ? `
+      <div class="aviso ok" style="margin-top:.9rem"><span>✓</span><div>
+        <b>Entrada paga.</b> Recibimos tus ${plata(entrada)}: en la puerta no pagás nada.
+      </div></div>` : ''}
     <div style="display:flex;gap:.6rem;margin-top:1rem">
       <button class="btn" id="btnCompartir" style="flex:1">Compartir</button>
       <a class="btn primario" href="/?inv=${encodeURIComponent(inv.id)}" style="flex:1.4">Ver la carta</a>
@@ -125,13 +153,6 @@ async function pintar(inv) {
     ${adentro ? `
       <a class="btn ancho-full" style="margin-top:.2rem;display:block;text-align:center"
          href="/registro.html">Anotarme para la próxima noche</a>` : ''}`;
-
-  if ($('#btnCopiarAlias')) $('#btnCopiarAlias').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(al.alias);
-      $('#btnCopiarAlias').textContent = 'Alias copiado ✓';
-    } catch { $('#btnCopiarAlias').textContent = al.alias; }
-  };
 
   $('#btnCompartir').onclick = async () => {
     const url = `${location.origin}/pase.html?i=${encodeURIComponent(inv.id)}`;

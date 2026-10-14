@@ -342,9 +342,13 @@ service cloud.firestore {
       // transferencia. Lo elige al anotarse y es un dato suyo, no plata
       // cobrada: que haya dicho "transferencia" no significa que transfirió.
       // Quien cobra sigue siendo la puerta.
-      return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor', 'pago'])
+      return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor',
+                               'pago', 'pagadoEn', 'pagadoPor'])
         && d.keys().hasAll(['eventoId', 'nombre', 'telefono', 'creadoEn'])
         && d.get('pago', 'efectivo') in ['efectivo', 'virtual']
+        // Nadie se marca su propio pago al anotarse: eso lo confirma la casa
+        // después de ver la transferencia.
+        && d.get('pagadoEn', null) == null
         && d.eventoId is string
         && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60
         // Un solo formato: diez números, sin el 0 y sin el 15. Si cada uno lo
@@ -402,6 +406,14 @@ service cloud.firestore {
              .hasOnly(['ingresadoEn', 'ingresadoPor'])
         && (resource.data.get('ingresadoEn', null) == null
             || request.resource.data.get('ingresadoEn', null) == null);
+
+      // Confirmar que la transferencia llegó. Es plata, así que lo hace la
+      // barra o la casa, nunca la puerta ni el invitado: el que mira el banco
+      // no es el que está en la entrada. Se puede deshacer, por si se
+      // confundió de persona.
+      allow update: if esBarra()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['pagadoEn', 'pagadoPor']);
 
       // Sacar a alguien de la lista es de la casa: se anotó dos veces, se
       // equivocó de noche. No es borrar la base, es arreglar la lista.

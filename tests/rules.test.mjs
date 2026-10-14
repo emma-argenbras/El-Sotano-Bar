@@ -432,6 +432,32 @@ describe('registro de invitados', () => {
       invitadoNuevo({ pago: 'gratis' })));
   });
 
+  // Nadie se marca su propio pago: su QR depende de eso.
+  it('no se puede anotar diciendo que ya pagó', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-ya-pague-1111'),
+      invitadoNuevo({ pago: 'virtual', pagadoEn: serverTimestamp() })));
+  });
+
+  // La plata la confirma quien mira el banco, no quien está en la entrada.
+  it('la barra confirma que la transferencia llegó, la puerta no', async () => {
+    await setDoc(doc(barra(), 'invitados/token-a-cobrar-11111'),
+      invitadoNuevo({ pago: 'virtual' }));
+    await assertFails(updateDoc(doc(puerta(), 'invitados/token-a-cobrar-11111'),
+      { pagadoEn: serverTimestamp(), pagadoPor: 'yo' }));
+    await assertFails(updateDoc(doc(anon(), 'invitados/token-a-cobrar-11111'),
+      { pagadoEn: serverTimestamp(), pagadoPor: 'yo' }));
+    await assertSucceeds(updateDoc(doc(gerente(), 'invitados/token-a-cobrar-11111'),
+      { pagadoEn: serverTimestamp(), pagadoPor: 'guille' }));
+    // Y se puede deshacer, por si se confundió de persona.
+    await assertSucceeds(updateDoc(doc(gerente(), 'invitados/token-a-cobrar-11111'),
+      { pagadoEn: null, pagadoPor: null }));
+  });
+
+  it('confirmando el pago no se cuela otro cambio', async () => {
+    await assertFails(updateDoc(doc(gerente(), 'invitados/token-a-cobrar-11111'),
+      { pagadoEn: serverTimestamp(), nombre: 'Otro' }));
+  });
+
   // El alias al que se transfiere lo lee cualquiera —hace falta para pagar—
   // pero lo escribe solo la casa.
   it('el alias de pago lo lee cualquiera y lo escribe la casa', async () => {

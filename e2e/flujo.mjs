@@ -343,7 +343,14 @@ await chequear('la barra lo pasa a Preparando', async () => {
 });
 await chequear('el cliente ve el cambio en vivo', async () => {
   await cliente.waitForFunction(() =>
-    document.querySelector('#misPedidos')?.textContent.includes('Preparando'), null, { timeout: 10000 });
+    document.querySelector('#misPedidos')?.textContent.includes('Preparando'), null, { timeout: 10000 })
+    .catch(async () => {
+      const diag = await cliente.evaluate(() => ({
+        misPedidos: (document.querySelector('#misPedidos')?.textContent || '').slice(0, 200),
+        uid: localStorage.getItem('sotano:uid') || '(no guardado)',
+      }));
+      throw new Error('el cliente no vio el cambio. ' + JSON.stringify(diag));
+    });
 });
 await chequear('al pasar a Listo, al cliente le avisa en Mis pedidos', async () => {
   await barra.locator('.ticket', { hasText: 'Emma' }).locator('[data-avanzar]').click();
@@ -1588,7 +1595,7 @@ await chequear('con alias cargado, el invitado elige transferencia y lo ve en su
     await pg.click('#btnRegistrar');
     await pg.waitForURL(/pase\.html/, { timeout: 20000 });
 
-    // En el pase: el alias para transferir, y de nuevo la noche y la fecha.
+    // Todavía NO tiene QR: dijo que transfiere y nadie confirmó que llegó.
     await pg.waitForFunction(() =>
       document.querySelector('#pase')?.textContent.includes('sotano.prueba.mp'),
       null, { timeout: 20000 }).catch(async () => {
@@ -1601,13 +1608,60 @@ await chequear('con alias cargado, el invitado elige transferencia y lo ve en su
       throw new Error('el pase no dice de qué noche es');
     if (!/lunes|martes|miércoles|jueves|viernes|sábado|domingo/i.test(pase))
       throw new Error('el pase no dice qué día es');
+    if (!pase.includes('confirmemos tu pago'))
+      throw new Error('no le dice que le vamos a avisar');
+    if (await pg.locator('.lienzo-pase .qr').count())
+      throw new Error('le dio el QR sin haber confirmado el pago');
 
-    // Y quedó guardado cómo dijo que paga, que es lo que mira la puerta.
+    // Y quedó guardado cómo dijo que paga.
     const inv = (await db.collection('invitados')
       .where('eventoId', '==', idTrans).get()).docs[0];
     if (inv?.data().pago !== 'virtual')
       throw new Error('no guardó la forma de pago: ' + inv?.data().pago);
-  } finally { await ctx.close(); }
+
+    // La casa ve la transferencia en el banco y la confirma desde las
+    // invitaciones de esa noche.
+    await barra.click('#tabCalendario');
+    await barra.locator('#calendario .item', { hasText: 'Noche de la transferencia' })
+      .first().locator('[data-invitar]').click();
+    await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
+    // La lista va plegada, y adentro de un <details> cerrado nada es visible:
+    // primero se espera a que exista, después se abre.
+    await barra.waitForSelector('#cuerpoInvitar [data-pliegue="anotados"]',
+      { state: 'attached', timeout: 15000 });
+    await barra.evaluate(() => {
+      document.querySelector('#cuerpoInvitar [data-pliegue="anotados"]').open = true;
+    });
+    await barra.waitForSelector('#cuerpoInvitar [data-cobrado]', { timeout: 15000 })
+      .catch(async () => {
+        throw new Error('no apareció el botón de cobrado: '
+          + (await barra.textContent('#cuerpoInvitar')).slice(0, 300));
+      });
+    await barra.locator('#cuerpoInvitar [data-cobrado]').first().click();
+
+    // El QR le aparece solo, sin recargar: el pase escucha su documento.
+    await pg.waitForSelector('.lienzo-pase .qr', { timeout: 20000 }).catch(async () => {
+      throw new Error('confirmado el pago, el QR no apareció: '
+        + (await pg.textContent('#pase')).slice(0, 300));
+    });
+    if (!(await pg.textContent('#pase')).includes('Entrada paga'))
+      throw new Error('el pase no dice que ya está pago');
+  } finally {
+    await ctx.close();
+    // Devolver la pantalla como estaba: el panel recuerda qué desplegables
+    // quedaron abiertos, y eso ensucia los casos que siguen.
+    await barra.evaluate(() => {
+      const d = document.querySelector('#cuerpoInvitar [data-pliegue="anotados"]');
+      if (d) d.open = false;
+    }).catch(() => {});
+    await barra.click('#btnCerrarInvitar');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgInvitar')?.open, null, { timeout: 10000 });
+    // Cerrar tiene que llevarse la lista: son nombres y teléfonos, y además
+    // confunde a cualquiera que busque plegables en la pantalla.
+    if ((await barra.textContent('#cuerpoInvitar')).trim())
+      throw new Error('al cerrar Invitaciones quedó la lista en pantalla');
+  }
 
   // La noche se saca de la agenda: si queda, la Puerta la toma como la
   // próxima y los casos que siguen no encuentran a sus invitados.
