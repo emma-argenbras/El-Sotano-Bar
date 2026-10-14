@@ -65,9 +65,33 @@ service cloud.firestore {
       return tengoTurno() ? miAcceso().get('rol', 'barman') : '';
     }
 
+    // Un nivel más arriba que admin. La diferencia es una sola: elige qué ve
+    // cada uno. El dueño entra acá sin documento —su permiso sale del mail— y
+    // por eso nadie se lo puede sacar, ni un sadmin.
+    function esSuperAdmin() {
+      return esElDueno() || miRol() == 'sadmin';
+    }
+
     // El dueño primero: resuelve con el token y no cuesta ninguna lectura.
     function esAdmin() {
-      return esElDueno() || miRol() == 'admin';
+      return esSuperAdmin() || miRol() == 'admin';
+    }
+
+    // Qué puede hacer cada uno, pantalla por pantalla. Lo elige un sadmin
+    // desde Usuarios y vive en su propio acceso.
+    //
+    // Esconder una pestaña no es un permiso: si el dato se puede escribir
+    // igual, la pantalla es decorado. Por eso cada interruptor frena también
+    // acá, en lo que esa pantalla hace.
+    //
+    // Sin permisos cargados vale true: manda el rol, como siempre. Que esta
+    // pantalla exista no le saca nada a nadie.
+    //
+    // Al sadmin no lo limita: es el que reparte. Si pudiera quedar recortado,
+    // podría dar lo que no tiene, o dejarse afuera sin manera de volver.
+    function puedo(que) {
+      return esSuperAdmin()
+        || (tengoTurno() && miAcceso().get('permisos', {}).get(que, true) == true);
     }
 
     // El celular que vive en la barra tiene su propia cuenta, siempre prendida:
@@ -88,6 +112,28 @@ service cloud.firestore {
 
     function esBarra() {
       return esAdmin() || barmanDeTurno() || esAparatoDeBarra();
+    }
+
+    // Qué roles existen, y cuáles puede repartir cada uno. 'sadmin' solo lo da
+    // otro sadmin: si un admin pudiera, se ascendería solo.
+    function rolQuePuedoDar(r) {
+      return r in ['admin', 'barman', 'puerta', 'barra']
+        || (r == 'sadmin' && esSuperAdmin());
+    }
+
+    function tocaPermisos() {
+      return 'permisos' in request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // Las pantallas que existen. Un interruptor con un nombre inventado no
+    // haría nada, pero ensuciaría el documento y confundiría al que lo lea.
+    function accesoValido(d) {
+      return d.keys().hasOnly(['usuario', 'rol', 'activo', 'creadoEn', 'permisos'])
+        && d.usuario is string && d.usuario.size() >= 3 && d.usuario.size() <= 30
+        && d.activo is bool
+        && (!('permisos' in d.keys()) || (d.permisos is map
+            && d.permisos.keys().hasOnly(['pedidos', 'carta', 'noche', 'caja',
+                                          'deposito', 'calendario', 'puerta'])));
     }
 
     // La puerta solo trabaja la noche en que está asignada, igual que el barman.
@@ -236,9 +282,9 @@ service cloud.firestore {
       // La carta se ve sin loguearse: el QR de la mesa abre y muestra.
       allow read: if true;
       // Precios, nombres y altas: gerente para arriba.
-      allow create: if esAdmin();
+      allow create: if esAdmin() && puedo('carta');
       // La barra solo marca agotado y ajusta el stock de lo que ya existe.
-      allow update: if esAdmin() || (esBarra() && soloStock());
+      allow update: if (esAdmin() && puedo('carta')) || (esBarra() && soloStock());
       // Borrar es del dueño y de nadie más.
       allow delete: if esElDueno();
     }
@@ -268,7 +314,7 @@ service cloud.firestore {
       // el total y los items de un pedido ya hecho no se reescriben.
       // El cliente y la hora no se tocan nunca, ni el dueño: reasignarle un
       // pedido a otra persona no es una operación legítima de nadie.
-      allow update: if esBarra()
+      allow update: if esBarra() && puedo('pedidos')
         && request.resource.data.estado in estadosValidos()
         && request.resource.data.clienteId == resource.data.clienteId
         && request.resource.data.creadoEn == resource.data.creadoEn
@@ -280,11 +326,24 @@ service cloud.firestore {
 
     // ---------- barra (privado) ----------
 
+    // Leer es de toda la barra. Escribir se parte en dos, porque son dos
+    // pantallas distintas: agendar noches es el Calendario, y decir quién
+    // trabaja esta noche es la Noche.
+    //
+    // Ojo con el orden: Firestore concede si CUALQUIER match permite, así que
+    // una regla más específica no alcanza para restringir — hay que sacarle el
+    // permiso de escritura al comodín, que es lo que se hace acá.
     match /barra/{documento=**} {
-      // El barman ve la caja y los eventos; abrirlos y cerrarlos es del admin.
       allow read: if esBarra();
-      allow create, update: if esAdmin();
       allow delete: if esElDueno();
+    }
+
+    match /barra/eventos/items/{id} {
+      allow create, update: if esAdmin() && puedo('calendario');
+    }
+
+    match /barra/turno {
+      allow create, update: if esAdmin() && puedo('noche');
     }
 
     // ---------- estado del local, público ----------
@@ -306,9 +365,9 @@ service cloud.firestore {
       // Lo lee cualquiera: es lo que abre el link de esa noche.
       allow get: if true;
       allow list: if esBarra() || esPuerta();
-      allow create, delete: if esAdmin();
+      allow create, delete: if esAdmin() && puedo('calendario');
       // El que se anota suma uno, y nada más, y solo si queda lugar.
-      allow update: if esAdmin()
+      allow update: if (esAdmin() && puedo('calendario'))
         || (hayLugarEn(ev)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['registrados'])
             && request.resource.data.registrados == resource.data.registrados + 1);
@@ -401,7 +460,7 @@ service cloud.firestore {
       // alguien pasa su QR por WhatsApp, el segundo que lo muestre no entra, y
       // no depende de que la pantalla se acuerde. Deshacer sí se puede: es para
       // el error de la puerta, y vuelve a dejarlo entrar una vez.
-      allow update: if (esPuerta() || esBarra())
+      allow update: if (esPuerta() || esBarra()) && puedo('puerta')
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['ingresadoEn', 'ingresadoPor'])
         && (resource.data.get('ingresadoEn', null) == null
@@ -445,8 +504,8 @@ service cloud.firestore {
     // precio el administrador; la barra solo descuenta al entregar.
     match /insumos/{id} {
       allow read: if esBarra();
-      allow create: if esAdmin() && insumoValido(request.resource.data);
-      allow update: if (esAdmin() && insumoValido(request.resource.data))
+      allow create: if esAdmin() && puedo('deposito') && insumoValido(request.resource.data);
+      allow update: if (esAdmin() && puedo('deposito') && insumoValido(request.resource.data))
         || (esBarra() && soloStockInsumo());
       allow delete: if esAdmin();
     }
@@ -456,8 +515,9 @@ service cloud.firestore {
     // caja; si fue a cuenta, queda como deuda con el proveedor hasta que se
     // le pague. La plata es de la casa: esto no lo carga la barra.
     match /compras/{id} {
-      allow read: if esAdmin();
-      allow create, update: if esAdmin() && compraValida(request.resource.data);
+      allow read: if esAdmin() && puedo('deposito');
+      allow create, update: if esAdmin() && puedo('deposito')
+        && compraValida(request.resource.data);
       allow delete: if esAdmin();
     }
 
@@ -506,10 +566,10 @@ service cloud.firestore {
     // pudiera cargar el celular de la barra, el efectivo que la app dice que
     // hay en el cajón dejaría de servir para controlar nada.
     match /egresos/{id} {
-      allow read: if esAdmin();
-      allow create: if esAdmin() && egresoValido(request.resource.data);
-      allow update: if esAdmin() && egresoValido(request.resource.data);
-      allow delete: if esAdmin();
+      allow read: if esAdmin() && puedo('caja');
+      allow create: if esAdmin() && puedo('caja') && egresoValido(request.resource.data);
+      allow update: if esAdmin() && puedo('caja') && egresoValido(request.resource.data);
+      allow delete: if esAdmin() && puedo('caja');
     }
 
     // ---------- el padrón: quién puede entrar al panel ----------
@@ -522,16 +582,28 @@ service cloud.firestore {
       // quien atiende se elija de una lista y no escribiéndolo a mano. Son
       // nombres y roles, no hay nada secreto acá.
       allow list: if esAdmin() || esAparatoDeBarra();
-      // Un administrador da de alta y apaga a cualquiera, barman u otro
-      // administrador: es cuenta full. Lo único que no puede es borrar.
+      // Un administrador da de alta y apaga a cualquiera. Lo que NO puede es
+      // tocar a un sadmin, hacer sadmin a alguien, ni mover permisos: para
+      // eso hay que ser sadmin.
       //
-      // No hay escalada posible: ser dueño sale del claim del token, que solo
-      // se asigna desde el servidor. Un gerente no puede dárselo a nadie, ni
-      // apagar al dueño, que no tiene documento de acceso.
-      // Los roles son estos dos y nada más: con uno inventado la cuenta queda
-      // sin acceso y sin forma de arreglarse sola.
-      allow create, update: if esAdmin()
-        && request.resource.data.get('rol', 'barman') in ['admin', 'barman', 'puerta', 'barra'];
+      // Y nadie se toca su propio acceso, ni un sadmin. Si pudiera, un admin
+      // se ascendería solo y la jerarquía no existiría. Al dueño no lo afecta:
+      // no tiene documento, su permiso sale del mail.
+      allow create: if esAdmin()
+        && uid != request.auth.uid
+        && accesoValido(request.resource.data)
+        && rolQuePuedoDar(request.resource.data.get('rol', 'barman'))
+        && (!('permisos' in request.resource.data.keys()) || esSuperAdmin());
+
+      allow update: if esAdmin()
+        && uid != request.auth.uid
+        && accesoValido(request.resource.data)
+        // Ni al que ya es sadmin, ni para convertir a alguien en sadmin.
+        && rolQuePuedoDar(request.resource.data.get('rol', 'barman'))
+        && rolQuePuedoDar(resource.data.get('rol', 'barman'))
+        // Los interruptores los mueve solo un sadmin.
+        && (!tocaPermisos() || esSuperAdmin());
+
       allow delete: if esElDueno();
     }
 

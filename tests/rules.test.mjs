@@ -60,6 +60,12 @@ before(async () => {
     await setDoc(doc(db, 'barra/turno'), { eventoId: 'ev-1', barmanes: ['uid-turno-ok', 'uid-puerta'] });
     await setDoc(doc(db, 'accesosBarra/uid-puerta'), { usuario: 'puerta', activo: true, rol: 'puerta' });
     await setDoc(doc(db, 'accesosBarra/uid-aparato'), { usuario: 'barra', activo: true, rol: 'barra' });
+    await setDoc(doc(db, 'accesosBarra/uid-sadmin'), { usuario: 'guille', activo: true, rol: 'sadmin' });
+    await setDoc(doc(db, 'accesosBarra/uid-recortado'), {
+      usuario: 'recortado', activo: true, rol: 'admin',
+      permisos: { caja: false, deposito: false, carta: false, calendario: false,
+                  puerta: false, pedidos: false, noche: false },
+    });
     await setDoc(doc(db, 'publico/registro'), { eventoId: 'ev-1', nombre: 'Noche' });
     await setDoc(doc(db, 'registros/ev-1'), {
       eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 1, abierto: true,
@@ -96,6 +102,17 @@ const gerente = () => env.authenticatedContext('uid-gerente', {
 
 const franco = () => env.authenticatedContext('uid-franco', {
   email: 'franco@barra.local', provider_id: 'password',
+}).firestore();
+
+// Un nivel más arriba que admin: el único que mueve permisos.
+const sadmin = () => env.authenticatedContext('uid-sadmin', {
+  email: 'guille@barra.local', provider_id: 'password',
+}).firestore();
+
+// Un admin con pantallas apagadas: es el caso que prueba que el interruptor
+// frena de verdad y no es solo una pestaña escondida.
+const recortado = () => env.authenticatedContext('uid-recortado', {
+  email: 'recortado@barra.local', provider_id: 'password',
 }).firestore();
 
 const puerta = () => env.authenticatedContext('uid-puerta', {
@@ -906,8 +923,11 @@ describe('tres niveles: dueño, administrador y barman', () => {
     await assertSucceeds(updateDoc(doc(gerente(), 'carta/fernet'), { precio: 4800 }));
   });
 
-  it('el administrador SÍ abre y cierra la caja del evento', async () => {
-    await assertSucceeds(updateDoc(doc(gerente(), 'barra/caja'), { abierta: false }));
+  it('el administrador SÍ agenda noches y arma el turno', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'barra/eventos/items/ev-del-gerente'),
+      { nombre: 'Noche del gerente', estado: 'agendado' }));
+    await assertSucceeds(setDoc(doc(gerente(), 'barra/turno'),
+      { eventoId: 'ev-1', barmanes: ['uid-turno-ok', 'uid-puerta'] }));
   });
 
   it('el administrador SÍ corta y reabre los pedidos', async () => {
@@ -998,6 +1018,105 @@ describe('vigencia: solo se pide con el evento abierto', () => {
     await env.withSecurityRulesDisabled(async (ctx) =>
       deleteDoc(doc(ctx.firestore(), 'publico/estado')));
     await assertSucceeds(setDoc(doc(anon(), 'pedidos/sin-documento'), pedidoDe('cliente-anon-1')));
+  });
+});
+
+describe('sadmin: un nivel más arriba', () => {
+  // La jerarquía tiene que estar en las reglas. Si vive solo en la pantalla,
+  // alcanza con mandar la escritura a mano para saltearla.
+  it('un sadmin hace todo lo que hace un admin', async () => {
+    await assertSucceeds(setDoc(doc(sadmin(), 'carta/nuevo-del-sadmin'),
+      { nombre: 'Algo', precio: 100, categoria: 'tragos', orden: 9 }));
+    await assertSucceeds(getDocs(collection(sadmin(), 'egresos')));
+  });
+
+  it('solo un sadmin mueve permisos: un admin no', async () => {
+    await assertSucceeds(updateDoc(doc(sadmin(), 'accesosBarra/uid-turno-ok'),
+      { usuario: 'barra-lunes', activo: true, rol: 'barman', permisos: { caja: false } }));
+    await assertFails(updateDoc(doc(gerente(), 'accesosBarra/uid-turno-ok'),
+      { usuario: 'barra-lunes', activo: true, rol: 'barman', permisos: { caja: true } }));
+  });
+
+  // El candado que importa: sin esto, un admin se asciende solo y la
+  // jerarquía no existe.
+  it('un admin NO puede hacer sadmin a nadie', async () => {
+    await assertFails(setDoc(doc(gerente(), 'accesosBarra/uid-nuevo-sadmin'),
+      { usuario: 'colado', activo: true, rol: 'sadmin' }));
+    await assertSucceeds(setDoc(doc(sadmin(), 'accesosBarra/uid-nuevo-sadmin'),
+      { usuario: 'otro-sadmin', activo: true, rol: 'sadmin' }));
+  });
+
+  it('un admin NO puede degradar ni apagar a un sadmin', async () => {
+    await assertFails(updateDoc(doc(gerente(), 'accesosBarra/uid-sadmin'),
+      { usuario: 'guille', activo: true, rol: 'admin' }));
+    await assertFails(updateDoc(doc(gerente(), 'accesosBarra/uid-sadmin'),
+      { usuario: 'guille', activo: false, rol: 'sadmin' }));
+  });
+
+  // Nadie se toca lo suyo: ni para ascenderse ni para dejarse afuera.
+  it('nadie edita su propio acceso, ni el sadmin', async () => {
+    await assertFails(updateDoc(doc(sadmin(), 'accesosBarra/uid-sadmin'),
+      { usuario: 'guille', activo: true, rol: 'sadmin', permisos: { caja: true } }));
+    await assertFails(updateDoc(doc(gerente(), 'accesosBarra/uid-gerente'),
+      { usuario: 'guille2', activo: true, rol: 'sadmin' }));
+  });
+
+  it('con un permiso inventado NO: ensuciaría el documento sin hacer nada', async () => {
+    await assertFails(updateDoc(doc(sadmin(), 'accesosBarra/uid-turno-ok'),
+      { usuario: 'barra-lunes', activo: true, rol: 'barman', permisos: { inventado: true } }));
+  });
+});
+
+describe('las pantallas apagadas frenan de verdad', () => {
+  // Esconder una pestaña no es un permiso: lo que importa es que el dato no
+  // se pueda escribir igual mandando la operación a mano.
+  it('sin caja no ve ni carga gastos', async () => {
+    await assertFails(getDocs(collection(recortado(), 'egresos')));
+    await assertFails(setDoc(doc(recortado(), 'egresos/colado'), {
+      concepto: 'Retiro', categoria: 'retiro', monto: 1000,
+      pago: 'efectivo', fecha: new Date(),
+    }));
+  });
+
+  it('sin depósito no carga mercadería ni ve las compras', async () => {
+    await assertFails(setDoc(doc(recortado(), 'insumos/colado'), {
+      nombre: 'Colado', unidad: 'botella', medidas: 1, stock: 1, costo: 1,
+    }));
+    await assertFails(getDocs(collection(recortado(), 'compras')));
+  });
+
+  it('sin carta no toca precios', async () => {
+    await assertFails(setDoc(doc(recortado(), 'carta/colado'),
+      { nombre: 'Colado', precio: 1, categoria: 'tragos', orden: 1 }));
+    await assertFails(updateDoc(doc(recortado(), 'carta/fernet'), { precio: 1 }));
+  });
+
+  it('sin calendario no agenda noches ni abre registros', async () => {
+    await assertFails(setDoc(doc(recortado(), 'barra/eventos/items/ev-colado'),
+      { nombre: 'Colada', estado: 'agendado' }));
+    await assertFails(updateDoc(doc(recortado(), 'registros/ev-1'), { abierto: false }));
+  });
+
+  it('sin noche no arma el turno', async () => {
+    await assertFails(setDoc(doc(recortado(), 'barra/turno'),
+      { eventoId: 'ev-1', barmanes: [] }));
+  });
+
+  it('sin pedidos no mueve un pedido de estado', async () => {
+    await assertFails(updateDoc(doc(recortado(), 'pedidos/pedido-de-ana'),
+      { estado: 'en_preparacion' }));
+  });
+
+  // Y lo que no se apagó sigue andando: el recorte es de lo que se apagó, no
+  // de la cuenta entera.
+  it('lo que no se apagó sigue funcionando', async () => {
+    await assertSucceeds(getDocs(collection(recortado(), 'insumos')));
+    await assertSucceeds(getDoc(doc(recortado(), 'pedidos/pedido-de-ana')));
+  });
+
+  // Al sadmin no lo limita ningún interruptor: es el que reparte.
+  it('al sadmin no lo recorta nadie', async () => {
+    await assertSucceeds(getDocs(collection(sadmin(), 'egresos')));
   });
 });
 
@@ -1228,9 +1347,17 @@ describe('barra (colección privada)', () => {
     await assertFails(getDoc(doc(intruso, 'barra/caja')));
   });
 
-  it('la barra SÍ lee y escribe su caja', async () => {
+  // Escribir bajo barra/ son dos cosas y dos pantallas: agendar noches es el
+  // Calendario, y decir quién trabaja esta noche es la Noche. El comodín ya no
+  // deja escribir nada más — si dejara, los interruptores no servirían.
+  it('la casa escribe las noches y el turno, y nada más bajo barra/', async () => {
     await assertSucceeds(getDoc(doc(barra(), 'barra/caja')));
-    await assertSucceeds(setDoc(doc(barra(), 'barra/caja'), { abierta: true, totalNoche: 200000 }));
+    await assertSucceeds(setDoc(doc(barra(), 'barra/eventos/items/ev-nuevo'),
+      { nombre: 'Otra noche', estado: 'agendado' }));
+    await assertSucceeds(setDoc(doc(barra(), 'barra/turno'),
+      { eventoId: 'ev-1', barmanes: ['uid-turno-ok', 'uid-puerta'] }));
+    await assertFails(setDoc(doc(barra(), 'barra/caja'), { abierta: true }));
+    await assertFails(setDoc(doc(barra(), 'barra/inventado'), { x: 1 }));
   });
 
   it('un usuario con el claim de dueño entra sin estar en la lista de mails', async () => {
