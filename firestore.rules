@@ -338,8 +338,13 @@ service cloud.firestore {
     }
 
     function invitadoValido(d) {
-      return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor'])
+      // 'pago' es cómo dijo que va a pagar la entrada: en la puerta o por
+      // transferencia. Lo elige al anotarse y es un dato suyo, no plata
+      // cobrada: que haya dicho "transferencia" no significa que transfirió.
+      // Quien cobra sigue siendo la puerta.
+      return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor', 'pago'])
         && d.keys().hasAll(['eventoId', 'nombre', 'telefono', 'creadoEn'])
+        && d.get('pago', 'efectivo') in ['efectivo', 'virtual']
         && d.eventoId is string
         && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60
         // Un solo formato: diez números, sin el 0 y sin el 15. Si cada uno lo

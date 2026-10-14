@@ -4,7 +4,7 @@
   "short_name": "Sótano Club",
   "description": "Tu pase de entrada y la próxima noche de Sótano.",
   "start_url": "/pase.html",
-  "scope": "/pase.html",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0d0b10",

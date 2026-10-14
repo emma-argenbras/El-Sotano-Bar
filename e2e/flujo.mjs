@@ -1476,6 +1476,9 @@ await chequear('dos personas se anotan al mismo tiempo y entran las dos', async 
     const dice = await pg.textContent('#pantalla');
     if (!dice.includes('3.500'))
       throw new Error('no avisa lo que sale la entrada: ' + dice.slice(0, 200));
+    // Y para qué día es, que es lo primero que mira el que recibe el link.
+    if (!/lunes|martes|miércoles|jueves|viernes|sábado|domingo/i.test(dice))
+      throw new Error('la invitación no dice qué día es: ' + dice.slice(0, 200));
     await pg.fill('#inpNombre', `Simultaneo ${n}`);
     await pg.fill('#inpTel', `11555566${n}${n}`);
     return { ctx, pg };
@@ -1538,6 +1541,98 @@ await chequear('con el cupo justo, el que llega segundo no entra', async () => {
     null, { timeout: 10000 });
   // Y el link viejo vuelve a la noche con lista, que es la que sigue en juego.
   await barra.waitForFunction(() => true, null, { timeout: 1000 }).catch(() => {});
+});
+
+await chequear('con alias cargado, el invitado elige transferencia y lo ve en su pase', async () => {
+  // Sin alias no se le ofrece transferir: sería mandarlo a pagar a ningún lado.
+  await db.doc('publico/pagos').set({ alias: 'sotano.prueba.mp', titular: 'Sotano Prueba' });
+
+  // Una noche propia, para no ensuciar las listas de los otros casos.
+  await barra.click('#tabCalendario');
+  await barra.click('#btnAgendar');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  await barra.fill('#inpEvento', 'Noche de la transferencia');
+  await barra.fill('#inpCapacidad', '4');
+  await barra.fill('#inpEntrada', '7000');
+  await barra.click('#btnConfirmarEvento');
+  let idTrans;
+  for (let i = 0; i < 40; i++) {
+    idTrans = await idDeNoche('Noche de la transferencia');
+    if (idTrans && (await db.doc(`registros/${idTrans}`).get()).exists) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!idTrans) throw new Error('no se agendó la noche de prueba');
+
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  try {
+    await pg.goto(`${BASE}/registro.html?ev=${idTrans}`, { waitUntil: 'domcontentloaded' });
+    await pg.waitForSelector('#formRegistro', { timeout: 15000 });
+
+    // La fecha y el precio, antes de pedirle nada.
+    const dice = await pg.textContent('#pantalla');
+    if (!dice.includes('7.000')) throw new Error('no dice el precio: ' + dice.slice(0, 200));
+    if (!/lunes|martes|miércoles|jueves|viernes|sábado|domingo/i.test(dice))
+      throw new Error('no dice qué día es');
+
+    // Desde la invitación también se puede guardar la app.
+    if (await pg.locator('.instalar').evaluate((e) => e.classList.contains('oculto')))
+      throw new Error('en la invitación no se ofrece instalar');
+
+    await pg.fill('#inpNombre', 'Transferencia Prueba');
+    await pg.fill('#inpTel', '1155558888');
+    // Se toca la tarjeta entera, no el puntito: el radio va oculto a propósito.
+    await pg.locator('.elegir-pago label', { hasText: 'Transferencia' }).click();
+    if (!(await pg.locator('.elegir-pago input[value="virtual"]').isChecked()))
+      throw new Error('tocar la tarjeta no eligió transferencia');
+    await pg.click('#btnRegistrar');
+    await pg.waitForURL(/pase\.html/, { timeout: 20000 });
+
+    // En el pase: el alias para transferir, y de nuevo la noche y la fecha.
+    await pg.waitForFunction(() =>
+      document.querySelector('#pase')?.textContent.includes('sotano.prueba.mp'),
+      null, { timeout: 20000 }).catch(async () => {
+        throw new Error('el pase no muestra adónde transferir: '
+          + (await pg.textContent('#pase')).slice(0, 300));
+      });
+    const pase = await pg.textContent('#pase');
+    if (!pase.includes('7.000')) throw new Error('el pase no dice cuánto');
+    if (!pase.includes('Noche de la transferencia'))
+      throw new Error('el pase no dice de qué noche es');
+    if (!/lunes|martes|miércoles|jueves|viernes|sábado|domingo/i.test(pase))
+      throw new Error('el pase no dice qué día es');
+
+    // Y quedó guardado cómo dijo que paga, que es lo que mira la puerta.
+    const inv = (await db.collection('invitados')
+      .where('eventoId', '==', idTrans).get()).docs[0];
+    if (inv?.data().pago !== 'virtual')
+      throw new Error('no guardó la forma de pago: ' + inv?.data().pago);
+  } finally { await ctx.close(); }
+
+  // La noche se saca de la agenda: si queda, la Puerta la toma como la
+  // próxima y los casos que siguen no encuentran a sus invitados.
+  await barra.click('#tabCalendario');
+  barra.once('dialog', (d) => d.accept());
+  await barra.locator('#calendario .item', { hasText: 'Noche de la transferencia' })
+    .first().locator('[data-quitar]').click();
+  await barra.waitForFunction(() =>
+    !document.querySelector('#calendario')?.textContent.includes('Noche de la transferencia'),
+    null, { timeout: 10000 });
+});
+
+await chequear('sin alias cargado no se ofrece transferir', async () => {
+  await db.doc('publico/pagos').set({ alias: '', titular: '' });
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  try {
+    const id = await idDeNoche('Noche con lista');
+    await pg.goto(`${BASE}/registro.html?ev=${id}`, { waitUntil: 'domcontentloaded' });
+    await pg.waitForSelector('#formRegistro', { timeout: 15000 });
+    if (await pg.locator('.elegir-pago').count())
+      throw new Error('ofrece transferir sin tener adónde');
+  } finally { await ctx.close(); }
+  // Se deja cargado para lo que siga.
+  await db.doc('publico/pagos').set({ alias: 'sotano.prueba.mp', titular: 'Sotano Prueba' });
 });
 
 await chequear('un link a una noche que no existe lo dice, no se queda colgado', async () => {
@@ -1781,9 +1876,16 @@ await chequear('Sótano Club se arma solo con los que se anotaron', async () => 
   await barra.waitForFunction(() =>
     document.querySelector('#calendario')?.textContent.includes('Sótano Club'),
     null, { timeout: 15000 });
-  const club = await barra.textContent('#calendario');
-  if (!club.includes('Ana Prueba'))
-    throw new Error('el club no tiene a quien se anotó: ' + club.slice(-400));
+  // La lista va plegada de a cinco, así que a alguien de hace rato se lo
+  // busca — que es como se usa de verdad. Apoyarse en que esté entre los
+  // primeros es frágil: cualquier anotación nueva lo corre.
+  await barra.fill('#buscaClub', 'Ana');
+  await barra.waitForFunction(() =>
+    document.querySelector('#calendario')?.textContent.includes('Ana Prueba'),
+    null, { timeout: 10000 }).catch(async () => {
+      throw new Error('el club no tiene a quien se anotó: '
+        + (await barra.textContent('#calendario')).slice(-400));
+    });
 
   // El buscador: por nombre y por teléfono, y escrito como venga.
   await barra.fill('#buscaClub', 'beto');

@@ -29,8 +29,22 @@ function token() {
 
 let registro = null;
 let yaPinto = false;
+// El alias al que se transfiere la entrada. Si la casa no cargó ninguno, no
+// se ofrece transferencia: sería mandar a la persona a pagar a ningún lado.
+let hayAlias = false;
 
 const plata = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+
+// Cuándo es la noche, escrito como se lo diría alguien: "Sábado 7 de noviembre".
+// Sin esto, la invitación no dice para qué día es, que es lo primero que mira
+// el que la recibe.
+function cuando() {
+  const f = registro?.fecha?.toDate?.();
+  if (!f) return '';
+  const txt = f.toLocaleDateString('es-AR',
+    { weekday: 'long', day: 'numeric', month: 'long' });
+  return txt[0].toUpperCase() + txt.slice(1);
+}
 
 // Un error al arrancar el módulo dejaba la pantalla en "Buscando la noche…"
 // sin decir nada. Ahora se ve: es la pantalla que abre gente de afuera, una
@@ -83,6 +97,14 @@ setTimeout(() => {
 // su zona muerta y tira ReferenceError antes de abrir ningún listener: la
 // página se queda en "Buscando la noche…" para siempre y nadie se entera.
 let mirando = null;
+
+// Se pregunta ANTES de abrir la noche, no en paralelo: si llegara después,
+// el formulario ya estaría en pantalla y meterle la pregunta del pago ahí
+// significaría repintar y borrarle lo que la persona venía escribiendo.
+// Mientras tanto se ve "Buscando la noche…", que es lo que se vería igual.
+await getDoc(doc(db, 'publico', 'pagos'))
+  .then((d) => { hayAlias = !!String(d.data()?.alias || '').trim(); })
+  .catch(() => {});
 
 const cual = new URL(location.href).searchParams.get('ev');
 if (cual) {
@@ -182,13 +204,15 @@ function pintar() {
   const entrada = Number(registro.entrada || 0);
   cont.innerHTML = `
     <h1 style="font-size:1.4rem;margin:.4rem 0 .2rem">${esc(registro.nombre)}</h1>
+    ${cuando() ? `<div style="color:var(--oro);font-weight:700;margin:0 0 .5rem">
+      ${esc(cuando())}</div>` : ''}
     <p style="color:var(--suave);margin:0 0 ${entrada ? '.8rem' : '1.2rem'}">
       Quedan <b style="color:var(--oro)" id="quedanLugares">${quedan}</b> lugares.
       Dejanos tu nombre y tu teléfono y te damos el pase de entrada.
     </p>
     ${entrada ? `<div class="aviso" style="margin-bottom:1.2rem"><span>🎟</span><div>
       <b>La entrada sale ${plata(entrada)}.</b><br>
-      Se paga en la puerta. Anotarte te guarda el lugar.</div></div>` : ''}
+      Anotarte te guarda el lugar.</div></div>` : ''}
     <form id="formRegistro">
       <label class="campo">
         <span>Tu nombre y apellido</span>
@@ -203,6 +227,16 @@ function pintar() {
         </div>
         <small class="pista" id="pistaTel">${esc(FORMATO_TEL)}</small>
       </label>
+      ${entrada && hayAlias ? `
+      <div class="campo">
+        <span>¿Cómo vas a pagar la entrada?</span>
+        <div class="elegir-pago">
+          <label><input type="radio" name="pago" value="efectivo" checked>
+            <b>En la puerta</b><small>Efectivo, al llegar</small></label>
+          <label><input type="radio" name="pago" value="virtual">
+            <b>Transferencia</b><small>El alias te queda en el pase</small></label>
+        </div>
+      </div>` : ''}
       <div class="aviso mal oculto" id="error"><span>⚠</span><div id="errorTexto"></div></div>
       <button class="btn primario ancho-full" id="btnRegistrar" type="submit">Reservar mi lugar</button>
     </form>
@@ -226,12 +260,17 @@ function pintar() {
   miPaseDeEstaNoche();
 }
 
+const comoPaga = () =>
+  document.querySelector('input[name="pago"]:checked')?.value || 'efectivo';
+
 // El lote: el invitado, el contador y el candado del teléfono, todo junto.
 // Si algo lo rechaza, no queda nada a medias.
 function loteDeAnotacion(id, nombre, telefono, registrados) {
   const lote = writeBatch(db);
   lote.set(doc(db, 'invitados', id), {
     eventoId: registro.eventoId, nombre, telefono,
+    // Cómo DIJO que va a pagar. No es plata cobrada: quien cobra es la puerta.
+    pago: comoPaga(),
     creadoEn: serverTimestamp(), ingresadoEn: null,
   });
   lote.update(doc(db, 'registros', registro.eventoId),

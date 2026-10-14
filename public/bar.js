@@ -60,7 +60,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Vive en /instalar.js, compartido con el pase del invitado: el camino para
@@ -320,6 +320,9 @@ $('#btnConfirmarEvento').onclick = async () => {
         const yaHay = estado.registros[editando.id];
         await setDoc(doc(db, 'registros', editando.id), {
           eventoId: editando.id, nombre, capacidad, entrada,
+          // La fecha va acá porque el registro es lo único que el invitado
+          // puede leer: una invitación sin fecha no sirve para nada.
+          fecha: Timestamp.fromDate(fecha),
           registrados: Number(yaHay?.registrados || 0),
           abierto: yaHay ? yaHay.abierto !== false : true,
         });
@@ -335,8 +338,10 @@ $('#btnConfirmarEvento').onclick = async () => {
       });
       // El registro se abre al agendar: la gracia es que se anoten antes.
       if (capacidad > 0) {
-        await setDoc(doc(db, 'registros', ref.id),
-          { eventoId: ref.id, nombre, capacidad, entrada, registrados: 0, abierto: true });
+        await setDoc(doc(db, 'registros', ref.id), {
+          eventoId: ref.id, nombre, capacidad, entrada,
+          fecha: Timestamp.fromDate(fecha), registrados: 0, abierto: true,
+        });
         // Y el link viejo, el que no dice de qué noche es, se reacomoda.
         await setDoc(doc(db, 'publico', 'registro'), { eventoId: ref.id, nombre });
         estado.registros[ref.id] = { abierto: true, capacidad, nombre };
@@ -508,8 +513,13 @@ async function abrirCerrarRegistro(ev, estaAbierto, boton) {
     + 'Su link deja de anotar gente. Los que ya están anotados siguen igual.')) return;
   if (boton) boton.disabled = true;
   try {
+    // setDoc pisa el documento entero: si no se vuelven a escribir, la fecha
+    // y el precio de la entrada se pierden al cerrar y reabrir una noche, y
+    // la invitación queda sin decir ni cuándo es ni cuánto sale.
     await setDoc(doc(db, 'registros', ev.id), {
       eventoId: ev.id, nombre: ev.nombre, capacidad: Number(ev.capacidad || 0),
+      entrada: Number(ev.entrada || estado.registros[ev.id]?.entrada || 0),
+      ...(ev.fecha ? { fecha: ev.fecha } : {}),
       registrados: Number(estado.registros[ev.id]?.registrados
         || (estado.invitadosTodos || []).filter((i) => i.eventoId === ev.id).length),
       abierto: !estaAbierto,
@@ -1262,7 +1272,10 @@ function renglonInvitado(i, conBoton) {
     <div class="cuerpo">
       <div class="nombre">${esc(i.nombre)}</div>
       <div class="desc">${esc(i.telefono)}${i.ingresadoEn ? ' · entró ' + hora(i.ingresadoEn) : ''}${
-        gastó ? ' · consumió ' + plata(gastó) : ''}</div>
+        gastó ? ' · consumió ' + plata(gastó) : ''}${
+        // Cómo DIJO que iba a pagar la entrada. Es un aviso para quien está en
+        // la puerta —pedile el comprobante—, no un cobro hecho.
+        i.pago === 'virtual' && !i.ingresadoEn ? ' · <b style="color:var(--oro)">dijo transferencia</b>' : ''}</div>
     </div>
     ${conBoton ? `<button class="btn ${i.ingresadoEn ? '' : 'primario'}" data-ingreso="${esc(i.id)}"
             style="padding:.4rem .7rem;font-size:.82rem">
@@ -1956,6 +1969,23 @@ function pintarCajaGeneral() {
       </div>
     </div>
 
+    <div class="grupo-personal">Alias para transferencias</div>
+    <p style="color:var(--suave);font-size:.84rem;margin:0 0 .5rem">
+      El que ve el invitado en su pase cuando elige pagar la entrada por
+      transferencia. Si está vacío, solo se le ofrece pagar en la puerta.
+    </p>
+    <label class="campo">
+      <span>Alias o CBU</span>
+      <input id="inpAlias" maxlength="60" autocomplete="off"
+             placeholder="ej. sotano.bar.mp" value="${esc(estado.pagos.alias || '')}">
+    </label>
+    <label class="campo">
+      <span>A nombre de <small>(opcional, para que sepa que no se equivocó)</small></span>
+      <input id="inpAliasTitular" maxlength="60" autocomplete="off"
+             value="${esc(estado.pagos.titular || '')}">
+    </label>
+    <button class="btn ancho-full" id="btnGuardarAlias" style="margin-bottom:.4rem">Guardar alias</button>
+
     <div class="grupo-personal" style="display:flex;align-items:center;gap:.6rem">
       <span style="flex:1">Gastos</span>
       <button class="btn" id="btnNuevoEgreso" style="padding:.25rem .6rem;font-size:.72rem;text-transform:none;letter-spacing:0">
@@ -1987,6 +2017,20 @@ function pintarCajaGeneral() {
     pintarCajaGeneral();
   });
   $('#btnNuevoEgreso').onclick = abrirEgreso;
+  $('#btnGuardarAlias').onclick = async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true; b.textContent = 'Guardando…';
+    try {
+      await setDoc(doc(db, 'publico', 'pagos'), {
+        alias: $('#inpAlias').value.trim(),
+        titular: $('#inpAliasTitular').value.trim(),
+      });
+      b.textContent = 'Guardado ✓';
+    } catch (err) {
+      b.disabled = false; b.textContent = 'Guardar alias';
+      alert('No se pudo: ' + (err.code || err.message));
+    }
+  };
   cont.querySelectorAll('[data-borrar-egreso]').forEach((b) => b.onclick = async () => {
     const e = estado.egresos.find((x) => x.id === b.dataset.borrarEgreso);
     if (!e || !confirm(`¿Borrar el gasto "${e.concepto}" de ${plata(e.monto)}?`)) return;
@@ -2192,6 +2236,13 @@ function escucharDeposito() {
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
     pintarDeposito(); pintarConteo(); sincronizarCartaConDeposito();
   }, fallo('#deposito'));
+  // El alias al que transfieren la entrada. Vive en publico/ porque el
+  // invitado lo tiene que poder leer sin cuenta: es lo único que necesita
+  // para pagar.
+  onSnapshot(doc(db, 'publico', 'pagos'), (d) => {
+    estado.pagos = d.exists() ? d.data() : {};
+    pintarCajaGeneral();
+  }, () => {});
   onSnapshot(collection(db, 'proveedores'), (snap) => {
     estado.proveedores = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));

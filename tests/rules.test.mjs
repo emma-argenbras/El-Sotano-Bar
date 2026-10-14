@@ -418,6 +418,30 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(anon(), 'invitados/abc'), invitadoNuevo()));
   });
 
+  // Cómo DIJO que va a pagar la entrada. Es un dato suyo, no plata cobrada:
+  // quien cobra es la puerta, y por eso solo hay dos valores posibles.
+  it('puede decir cómo va a pagar la entrada', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'invitados/token-pago-efectivo-1'),
+      invitadoNuevo({ pago: 'efectivo' })));
+    await assertSucceeds(setDoc(doc(sinLoguear(), 'invitados/token-pago-virtual-1'),
+      invitadoNuevo({ pago: 'virtual' })));
+  });
+
+  it('con una forma de pago inventada NO', async () => {
+    await assertFails(setDoc(doc(anon(), 'invitados/token-pago-trucho-11'),
+      invitadoNuevo({ pago: 'gratis' })));
+  });
+
+  // El alias al que se transfiere lo lee cualquiera —hace falta para pagar—
+  // pero lo escribe solo la casa.
+  it('el alias de pago lo lee cualquiera y lo escribe la casa', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'publico/pagos'),
+      { alias: 'sotano.bar.mp', titular: 'Sotano' }));
+    await assertSucceeds(getDoc(doc(sinLoguear(), 'publico/pagos')));
+    await assertFails(setDoc(doc(anon(), 'publico/pagos'), { alias: 'el.mio' }));
+    await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
+  });
+
   it('sin nombre o sin teléfono NO', async () => {
     await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-4'), invitadoNuevo({ nombre: 'A' })));
     await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-5'), invitadoNuevo({ telefono: '12' })));

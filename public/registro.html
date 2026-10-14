@@ -8,6 +8,14 @@
 <meta name="theme-color" content="#0d0b10">
 <link rel="icon" href="/iconos/icono.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/iconos/apple-touch-icon.png">
+<link rel="icon" href="/iconos/icono-club.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/iconos/apple-touch-icon-club.png">
+<!-- La invitación es la primera pantalla del invitado: acá también se le
+     ofrece guardarse Sótano Club, con el mismo ícono y el mismo nombre que
+     si la instalara desde el pase. -->
+<link rel="manifest" href="/manifest-club.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sótano Club">
 <link rel="stylesheet" href="/estilos.css">
 </head>
 <body>
@@ -27,11 +35,28 @@
   </div>
 
   <div id="pantalla"><div class="cargando">Buscando la noche…</div></div>
+
+  <div class="instalar oculto" style="margin-bottom:1.4rem">
+    <b style="font-size:.95rem">Guardate Sótano Club</b>
+    <small>1. Anotate acá arriba · 2. Instalala · 3. Mostrá el pase en la puerta</small>
+    <button class="btn primario ancho-full" data-instalar-btn>⬇ Instalar</button>
+  </div>
 </main>
+
+<dialog id="dlgInstalar">
+  <h2 style="margin-top:0">Instalar Sótano Club</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin-top:0">
+    Queda como una app en tu celular y abre directo en tu pase, aunque abajo
+    no haya señal.
+  </p>
+  <div id="pasosInstalar" style="font-size:.92rem;line-height:1.6"></div>
+  <button class="btn primario ancho-full" id="btnCerrarInstalar" style="margin-top:1.2rem">Listo</button>
+</dialog>
 
 <script src="/version.js"></script>
 <script src="/config.js"></script>
 <script type="module" src="/registro.js"></script>
+<script src="/instalar.js"></script>
 <script src="/actualizar.js"></script>
 </body>
 </html>

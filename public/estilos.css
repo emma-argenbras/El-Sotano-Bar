@@ -391,6 +391,24 @@ body.es-gerente .ancho-full.solo-gerente-inline { display: block !important; wid
 .grupo-personal { font-size: .78rem; color: var(--suave); text-transform: uppercase;
                   letter-spacing: .06em; margin: .9rem 0 .4rem; }
 
+/* Cómo paga la entrada el invitado: dos opciones, lado a lado, con el toque
+   grande — se elige con el pulgar, parado en la calle. */
+.elegir-pago { display: flex; gap: .5rem; }
+.elegir-pago label {
+  flex: 1; display: flex; flex-direction: column; gap: .15rem;
+  padding: .7rem .6rem; border: 1px solid var(--borde); border-radius: 11px;
+  background: var(--panel-alto); cursor: pointer; text-align: center;
+}
+.elegir-pago label:has(input:checked) {
+  border-color: var(--oro); background: rgba(198,160,47,.1);
+}
+.elegir-pago input { position: absolute; opacity: 0; pointer-events: none; }
+/* El radio no se ve, así que el foco se dibuja sobre la tarjeta: sin esto,
+   quien navega con teclado no sabe dónde está parado. */
+.elegir-pago label:has(input:focus-visible) { outline: 2px solid var(--oro); outline-offset: 2px; }
+.elegir-pago b { font-size: .92rem; }
+.elegir-pago small { font-size: .75rem; color: var(--suave); line-height: 1.3; }
+
 /* ---------- pase del invitado ---------- */
 .lienzo-pase {
   background: #fff; border-radius: 16px; padding: 1.2rem; text-align: center;

@@ -48,16 +48,32 @@ if (!id) {
 
 const plata = (x) => '$' + Number(x || 0).toLocaleString('es-AR');
 
-// Lo que sale entrar vive en el registro de la noche, que es público: el
-// documento del evento no lo puede leer nadie de afuera. Se pide una sola vez.
-let entradaDeLaNoche = null;
-async function cuantoSaleEntrar(eventoId) {
-  if (entradaDeLaNoche !== null || !eventoId) return entradaDeLaNoche;
+// La noche: cuánto sale entrar y qué día es. Vive en el registro, que es
+// público — el documento del evento no lo puede leer nadie de afuera. Se pide
+// una sola vez.
+let laNoche = null;
+async function datosDeLaNoche(eventoId) {
+  if (laNoche || !eventoId) return laNoche || {};
   try {
-    const d = await getDoc(doc(db, 'registros', eventoId));
-    entradaDeLaNoche = Number(d.data()?.entrada || 0);
-  } catch { entradaDeLaNoche = 0; }
-  return entradaDeLaNoche;
+    laNoche = (await getDoc(doc(db, 'registros', eventoId))).data() || {};
+  } catch { laNoche = {}; }
+  return laNoche;
+}
+
+// Dónde transfiere, si eligió transferencia. Lo carga la casa en Caja.
+let elAlias = null;
+async function aliasDePago() {
+  if (elAlias) return elAlias;
+  try { elAlias = (await getDoc(doc(db, 'publico', 'pagos'))).data() || {}; }
+  catch { elAlias = {}; }
+  return elAlias;
+}
+
+function cuando(f) {
+  const d = f?.toDate?.();
+  if (!d) return '';
+  const txt = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  return txt[0].toUpperCase() + txt.slice(1);
 }
 
 async function pintar(inv) {
@@ -67,18 +83,38 @@ async function pintar(inv) {
     color: { dark: '#0d0b10', light: '#ffffff' },
   });
   const adentro = !!inv.ingresadoEn;
-  const entrada = await cuantoSaleEntrar(inv.eventoId);
+  const noche = await datosDeLaNoche(inv.eventoId);
+  const entrada = Number(noche.entrada || 0);
+  const fecha = cuando(noche.fecha);
+  // Si dijo que transfiere, acá tiene que estar el alias: si no, el pase le
+  // dice cuánto pagar y no adónde.
+  const porTransferencia = inv.pago === 'virtual' && entrada > 0 && !adentro;
+  const al = porTransferencia ? await aliasDePago() : {};
   $('#pase').innerHTML = `
     <div class="lienzo-pase ${adentro ? 'usado' : ''}">
       <img class="logo" src="/iconos/logo-horizontal-claro.svg" alt="Sótano" width="443" height="120">
       <img class="qr" src="${img}" alt="Tu QR de entrada">
       <div class="quien">${esc(inv.nombre)}</div>
+      ${noche.nombre ? `<div style="color:#444;font-size:.9rem;margin-top:.2rem">${
+        esc(noche.nombre)}${fecha ? ' · ' + esc(fecha) : ''}</div>` : ''}
       <div class="pie-pase">${adentro
         ? '✓ Ya entraste. ¡Buena noche!'
         : 'Mostrá esta pantalla en la puerta'}</div>
     </div>
-    ${entrada && !adentro ? `<div class="aviso" style="margin-top:.9rem"><span>🎟</span><div>
-      <b>Entrada ${plata(entrada)}</b>, se paga en la puerta.</div></div>` : ''}
+    ${entrada && !adentro && !porTransferencia ? `
+      <div class="aviso" style="margin-top:.9rem"><span>🎟</span><div>
+        <b>Entrada ${plata(entrada)}</b>, se paga en la puerta.</div></div>` : ''}
+    ${porTransferencia ? (al.alias ? `
+      <div class="aviso" style="margin-top:.9rem"><span>🎟</span><div style="flex:1">
+        <b>Entrada ${plata(entrada)}</b> — transferí a:<br>
+        <b style="color:var(--oro);font-size:1.05rem;word-break:break-all">${esc(al.alias)}</b>
+        ${al.titular ? `<br><small>A nombre de ${esc(al.titular)}</small>` : ''}
+        <br><small>Mostrá el comprobante en la puerta junto con este pase.</small>
+      </div></div>
+      <button class="btn ancho-full" id="btnCopiarAlias" style="margin-top:.5rem">Copiar el alias</button>` : `
+      <div class="aviso mal" style="margin-top:.9rem"><span>⚠</span><div>
+        <b>Entrada ${plata(entrada)}</b>, pero todavía no hay alias cargado.<br>
+        Pagala en la puerta o escribinos.</div></div>`) : ''}
     <div style="display:flex;gap:.6rem;margin-top:1rem">
       <button class="btn" id="btnCompartir" style="flex:1">Compartir</button>
       <a class="btn primario" href="/?inv=${encodeURIComponent(inv.id)}" style="flex:1.4">Ver la carta</a>
@@ -89,6 +125,13 @@ async function pintar(inv) {
     ${adentro ? `
       <a class="btn ancho-full" style="margin-top:.2rem;display:block;text-align:center"
          href="/registro.html">Anotarme para la próxima noche</a>` : ''}`;
+
+  if ($('#btnCopiarAlias')) $('#btnCopiarAlias').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(al.alias);
+      $('#btnCopiarAlias').textContent = 'Alias copiado ✓';
+    } catch { $('#btnCopiarAlias').textContent = al.alias; }
+  };
 
   $('#btnCompartir').onclick = async () => {
     const url = `${location.origin}/pase.html?i=${encodeURIComponent(inv.id)}`;
