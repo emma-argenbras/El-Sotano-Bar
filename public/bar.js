@@ -2118,6 +2118,44 @@ function comoSeDice(ins) {
     + (sueltas ? ` y ${sueltas} medida${sueltas === 1 ? '' : 's'}` : '');
 }
 
+// ---------- la carta atada al depósito ----------
+// Un producto con receta no lleva stock propio: lo que hay es lo que el
+// depósito alcanza a dar. Se calcula con el insumo más corto de la receta,
+// porque un fernet con coca sin coca no es un fernet con coca.
+//
+// Infinity = no tiene receta, lleva su propio número (o ∞) como siempre.
+function rindeDeposito(item) {
+  const receta = (item.receta || []).filter((r) => Number(r.medidas) > 0);
+  if (!receta.length) return Infinity;
+  let menor = Infinity;
+  for (const r of receta) {
+    const ins = estado.insumos.find((i) => i.id === r.insumoId);
+    // Un insumo borrado del depósito deja al producto sin de dónde salir.
+    if (!ins) return 0;
+    menor = Math.min(menor, Math.floor(Number(ins.stock || 0) / Number(r.medidas)));
+  }
+  return Math.max(0, menor);
+}
+
+// El cliente no puede leer el depósito —ni debe: ahí están los costos y lo que
+// hay guardado—, así que el número viajado al que sí lee: el stock del
+// producto. Lo escribe el panel cada vez que el depósito se mueve.
+//
+// Converge sola aunque haya varios celulares abiertos: el valor es una cuenta
+// del depósito, no un incremento, así que el segundo que llega ve que ya está
+// bien y no escribe. Sin bucle posible.
+async function sincronizarCartaConDeposito() {
+  if (!estado.carta.length || !estado.insumos.length) return;
+  const cambios = estado.carta
+    .filter((i) => (i.receta || []).length)
+    .map((i) => ({ id: i.id, rinde: rindeDeposito(i), tenia: i.stock }))
+    .filter((x) => x.rinde !== x.tenia);
+  // Quien no puede escribir la carta —la puerta, un barman fuera de turno—
+  // simplemente no sincroniza: no es su trabajo y las reglas lo frenan igual.
+  await Promise.all(cambios.map((x) =>
+    updateDoc(doc(db, 'carta', x.id), { stock: x.rinde }).catch(() => {})));
+}
+
 function escucharDeposito() {
   // Los gastos con proveedor apuntado son los pagos a cuenta: hacen falta
   // completos, no solo los del rango que esté mirando la caja.
@@ -2129,7 +2167,7 @@ function escucharDeposito() {
   onSnapshot(collection(db, 'insumos'), (snap) => {
     estado.insumos = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
-    pintarDeposito(); pintarConteo();
+    pintarDeposito(); pintarConteo(); sincronizarCartaConDeposito();
   }, fallo('#deposito'));
   onSnapshot(collection(db, 'proveedores'), (snap) => {
     estado.proveedores = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
@@ -2759,6 +2797,9 @@ function escucharCarta() {
       .sort((a, b) => (a.categoria || '').localeCompare(b.categoria || '') || (a.orden ?? 999) - (b.orden ?? 999));
     pintarCartaBar();
     pintarTablero();
+    // Una receta nueva, o un producto nuevo con receta, también mueve el
+    // número: no solo lo mueve el depósito.
+    sincronizarCartaConDeposito();
   });
 }
 
@@ -2770,18 +2811,26 @@ function pintarCartaBar() {
   }
   cont.innerHTML = estado.carta.map((i) => {
     const fuera = i.enCarta === false;   // retirado: el cliente no lo ve
+    // Con receta, el número no se toca a mano: lo pone el depósito. Mostrar
+    // los − + ahí sería mentir, porque la próxima venta lo vuelve a calcular.
+    const delDeposito = (i.receta || []).length > 0;
+    const rinde = delDeposito ? rindeDeposito(i) : null;
     return `
-    <div class="item ${fuera || i.disponible === false ? 'agotado' : ''}">
+    <div class="item ${fuera || i.disponible === false || rinde === 0 ? 'agotado' : ''}">
       <div class="cuerpo">
         <div class="nombre">${esc(i.nombre || i.id)}${fuera ? ' — <small>fuera de carta</small>' : ''}</div>
         <div class="desc">${esc(i.categoria || '')} · ${plata(i.precio)}${
-          (i.receta || []).length ? ' · sale del depósito' : ''}</div>
+          delDeposito ? ` · ${rinde === 0 ? 'sin material en el depósito' : 'sale del depósito'}` : ''}</div>
       </div>
+      ${delDeposito ? `
+      <div class="cant" title="Lo que el depósito alcanza a dar. Para que suba, cargá mercadería.">
+        <span class="n">${rinde}</span>
+      </div>` : `
       <div class="cant">
         <button data-stock="${i.id}" data-d="-1" aria-label="Restar stock" ${fuera ? 'disabled' : ''}>−</button>
         <span class="n">${typeof i.stock === 'number' ? i.stock : '∞'}</span>
         <button data-stock="${i.id}" data-d="1" aria-label="Sumar stock" ${fuera ? 'disabled' : ''}>+</button>
-      </div>
+      </div>`}
       <button class="btn" data-toggle="${i.id}" style="padding:.4rem .7rem;font-size:.82rem" ${fuera ? 'disabled' : ''}>
         ${i.disponible === false ? 'Activar' : 'Agotar'}
       </button>

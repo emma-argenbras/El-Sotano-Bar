@@ -1,7 +1,7 @@
 {
   "id": "/bar.html",
-  "name": "Sótano",
-  "short_name": "Sótano",
+  "name": "Sótano Barra",
+  "short_name": "Barra",
   "description": "Tablero de pedidos de Sótano: entran, se preparan, salen.",
   "start_url": "/bar.html",
   "scope": "/bar.html",

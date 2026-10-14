@@ -200,11 +200,18 @@ await chequear('la barra se puede instalar como app aparte', async () => {
   if (m.id === '/index.html') throw new Error('comparte id con la carta: se instalaría una sola');
   if (!m.icons.some((i) => i.purpose === 'maskable')) throw new Error('sin ícono maskable');
 
-  // En la pantalla de inicio tiene que decir "Sótano" —la marca le sacó el
-  // "El"—, sin que nadie lo reescriba a mano al instalarlo.
-  if (m.short_name !== 'Sótano') throw new Error('short_name: ' + m.short_name);
+  // En la pantalla de inicio hay dos apps de la casa: la carta y esta. La
+  // carta dice "Sótano" —la marca le sacó el "El"— y esta dice "Barra", o en
+  // el celular de Guille quedan dos íconos con el mismo nombre debajo.
+  if (m.short_name !== 'Barra') throw new Error('short_name: ' + m.short_name);
   const tituloIOS = await barra.getAttribute('meta[name="apple-mobile-web-app-title"]', 'content');
-  if (tituloIOS !== 'Sótano') throw new Error('nombre en iOS: ' + tituloIOS);
+  if (tituloIOS !== 'Barra') throw new Error('nombre en iOS: ' + tituloIOS);
+
+  const mCarta = await barra.evaluate(() =>
+    fetch('/manifest.webmanifest').then((r) => r.json()));
+  if (mCarta.name !== 'Sótano' || mCarta.short_name !== 'Sótano')
+    throw new Error('la app del cliente no se instala como "Sótano": '
+      + mCarta.name + ' / ' + mCarta.short_name);
 
   // Cada ícono declarado tiene que existir de verdad.
   const faltan = await barra.evaluate(async (iconos) => {
@@ -955,6 +962,57 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
   } catch (e) {
     throw new Error(e.message + (seQuejo ? ` · el panel dijo: "${seQuejo}"` : ''));
   } finally { barra.removeListener('dialog', oirAlertas); }
+});
+
+await chequear('la carta se queda sin stock sola cuando el depósito se vacía', async () => {
+  // Lo que el cliente ve no puede depender de que alguien se acuerde de tocar
+  // "Agotar": si no hay fernet en el depósito, el fernet con coca no se puede
+  // pedir. El número del producto lo escribe el panel, calculado del depósito,
+  // porque el cliente no puede leer el depósito —ahí están los costos.
+  const cartaDe = async (nombre) => {
+    const q = await db.collection('carta').where('nombre', '==', nombre).get();
+    return q.docs[0];
+  };
+  const fernet = await cartaDe('Fernet con coca');
+  if (!fernet) throw new Error('no está el producto con receta');
+  const insumo = (await db.collection('insumos').where('nombre', '==', 'Fernet 750').get()).docs[0];
+  if (!insumo) throw new Error('no está el insumo');
+
+  const esperarStock = async (cuanto) => {
+    for (let i = 0; i < 60; i++) {
+      const d = await fernet.ref.get();
+      if (Number(d.data().stock) === cuanto) return;
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    const d = await fernet.ref.get();
+    throw new Error(`el producto quedó en ${d.data().stock} y tenía que quedar en ${cuanto}`);
+  };
+
+  // Seis medidas en el depósito, un trago lleva una: salen seis.
+  await insumo.ref.update({ stock: 6 });
+  await esperarStock(6);
+
+  // Se vacía: el cliente tiene que verlo sin stock, sin que nadie lo marque.
+  await insumo.ref.update({ stock: 0 });
+  await esperarStock(0);
+  await cliente.waitForFunction(() => {
+    const f = [...document.querySelectorAll('#carta .item')]
+      .find((x) => x.textContent.includes('Fernet con coca'));
+    return f && f.className.includes('agotado');
+  }, null, { timeout: 20000 }).catch(() => {
+    throw new Error('el cliente lo sigue viendo disponible con el depósito en cero');
+  });
+
+  // Entra mercadería: vuelve solo, sin tocar nada en la carta.
+  await insumo.ref.update({ stock: 30 });
+  await esperarStock(30);
+  await cliente.waitForFunction(() => {
+    const f = [...document.querySelectorAll('#carta .item')]
+      .find((x) => x.textContent.includes('Fernet con coca'));
+    return f && !f.className.includes('agotado');
+  }, null, { timeout: 20000 }).catch(() => {
+    throw new Error('no volvió a la carta al reponer el depósito');
+  });
 });
 
 await chequear('el administrador carga el depósito con su cuenta, de punta a punta', async () => {
