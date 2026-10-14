@@ -3,6 +3,7 @@
 import {
   initializeApp,
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider,
   sendPasswordResetEmail, setPersistence, browserLocalPersistence, connectAuthEmulator,
   createUserWithEmailAndPassword, deleteApp,
   getFirestore, connectFirestoreEmulator, collection, doc, query, where, orderBy,
@@ -100,7 +101,9 @@ $('#btnOlvide').onclick = async () => {
   if (!mail.startsWith('@') && !mail.includes('@')) { $('#inpMail').focus(); return; }
   if (mail.endsWith(`@${DOMINIO_TURNO}`)) {
     $('#errorLoginTexto').textContent =
-      'Las cuentas de turno no tienen mail. Pedile al dueño que te la cambie desde el panel.';
+      'Estas cuentas no tienen mail, así que no hay link de recuperación. '
+      + 'Si la sabés, podés cambiarla desde adentro con la llave 🔑. '
+      + 'Si la perdiste, pedile al dueño que te dé de alta una cuenta nueva.';
     $('#errorLogin').className = 'aviso mal';
     $('#errorLogin').classList.remove('oculto');
     return;
@@ -126,6 +129,62 @@ function mensajeAuth(code) {
     'auth/network-request-failed': 'Sin conexión.',
   }[code];
 }
+
+// ---------- cambiar la propia contraseña ----------
+// Es lo unico que se puede hacer sin un servidor: Firebase deja que cada uno
+// cambie la suya, nunca la de otro. Por eso, si alguien queda afuera, la
+// salida es que la casa le de de alta una cuenta nueva — no hay forma de
+// resetearle la contraseña desde el panel, y decir lo contrario es mentir.
+$('#btnMiClave').onclick = () => {
+  const u = auth.currentUser;
+  if (!u) return;
+  $('#quienCambiaClave').textContent = `Entrás como ${aUsuario(u.email)}.`;
+  $('#inpClaveVieja').value = '';
+  $('#inpClaveNueva').value = '';
+  $('#inpClaveNueva2').value = '';
+  $('#errorClave').classList.add('oculto');
+  $('#btnConfirmarClave').disabled = false;
+  $('#btnConfirmarClave').textContent = 'Cambiarla';
+  $('#dlgClave').showModal();
+  $('#inpClaveVieja').focus();
+};
+$('#btnCancelarClave').onclick = () => $('#dlgClave').close();
+$('#btnConfirmarClave').onclick = async () => {
+  const u = auth.currentUser;
+  if (!u) return;
+  const vieja = $('#inpClaveVieja').value;
+  const nueva = $('#inpClaveNueva').value;
+  const fallar = (t) => {
+    $('#errorClaveTexto').textContent = t;
+    $('#errorClave').classList.remove('oculto');
+  };
+  if (nueva.length < 6) {
+    fallar('La nueva necesita al menos 6 caracteres.');
+    $('#inpClaveNueva').focus();
+    return;
+  }
+  if (nueva !== $('#inpClaveNueva2').value) {
+    fallar('Las dos nuevas no coinciden.');
+    $('#inpClaveNueva2').focus();
+    return;
+  }
+  const btn = $('#btnConfirmarClave');
+  btn.disabled = true; btn.textContent = 'Cambiando…';
+  try {
+    // Firebase pide volver a probar quién sos justo antes: si no, alcanzaba
+    // con agarrar un celular desbloqueado para quedarse con la cuenta.
+    await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, vieja));
+    await updatePassword(u, nueva);
+    $('#dlgClave').close();
+    alert('Listo, tu contraseña cambió.\n\nAnotala donde la tengas: si se pierde, '
+      + 'no se recupera y hay que crear una cuenta nueva.');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Cambiarla';
+    fallar(e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password'
+      ? 'La contraseña de ahora no es esa.'
+      : (mensajeAuth(e.code) || e.code || e.message));
+  }
+};
 
 $('#btnSalir').onclick = () => signOut(auth);
 

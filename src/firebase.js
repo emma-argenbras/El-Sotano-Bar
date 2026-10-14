@@ -10,6 +10,9 @@ export {
   getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail,
   setPersistence, browserLocalPersistence,
+  // Cambiar la propia contraseña. Firebase exige volver a probar quién sos
+  // justo antes: si no, alcanzaba con agarrar un celular desbloqueado.
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider,
 } from 'firebase/auth';
 export {
   getFirestore, initializeFirestore, connectFirestoreEmulator,

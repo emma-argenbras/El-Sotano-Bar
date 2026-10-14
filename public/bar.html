@@ -84,6 +84,7 @@
             style="padding:.35rem .7rem">⬇<span class="solo-ancho"> Instalar</span></button>
     <button class="btn" data-actualizar style="padding:.35rem .7rem">↻<span class="solo-ancho"> Actualizar</span></button>
     <button class="btn" data-ayuda title="Cómo funciona" style="padding:.35rem .7rem">?</button>
+    <button class="btn" id="btnMiClave" title="Cambiar mi contraseña" style="padding:.35rem .7rem">🔑</button>
     <button class="btn" id="btnSalir" style="padding:.35rem .7rem">Salir</button>
   </header>
 
@@ -386,6 +387,30 @@
 
 <!-- Dar de baja un insumo: el motivo es obligatorio porque es lo único que
      queda después. -->
+<!-- Cambiar la propia contraseña. Es lo único que se puede hacer sin un
+     servidor: Firebase deja que cada uno cambie la suya, no la de otro. -->
+<dialog id="dlgClave">
+  <h2 style="margin-top:0">Cambiar mi contraseña</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin-top:0" id="quienCambiaClave"></p>
+  <label class="campo">
+    <span>La de ahora</span>
+    <input id="inpClaveVieja" type="password" autocomplete="current-password">
+  </label>
+  <label class="campo">
+    <span>La nueva <small>(6 o más)</small></span>
+    <input id="inpClaveNueva" type="password" autocomplete="new-password">
+  </label>
+  <label class="campo">
+    <span>Repetila</span>
+    <input id="inpClaveNueva2" type="password" autocomplete="new-password">
+  </label>
+  <div class="aviso mal oculto" id="errorClave"><span>⚠</span><div id="errorClaveTexto"></div></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarClave" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnConfirmarClave" style="flex:1.4">Cambiarla</button>
+  </div>
+</dialog>
+
 <dialog id="dlgBaja">
   <h2 style="margin-top:0">Dar de baja un insumo</h2>
   <p style="color:var(--suave);font-size:.9rem;margin-top:0" id="queSeDaDeBaja"></p>

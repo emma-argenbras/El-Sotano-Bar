@@ -628,6 +628,89 @@ const ctxTurno = await navegador.newContext({ viewport: { width: 390, height: 84
 const turno = await ctxTurno.newPage();
 turno.on('pageerror', (e) => errores.push('turno: ' + e.message));
 
+await chequear('cada uno puede cambiar su propia contraseña', async () => {
+  // Es lo único que se puede sin un servidor: Firebase deja cambiar la propia,
+  // nunca la de otro. Se prueba con el celular de la barra, que es la cuenta
+  // que más se queda afuera.
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  let dijo = '';
+  pg.on('dialog', async (d) => { dijo = d.message(); await d.accept(); });
+  try {
+    await pg.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+    await pg.fill('#inpMail', 'barra');
+    await pg.fill('#inpPass', 'clave-del-aparato');
+    await pg.click('#btnEntrar');
+    await pg.waitForSelector('#vistaPanel', { state: 'visible', timeout: 20000 });
+
+    await pg.click('#btnMiClave');
+    await pg.waitForSelector('#dlgClave[open]', { timeout: 5000 });
+
+    // Con la de ahora mal, no cambia nada.
+    await pg.fill('#inpClaveVieja', 'la-que-no-es');
+    await pg.fill('#inpClaveNueva', 'clave-nueva-1');
+    await pg.fill('#inpClaveNueva2', 'clave-nueva-1');
+    await pg.click('#btnConfirmarClave');
+    await pg.waitForFunction(() =>
+      !document.querySelector('#errorClave')?.classList.contains('oculto'),
+      null, { timeout: 10000 });
+
+    // Y si las dos nuevas no coinciden, tampoco.
+    await pg.fill('#inpClaveVieja', 'clave-del-aparato');
+    await pg.fill('#inpClaveNueva2', 'otra-distinta');
+    await pg.click('#btnConfirmarClave');
+    if (!(await pg.textContent('#errorClaveTexto')).includes('no coinciden'))
+      throw new Error('no avisa que las nuevas no coinciden');
+
+    await pg.fill('#inpClaveNueva2', 'clave-nueva-1');
+    await pg.click('#btnConfirmarClave');
+    await pg.waitForFunction(() =>
+      !document.querySelector('#dlgClave')?.open, null, { timeout: 15000 }).catch(async () => {
+        throw new Error('no la cambió: ' + (await pg.textContent('#errorClaveTexto')));
+      });
+    if (!dijo.includes('cambió')) throw new Error('no confirma el cambio: ' + dijo);
+
+    // Y la nueva entra de verdad: se sale y se vuelve.
+    await pg.click('#btnSalir');
+    await pg.waitForSelector('#formLogin', { timeout: 15000 });
+    await pg.fill('#inpMail', 'barra');
+    await pg.fill('#inpPass', 'clave-nueva-1');
+    await pg.click('#btnEntrar');
+    await pg.waitForSelector('#vistaPanel', { state: 'visible', timeout: 20000 })
+      .catch(() => { throw new Error('con la contraseña nueva no entra'); });
+
+    // Se deja como estaba, que los casos que siguen usan la vieja.
+    await pg.click('#btnMiClave');
+    await pg.waitForSelector('#dlgClave[open]', { timeout: 5000 });
+    await pg.fill('#inpClaveVieja', 'clave-nueva-1');
+    await pg.fill('#inpClaveNueva', 'clave-del-aparato');
+    await pg.fill('#inpClaveNueva2', 'clave-del-aparato');
+    await pg.click('#btnConfirmarClave');
+    await pg.waitForFunction(() =>
+      !document.querySelector('#dlgClave')?.open, null, { timeout: 15000 });
+  } finally { await ctx.close(); }
+});
+
+await chequear('sin mail, el "olvidé la contraseña" dice la verdad', async () => {
+  // Decía "pedile al dueño que te la cambie desde el panel", y el panel no
+  // tiene cómo: desde el navegador no se puede cambiar la contraseña de otro.
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  try {
+    await pg.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+    await pg.fill('#inpMail', 'barra');
+    await pg.click('#btnOlvide');
+    await pg.waitForFunction(() =>
+      !document.querySelector('#errorLogin')?.classList.contains('oculto'),
+      null, { timeout: 10000 });
+    const t = await pg.textContent('#errorLoginTexto');
+    if (/cambie desde el panel/i.test(t))
+      throw new Error('sigue prometiendo algo que el panel no puede hacer: ' + t);
+    if (!/cuenta nueva/i.test(t))
+      throw new Error('no dice cuál es la salida real: ' + t);
+  } finally { await ctx.close(); }
+});
+
 await chequear('registrado pero sin turno, el barman entra y no ve nada', async () => {
   // Registrado no alcanza: las reglas piden estar asignado al evento.
   const ctxSinTurno = await navegador.newContext({ viewport: { width: 390, height: 844 } });
