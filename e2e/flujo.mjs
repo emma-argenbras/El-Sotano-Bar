@@ -545,6 +545,8 @@ await chequear('el celular de la barra se registra y entra sin turno', async () 
       throw new Error('no le explica lo de quién atiende');
     if (suAyuda.includes('Caja general') || suAyuda.includes('ticket promedio'))
       throw new Error('le muestra la ayuda de la caja, que no es suya');
+    if (suAyuda.includes('Ingreso de mercadería') || suAyuda.includes('Carga inicial'))
+      throw new Error('le explica cómo cargar el depósito, que no puede hacer');
     await cel.click('#btnCerrarAyuda');
   } finally { await ctxAparato.close(); }
 });
@@ -923,6 +925,94 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
   } catch (e) {
     throw new Error(e.message + (seQuejo ? ` · el panel dijo: "${seQuejo}"` : ''));
   } finally { barra.removeListener('dialog', oirAlertas); }
+});
+
+await chequear('el administrador carga el depósito con su cuenta, de punta a punta', async () => {
+  // El depósito real no lo carga el dueño: lo carga un administrador, parado
+  // en la barra, con su usuario y contraseña. Hasta acá todo el depósito se
+  // probaba con la cuenta de la casa, que resuelve por mail y no pasa por
+  // accesosBarra. Si el alta no anda con cuenta de administrador, la carga
+  // inicial no la puede hacer nadie más que el dueño.
+  await barra.click('#tabEvento');
+  await barra.waitForSelector('#btnAltaAdmin', { timeout: 10000 });
+  barra.on('dialog', async (d) => d.accept());
+  try {
+    await barra.click('#btnAltaAdmin');
+    await barra.waitForSelector('#dlgPersona[open]', { timeout: 10000 });
+    await barra.fill('#inpPersonaUsuario', 'guille');
+    await barra.fill('#inpPersonaClave', 'clave-del-gerente');
+    await barra.click('#btnConfirmarPersona');
+    await barra.waitForFunction(() =>
+      document.querySelector('#accesos')?.textContent.includes('guille'),
+      null, { timeout: 15000 });
+  } finally { barra.removeAllListeners('dialog'); }
+
+  const ctxGer = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const ger = await ctxGer.newPage();
+  let seQuejoGer = '';
+  ger.on('dialog', async (d) => { seQuejoGer = d.message(); await d.accept(); });
+  try {
+    await ger.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+    await ger.fill('#inpMail', 'guille');
+    await ger.fill('#inpPass', 'clave-del-gerente');
+    await ger.click('#btnEntrar');
+    await ger.waitForSelector('#vistaPanel', { state: 'visible', timeout: 20000 });
+
+    // Sin turno asignado y sin ser el dueño, igual ve el depósito: la cuenta
+    // de administrador no depende del evento.
+    await ger.waitForFunction(() =>
+      document.querySelector('#tabDeposito') &&
+      !document.querySelector('#tabDeposito').hidden, null, { timeout: 15000 })
+      .catch(() => { throw new Error('el administrador no ve la pestaña Depósito'); });
+
+    await ger.click('#tabDeposito');
+    await ger.waitForSelector('#btnNuevoInsumo', { timeout: 10000 });
+    await ger.click('#btnNuevoInsumo');
+    await ger.waitForSelector('#dlgInsumo[open]', { timeout: 5000 });
+    await ger.fill('#inpInsNombre', 'Gancia 1L');
+    await ger.fill('#inpInsUnidad', 'botella');
+    await ger.fill('#inpInsMedidas', '8');
+    await ger.fill('#inpInsCosto', '9000');
+    await ger.click('#btnGuardarInsumo');
+    await ger.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('Gancia 1L'),
+      null, { timeout: 15000 }).catch(() => {
+        throw new Error('el administrador no pudo dar de alta el insumo'
+          + (seQuejoGer ? ` · el panel dijo: "${seQuejoGer}"` : ''));
+      });
+
+    // Y queda en la base de verdad, no solo pintado en la pantalla.
+    let guardado = null;
+    for (let i = 0; i < 40; i++) {
+      const q = await db.collection('insumos').where('nombre', '==', 'Gancia 1L').get();
+      guardado = q.docs[0]?.data();
+      if (guardado) break;
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    if (!guardado) throw new Error('el insumo no llegó a la base');
+    if (Number(guardado.medidas) !== 8)
+      throw new Error('guardó mal las medidas: ' + guardado.medidas);
+  } finally { await ctxGer.close(); }
+});
+
+await chequear('el celular de la barra NO carga el depósito: lo mira y descuenta', async () => {
+  // Es el aparato que vive prendido arriba del mostrador y sin clave. Si
+  // desde ahí se pudiera dar de alta mercadería y ponerle precio, lo haría
+  // cualquiera que lo levante.
+  const ctxCel = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const cel = await ctxCel.newPage();
+  try {
+    await cel.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+    await cel.fill('#inpMail', 'barra');
+    await cel.fill('#inpPass', 'clave-del-aparato');
+    await cel.click('#btnEntrar');
+    await cel.waitForSelector('#vistaPanel', { state: 'visible', timeout: 20000 });
+    await cel.waitForFunction(() =>
+      document.querySelector('#tabDeposito')?.hidden === true, null, { timeout: 15000 })
+      .catch(() => { throw new Error('el celular de la barra ve la pestaña Depósito'); });
+    if (await cel.locator('#tabCaja').isVisible())
+      throw new Error('el celular de la barra ve la caja');
+  } finally { await ctxCel.close(); }
 });
 
 await chequear('la caja junta lo que entra y lo que sale', async () => {
@@ -1415,7 +1505,7 @@ await chequear('la ayuda del admin tiene todo', async () => {
   for (const debe of ['Entrar e instalar', 'Agendar una noche', 'Arrancar y cerrar la noche',
                       'Invitados y el link de registro', 'La caja', 'Personal: quién es quién',
                       'El tablero de pedidos', 'Carta y stock', 'Controlar la entrada',
-                      'Si algo no anda']) {
+                      'El depósito: insumos y compras', 'Si algo no anda']) {
     if (!t.includes(debe)) throw new Error('le falta: ' + debe);
   }
   if (!t.includes('Poner en carta')) throw new Error('le esconde algo que sí puede hacer');

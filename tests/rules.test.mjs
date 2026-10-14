@@ -242,6 +242,24 @@ describe('el depósito', () => {
   it('un cliente no ve el depósito', async () => {
     await assertFails(getDocs(collection(anon(), 'insumos')));
   });
+
+  // El depósito lo carga un administrador, que no es el dueño: tiene cuenta
+  // de usuario y contraseña, no mail de la casa. Si esto no anda, el alta
+  // inicial no la puede hacer nadie más que el dueño.
+  it('un administrador también da de alta y corrige, no solo el dueño', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'insumos/gancia-1l'),
+      insumo({ nombre: 'Gancia 1L' })));
+    await assertSucceeds(updateDoc(doc(gerente(), 'insumos/gancia-1l'),
+      { nombre: 'Gancia 1L', unidad: 'botella', medidas: 8, stock: 12,
+        costo: 9000, minimo: 4 }));
+  });
+
+  // El celular de la barra vive prendido arriba del mostrador y sin clave:
+  // descuenta al entregar y nada más. Dar de alta mercadería y ponerle precio
+  // es de quien se loguea con su cuenta.
+  it('el celular de la barra NO da de alta mercadería', async () => {
+    await assertFails(setDoc(doc(aparato(), 'insumos/trucho'), insumo()));
+  });
 });
 
 describe('ingresos de mercadería y proveedores', () => {
@@ -286,6 +304,13 @@ describe('ingresos de mercadería y proveedores', () => {
       { nombre: 'Distribuidora Sur', creadoEn: serverTimestamp() }));
     await assertSucceeds(getDoc(doc(turnoOk(), 'proveedores/prov-1')));
     await assertFails(setDoc(doc(turnoOk(), 'proveedores/prov-2'), { nombre: 'Mía' }));
+  });
+
+  it('y un administrador también lo da de alta', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'proveedores/prov-3'),
+      { nombre: 'Bebidas del Centro', creadoEn: serverTimestamp() }));
+    // Pero el celular de la barra no: lo lee y nada más.
+    await assertFails(setDoc(doc(aparato(), 'proveedores/prov-4'), { nombre: 'Trucha' }));
   });
 
   it('un pago a cuenta es un gasto con el proveedor apuntado', async () => {

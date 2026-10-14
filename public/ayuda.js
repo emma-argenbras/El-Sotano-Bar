@@ -243,6 +243,40 @@
         Distinto de Agotar, que es "se acabó esta noche".</p>`,
     },
     {
+      quien: ['admin'],
+      titulo: 'El depósito: insumos y compras',
+      cuerpo: `
+        <p>La pestaña <b>Depósito</b> es el stock real del local: las botellas,
+        latas y paquetes que hay guardados. Es distinto de la carta — la carta
+        es lo que se vende, el depósito es lo que se tiene.</p>
+        <p><b>+ Insumo</b> da de alta una cosa. Lo importante es
+        <b>medidas</b>: cuántos tragos salen de esa botella. Una de fernet de
+        750 da unas 10 medidas, entonces ponés 10. Si es algo que se vende
+        cerrado —una lata, una cerveza— poné <b>1</b>.</p>
+        <p>El <b>costo</b> es lo que te sale a vos, no lo que cobrás. El
+        <b>mínimo</b> es el nivel al que querés que te avise: cuando baja de
+        ahí, aparece arriba en rojo.</p>
+        <p><b>Cargar el stock inicial</b>: la primera vez, entrás por
+        <b>Ingreso de mercadería</b> y elegís <b>Carga inicial</b>. Suma todo
+        lo que ya tenés sin descontar plata de la caja, porque esa plata ya
+        salió hace rato.</p>
+        <p>De ahí en adelante, cada compra entra por <b>Ingreso de
+        mercadería</b> con el proveedor y las unidades. <b>Pagada</b> la
+        descuenta de la caja en el momento. <b>A cuenta</b> la deja como deuda
+        con ese proveedor hasta que le pagues: la ves en <b>Deuda con
+        proveedores</b>, y al pagarle queda como gasto.</p>
+        <p><b>La receta</b> es lo que une las dos cosas. En <b>Carta y stock</b>,
+        el botón de receta de cada producto dice de qué insumo sale y cuántas
+        medidas lleva. Un fernet con coca lleva 1 medida de fernet: al
+        entregarlo, baja <b>una medida</b> del depósito, no una botella.</p>
+        <p>Un producto sin receta no toca el depósito. Eso está bien para cosas
+        que no salen de una botella.</p>
+        <p>Esto lo cargás vos o un administrador con su cuenta. <b>Desde el
+        celular de la barra no se puede</b>: ese aparato mira el depósito y
+        descuenta al entregar, pero no da de alta mercadería ni le pone precio.
+        Vive prendido arriba del mostrador y lo levanta cualquiera.</p>`,
+    },
+    {
       quien: ['admin', 'puerta'],
       titulo: 'Controlar la entrada',
       cuerpo: `
