@@ -48,7 +48,11 @@
         la gracia: agendás el viernes de la semana que viene y la gente se anota
         durante toda la semana.</p>
         <p>Si dejás el cupo vacío, no hay lista de invitados y la noche funciona
-        como un bar común.</p>`,
+        como un bar común.</p>
+        <p><b>Entrada</b>: lo que sale entrar esa noche. Vacío o cero es gratis.
+        Se lo decimos a la persona <b>antes</b> de pedirle los datos, le queda
+        escrito en el pase, y en <b>Puerta</b> aparece cuánto cobrarle a cada
+        uno. Por ahora se cobra en la puerta: la app lo avisa, no lo cobra.</p>`,
     },
     {
       quien: ['admin'],
@@ -106,7 +110,16 @@
         teléfono para que se pueda anotar de nuevo.</p>
         <p>Si alguien aparece sin anotarse: <b>+ Invitado de último momento</b>.
         Mismo formato de teléfono, o dejalo vacío si no hay.
-        Entra aunque la lista esté llena. Le podés mandar su pase ahí mismo.</p>`,
+        Entra aunque la lista esté llena. Le podés mandar su pase ahí mismo.</p>
+        <p><b>El club</b> está abajo de todo en <b>Calendario</b>: todos los que
+        se anotaron alguna vez, juntados por teléfono. No hay que darlos de
+        alta — anotarse a una noche ya es el alta. De cada uno ves cuántas
+        noches vino, cuántas veces entró y cuándo fue la última. Se busca por
+        nombre o por teléfono.</p>
+        <p>Del lado de la persona, su pase <b>es</b> la app del club: la puede
+        instalar en su celular desde el pase, queda con su propio ícono claro
+        —distinto del de la carta y del de la barra— y abre directo en su
+        entrada, aunque abajo no haya señal.</p>`,
     },
     {
       quien: ['admin'],

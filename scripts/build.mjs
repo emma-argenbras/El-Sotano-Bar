@@ -41,14 +41,22 @@ const SELLADOS = [
   'public/registro.html', 'public/pase.html',
   'public/app.js', 'public/bar.js', 'public/actualizar.js', 'public/estilos.css',
   'public/registro.js', 'public/pase.js', 'public/ayuda.js', 'public/tel.js',
+  'public/instalar.js',
   'public/manifest.webmanifest', 'public/manifest-barra.webmanifest',
+  'public/manifest-club.webmanifest',
   'public/iconos/icono.svg', 'public/iconos/icono-barra.svg',
+  'public/iconos/icono-club.svg',
   'public/iconos/logo.svg', 'public/iconos/logo-horizontal.svg',
   'public/iconos/logo-horizontal-claro.svg',
   salida,
 ];
 const hash = createHash('sha256');
 for (const f of SELLADOS) hash.update(readFileSync(f));
+// El service worker también cuenta: la lista de lo que guarda para andar sin
+// señal es parte de lo que el cliente se baja. Se le saca la línea de la
+// versión antes de hashearlo, porque si no se muerde la cola: la versión sale
+// del contenido y el contenido lleva la versión.
+hash.update(readFileSync('public/sw.js', 'utf8').replace(/^const VERSION = '.*';$/m, ''));
 const version = `sotano-${hash.digest('hex').slice(0, 12)}`;
 
 // La versión también queda servible: la app la consulta cada tanto para saber

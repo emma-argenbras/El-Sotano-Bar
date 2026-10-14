@@ -202,6 +202,10 @@
     <span>Capacidad máxima <small>(vacío = sin registro de invitados)</small></span>
     <input id="inpCapacidad" type="number" min="0" max="5000" inputmode="numeric" autocomplete="off">
   </label>
+  <label class="campo">
+    <span>Entrada <small>(vacío o 0 = gratis)</small></span>
+    <input id="inpEntrada" type="number" min="0" max="1000000" inputmode="numeric" autocomplete="off">
+  </label>
   <div class="campo">
     <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">
       Barman de esta noche</span>
@@ -386,6 +390,7 @@
 
 <script src="/version.js"></script>
 <script src="/config.js"></script>
+<script src="/instalar.js"></script>
 <script type="module" src="/bar.js"></script>
 <script src="/actualizar.js"></script>
 <script src="/ayuda.js"></script>

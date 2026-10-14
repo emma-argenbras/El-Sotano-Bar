@@ -30,6 +30,8 @@ function token() {
 let registro = null;
 let yaPinto = false;
 
+const plata = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+
 // Un error al arrancar el módulo dejaba la pantalla en "Buscando la noche…"
 // sin decir nada. Ahora se ve: es la pantalla que abre gente de afuera, una
 // sola vez, y si no funciona no vuelve.
@@ -175,12 +177,18 @@ function pintar() {
       Se agotaron los lugares. Escribinos por si se libera alguno.</div></div>`;
     return;
   }
+  // Lo que cuesta entrar se dice ANTES de pedirle los datos, no después: que
+  // se entere al llegar a la puerta es la peor manera de enterarse.
+  const entrada = Number(registro.entrada || 0);
   cont.innerHTML = `
     <h1 style="font-size:1.4rem;margin:.4rem 0 .2rem">${esc(registro.nombre)}</h1>
-    <p style="color:var(--suave);margin:0 0 1.2rem">
+    <p style="color:var(--suave);margin:0 0 ${entrada ? '.8rem' : '1.2rem'}">
       Quedan <b style="color:var(--oro)" id="quedanLugares">${quedan}</b> lugares.
       Dejanos tu nombre y tu teléfono y te damos el pase de entrada.
     </p>
+    ${entrada ? `<div class="aviso" style="margin-bottom:1.2rem"><span>🎟</span><div>
+      <b>La entrada sale ${plata(entrada)}.</b><br>
+      Se paga en la puerta. Anotarte te guarda el lugar.</div></div>` : ''}
     <form id="formRegistro">
       <label class="campo">
         <span>Tu nombre y apellido</span>

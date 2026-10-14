@@ -1414,6 +1414,9 @@ await chequear('dos personas se anotan al mismo tiempo y entran las dos', async 
   await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
   await barra.fill('#inpEvento', 'Noche de la avalancha');
   await barra.fill('#inpCapacidad', '5');
+  // Con entrada paga: lo que sale entrar tiene que llegar hasta el invitado,
+  // que solo puede leer el registro de la noche y nunca el evento.
+  await barra.fill('#inpEntrada', '3500');
   await barra.click('#btnConfirmarEvento');
   const idAval = await (async () => {
     for (let i = 0; i < 40; i++) {
@@ -1440,6 +1443,10 @@ await chequear('dos personas se anotan al mismo tiempo y entran las dos', async 
       throw new Error('la página del invitado no mostró el formulario. Dice: '
         + (await pg.textContent('#pantalla')).trim().slice(0, 160));
     });
+    // Lo que cuesta se dice antes de pedirle los datos, no en la puerta.
+    const dice = await pg.textContent('#pantalla');
+    if (!dice.includes('3.500'))
+      throw new Error('no avisa lo que sale la entrada: ' + dice.slice(0, 200));
     await pg.fill('#inpNombre', `Simultaneo ${n}`);
     await pg.fill('#inpTel', `11555566${n}${n}`);
     return { ctx, pg };
@@ -1453,6 +1460,13 @@ await chequear('dos personas se anotan al mismo tiempo y entran las dos', async 
     const anotados = await db.collection('invitados').where('eventoId', '==', idAval).get();
     if (anotados.size !== 2)
       throw new Error(`entraron ${anotados.size} de 2: el segundo rebotó por la carrera`);
+    // Y el pase también lo dice: es lo que la persona mira en la puerta.
+    await dos[0].pg.waitForFunction(() =>
+      document.querySelector('#pase')?.textContent.includes('3.500'),
+      null, { timeout: 20000 }).catch(async () => {
+        throw new Error('el pase no dice lo que hay que pagar: '
+          + (await dos[0].pg.textContent('#pase')).slice(0, 200));
+      });
     const reg = (await db.doc(`registros/${idAval}`).get()).data();
     if (Number(reg.registrados) !== 2)
       throw new Error('el contador no cuadra: ' + reg.registrados);
@@ -1728,6 +1742,75 @@ await chequear('la casa saca a alguien de la lista y le libera el teléfono', as
   }
   if (Number(r?.registrados) !== antes - 1)
     throw new Error(`el contador no bajó: ${antes} -> ${r?.registrados}`);
+});
+
+await chequear('el club se arma solo con los que se anotaron', async () => {
+  // No hay una base de clientes aparte: anotarse a una noche YA es el alta.
+  // La lista junta por teléfono, no por nombre, porque cada uno lo escribe
+  // distinto cada vez.
+  await barra.click('#tabCalendario');
+  await barra.waitForFunction(() =>
+    document.querySelector('#calendario')?.textContent.includes('El club'),
+    null, { timeout: 15000 });
+  const club = await barra.textContent('#calendario');
+  if (!club.includes('Ana Prueba'))
+    throw new Error('el club no tiene a quien se anotó: ' + club.slice(-400));
+
+  // El buscador: por nombre y por teléfono, y escrito como venga.
+  await barra.fill('#buscaClub', 'beto');
+  await barra.waitForFunction(() => {
+    const t = document.querySelector('#calendario')?.textContent || '';
+    return t.includes('Beto Prueba') && !t.includes('Ana Prueba');
+  }, null, { timeout: 10000 }).catch(async () => {
+    throw new Error('el buscador por nombre no filtra: '
+      + (await barra.textContent('#calendario')).slice(-300));
+  });
+
+  await barra.fill('#buscaClub', 'nadie-con-este-nombre');
+  await barra.waitForFunction(() =>
+    document.querySelector('#calendario')?.textContent.includes('Nadie con ese nombre'),
+    null, { timeout: 10000 });
+  await barra.fill('#buscaClub', '');
+});
+
+await chequear('el pase es la app del club: ícono y nombre propios', async () => {
+  // En la pantalla de inicio hay tres apps de la casa. Esta es la del
+  // invitado y no puede llamarse igual ni verse igual que las otras dos.
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  try {
+    await pg.goto(`${BASE}/pase.html`, { waitUntil: 'domcontentloaded' });
+    const href = await pg.getAttribute('link[rel=manifest]', 'href');
+    if (href !== '/manifest-club.webmanifest') throw new Error('manifest: ' + href);
+    const m = await pg.evaluate((u) => fetch(u).then((r) => r.json()), href);
+    if (m.short_name !== 'Club') throw new Error('short_name: ' + m.short_name);
+    if (m.start_url !== '/pase.html') throw new Error('start_url: ' + m.start_url);
+    if (m.id === '/index.html' || m.id === '/bar.html')
+      throw new Error('comparte id con otra app: se instalaría una sola');
+    const tituloIOS = await pg.getAttribute('meta[name="apple-mobile-web-app-title"]', 'content');
+    if (tituloIOS !== 'Club') throw new Error('nombre en iOS: ' + tituloIOS);
+    if (!m.icons.some((i) => i.purpose === 'maskable')) throw new Error('sin ícono maskable');
+    // Y los íconos que declara existen y son los del club, no los de la carta.
+    const faltan = await pg.evaluate(async (iconos) => {
+      const malos = [];
+      for (const i of iconos) {
+        if (!i.src.includes('club')) malos.push('no es del club: ' + i.src);
+        const r = await fetch(i.src, { method: 'HEAD' });
+        if (!r.ok) malos.push(i.src + ' → ' + r.status);
+      }
+      return malos;
+    }, m.icons);
+    if (faltan.length) throw new Error(faltan.join(', '));
+
+    // Sin pase guardado no puede ser un callejón: es la pantalla que abre al
+    // tocar el ícono.
+    await pg.waitForFunction(() =>
+      document.querySelector('#pase')?.textContent.includes('Todavía no tenés pase'),
+      null, { timeout: 15000 });
+    const href2 = await pg.getAttribute('#pase a', 'href');
+    if (!href2 || !href2.includes('/registro.html'))
+      throw new Error('no ofrece anotarse a la próxima: ' + href2);
+  } finally { await ctx.close(); }
 });
 
 await chequear('lo que pide el invitado queda a su nombre', async () => {

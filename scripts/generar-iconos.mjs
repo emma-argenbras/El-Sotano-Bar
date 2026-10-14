@@ -128,6 +128,19 @@ const iconoBarra = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512
   ${bombita({ cx: 256, cyBulbo: 290, r: 72, desdeArriba: 72 }).replaceAll(ORO, FONDO)}
 </svg>`;
 
+// --- Ícono del club: el del invitado. Fondo crema, como la tarjeta del pase,
+//     y asi en la pantalla de inicio son tres y se distinguen de un vistazo:
+//     la carta oscura, la barra dorada, el club claro. ---
+const iconoClub = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="${CREMA}"/>
+  ${bombita({ cx: 256, cyBulbo: 290, r: 72, desdeArriba: 72 }).replaceAll(ORO, FONDO)}
+</svg>`;
+
+const iconoClubMaskable = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="${CREMA}"/>
+  ${bombita({ cx: 256, cyBulbo: 288, r: 58, desdeArriba: 136 }).replaceAll(ORO, FONDO)}
+</svg>`;
+
 const iconoBarraMaskable = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" fill="${ORO}"/>
   ${bombita({ cx: 256, cyBulbo: 288, r: 58, desdeArriba: 136 }).replaceAll(ORO, FONDO)}
@@ -148,6 +161,8 @@ const svgs = {
   'icono-maskable.svg': iconoMaskable,
   'icono-barra.svg': iconoBarra,
   'icono-barra-maskable.svg': iconoBarraMaskable,
+  'icono-club.svg': iconoClub,
+  'icono-club-maskable.svg': iconoClubMaskable,
 };
 for (const [nombre, contenido] of Object.entries(svgs)) {
   writeFileSync(`${SALIDA}/${nombre}`, contenido.trim() + '\n');
@@ -164,6 +179,10 @@ const PNGS = [
   ['icono-barra-512.png', iconoBarra, 512, 512],
   ['icono-barra-maskable-512.png', iconoBarraMaskable, 512, 512],
   ['apple-touch-icon-barra.png', iconoBarra, 180, 180],
+  ['icono-club-192.png', iconoClub, 192, 192],
+  ['icono-club-512.png', iconoClub, 512, 512],
+  ['icono-club-maskable-512.png', iconoClubMaskable, 512, 512],
+  ['apple-touch-icon-club.png', iconoClub, 180, 180],
   ['logo.png', logo, ANCHO_V, ALTO_V],
   ['logo-horizontal.png', logoH, ANCHO_H * 2, ALTO_H * 2],
 ];

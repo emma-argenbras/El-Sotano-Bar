@@ -1,14 +1,22 @@
 // Service worker de Sótano.
 // El local es un sótano: la señal se corta. El cascarón de la app tiene que
 // abrir igual, y Firestore ya resuelve sus datos con su propio cache.
-const VERSION = 'sotano-9b00118fe588';
+const VERSION = 'sotano-8d6b2701ac5e';
 const ESENCIALES = [
   '/', '/index.html', '/bar.html', '/estilos.css', '/app.js', '/bar.js',
-  '/config.js', '/actualizar.js', '/ayuda.js', '/tel.js', '/manifest.webmanifest', '/vendor/firebase.js',
+  '/config.js', '/actualizar.js', '/ayuda.js', '/tel.js', '/instalar.js',
+  '/manifest.webmanifest', '/vendor/firebase.js',
   '/iconos/icono.svg', '/iconos/icono-192.png', '/iconos/apple-touch-icon.png',
-  '/iconos/logo-horizontal.svg', '/iconos/logo.svg',
+  '/iconos/logo-horizontal.svg', '/iconos/logo-horizontal-claro.svg', '/iconos/logo.svg',
   '/manifest-barra.webmanifest', '/iconos/icono-barra.svg',
   '/iconos/icono-barra-192.png', '/iconos/apple-touch-icon-barra.png',
+  // El pase y el registro: la app del club. El pase tiene que abrir en la
+  // puerta, que está abajo y sin señal — el QR se dibuja en el celular con el
+  // token, y los datos los sirve el cache de Firestore. Por eso va también
+  // el bundle del QR, que si no hay que bajarlo justo cuando no se puede.
+  '/pase.html', '/pase.js', '/registro.html', '/registro.js', '/vendor/qr.js',
+  '/manifest-club.webmanifest', '/iconos/icono-club.svg',
+  '/iconos/icono-club-192.png', '/iconos/apple-touch-icon-club.png',
 ];
 
 self.addEventListener('install', (e) => {

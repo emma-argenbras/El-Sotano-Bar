@@ -60,94 +60,11 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
-// Instalada, la barra abre a pantalla completa y sin barra del navegador.
-// Tiene manifest propio (manifest-barra.webmanifest), así que arranca en el
-// tablero y no en la carta del cliente.
-let pedidoDeInstalar = null;
-const yaInstalada = () =>
-  matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-
-// Qué aparato es, para poder explicar el camino correcto. Chrome y Edge
-// disparan beforeinstallprompt; Safari y Firefox no, y hay que hacerlo a mano.
-function aparato() {
-  const ua = navigator.userAgent;
-  const tactil = navigator.maxTouchPoints > 1;
-  if (/iphone|ipod/i.test(ua) || (/ipad/i.test(ua)) || (navigator.platform === 'MacIntel' && tactil)) return 'ios';
-  if (/android/i.test(ua)) return 'android';
-  if (/firefox/i.test(ua)) return 'firefox';
-  if (/safari/i.test(ua) && !/chrome|chromium|edg/i.test(ua)) return 'safari';
-  return 'escritorio';
-}
-
-const PASOS = {
-  ios: `<ol style="padding-left:1.1rem;margin:0">
-      <li>Tocá <b>Compartir</b> <span style="font-size:1.1em">⬆︎</span>, abajo en el medio.</li>
-      <li>Bajá hasta <b>Agregar a inicio</b>.</li>
-      <li>Confirmá con <b>Agregar</b>.</li>
-    </ol>
-    <p style="color:var(--suave);font-size:.85rem;margin-bottom:0">
-      Tiene que ser desde <b>Safari</b>. Desde Chrome en iPhone no se puede: es una
-      restricción de Apple, no de la app.</p>`,
-  android: `<ol style="padding-left:1.1rem;margin:0">
-      <li>Tocá los <b>tres puntos</b> ⋮ arriba a la derecha.</li>
-      <li>Elegí <b>Instalar app</b> o <b>Agregar a pantalla principal</b>.</li>
-    </ol>`,
-  safari: `<ol style="padding-left:1.1rem;margin:0">
-      <li>En el menú <b>Archivo</b>, elegí <b>Agregar al Dock</b>.</li>
-    </ol>
-    <p style="color:var(--suave);font-size:.85rem;margin-bottom:0">
-      Necesitás macOS Sonoma o más nuevo. Si no lo ves, abrila en Chrome.</p>`,
-  firefox: `<p style="margin:0">Firefox en escritorio no instala aplicaciones web.
-      Abrí <b>${location.host}/bar.html</b> en Chrome, Edge o Safari y desde ahí sí se puede.</p>`,
-  escritorio: `<ol style="padding-left:1.1rem;margin:0">
-      <li>Mirá la <b>barra de direcciones</b>: a la derecha aparece un ícono de instalar
-          <span style="font-size:1.1em">⊕</span>.</li>
-      <li>Si no está, entrá a los <b>tres puntos</b> ⋮ → <b>Transmitir, guardar y compartir</b>
-          → <b>Instalar página como aplicación</b>.</li>
-    </ol>`,
-};
-
-function pintarInstalar() {
-  const listo = yaInstalada();
-  // El botón del encabezado va siempre que no esté instalada, haya prompt o no:
-  // si el navegador no lo ofrece, el diálogo explica cómo hacerlo a mano.
-  document.querySelectorAll('[data-instalar-btn]').forEach((b) => { b.hidden = listo; });
-  const caja = document.querySelector('.instalar');
-  if (caja) caja.classList.toggle('oculto', listo);
-}
-
-addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  pedidoDeInstalar = e;
-  pintarInstalar();
-});
-addEventListener('appinstalled', () => {
-  pedidoDeInstalar = null;
-  $('#dlgInstalar').close();
-  pintarInstalar();
-});
-
-async function lanzarInstalacion() {
-  if (pedidoDeInstalar) {
-    // El prompt del navegador se gasta de un solo uso, aunque diga que no.
-    const prompt = pedidoDeInstalar;
-    pedidoDeInstalar = null;
-    prompt.prompt();
-    await prompt.userChoice;
-    pintarInstalar();
-    return;
-  }
-  // Sin prompt: Safari, Firefox, o Chrome que ya lo gastó. Mostramos el camino.
-  $('#pasosInstalar').innerHTML = PASOS[aparato()];
-  $('#dlgInstalar').showModal();
-}
-
-document.querySelectorAll('[data-instalar-btn]').forEach((b) => b.onclick = lanzarInstalacion);
-$('#btnCerrarInstalar').onclick = () => $('#dlgInstalar').close();
-pintarInstalar();
+// Vive en /instalar.js, compartido con el pase del invitado: el camino para
+// instalar es el mismo en los dos lados y no tiene por qué estar dos veces.
 
 // ---------- conexión ----------
 // navigator.onLine miente: hay navegadores que lo dejan en false con
@@ -322,6 +239,7 @@ function abrirEvento(editando = null, cuando = null) {
   $('#inpEvento').value = editando?.nombre || (etiqueta[0].toUpperCase() + etiqueta.slice(1));
   $('#inpFecha').value = (d || new Date()).toISOString().slice(0, 10);
   $('#inpCapacidad').value = editando?.capacidad || '';
+  $('#inpEntrada').value = editando?.entrada || '';
   $('#tituloEvento').textContent = editando ? 'Editar la noche' : 'Agendar una noche';
   $('#btnConfirmarEvento').textContent = editando ? 'Guardar' : 'Agendar';
   pintarElegirBarman(editando?.barmanes || []);
@@ -388,17 +306,20 @@ $('#btnConfirmarEvento').onclick = async () => {
   const fecha = new Date($('#inpFecha').value + 'T12:00:00');
   if (isNaN(fecha)) { $('#inpFecha').focus(); return; }
   const capacidad = Math.max(0, Math.floor(Number($('#inpCapacidad').value) || 0));
+  // Lo que cuesta entrar esa noche. Viaja al registro, que es lo único que el
+  // invitado puede leer: el documento del evento no lo ve nadie de afuera.
+  const entrada = Math.max(0, Math.floor(Number($('#inpEntrada').value) || 0));
   const elegidos = barmanMarcados();
   const editando = estado.editandoEvento;
   try {
     if (editando) {
       await updateDoc(doc(db, 'barra', 'eventos', 'items', editando.id),
-        { nombre, fecha: Timestamp.fromDate(fecha), capacidad, barmanes: elegidos });
+        { nombre, fecha: Timestamp.fromDate(fecha), capacidad, entrada, barmanes: elegidos });
       // El registro de ESTA noche, que es suyo y de ninguna otra.
       if (capacidad > 0) {
         const yaHay = estado.registros[editando.id];
         await setDoc(doc(db, 'registros', editando.id), {
-          eventoId: editando.id, nombre, capacidad,
+          eventoId: editando.id, nombre, capacidad, entrada,
           registrados: Number(yaHay?.registrados || 0),
           abierto: yaHay ? yaHay.abierto !== false : true,
         });
@@ -409,12 +330,13 @@ $('#btnConfirmarEvento').onclick = async () => {
     } else {
       const ref = await addDoc(EVENTOS(), {
         nombre, fecha: Timestamp.fromDate(fecha), estado: 'agendado',
-        abiertoEn: null, cerradoEn: null, cierre: null, barmanes: elegidos, capacidad,
+        abiertoEn: null, cerradoEn: null, cierre: null, barmanes: elegidos,
+        capacidad, entrada,
       });
       // El registro se abre al agendar: la gracia es que se anoten antes.
       if (capacidad > 0) {
         await setDoc(doc(db, 'registros', ref.id),
-          { eventoId: ref.id, nombre, capacidad, registrados: 0, abierto: true });
+          { eventoId: ref.id, nombre, capacidad, entrada, registrados: 0, abierto: true });
         // Y el link viejo, el que no dice de qué noche es, se reacomoda.
         await setDoc(doc(db, 'publico', 'registro'), { eventoId: ref.id, nombre });
         estado.registros[ref.id] = { abierto: true, capacidad, nombre };
@@ -969,7 +891,8 @@ function pintarCalendario() {
           estado.diaElegido ? 'ese día' : 'agendado'}.</p>`}
     <button class="btn primario ancho-full solo-gerente-inline" id="btnAgendar" style="margin-top:.7rem">
       Agendar una noche${estado.diaElegido ? ' el ' + estado.diaElegido.toLocaleDateString('es-AR') : ''}
-    </button>`;
+    </button>
+    ${bloqueClub()}`;
 
   $('#mesAntes').onclick = () => {
     estado.mes = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
@@ -986,6 +909,101 @@ function pintarCalendario() {
   });
   if ($('#btnAgendar')) $('#btnAgendar').onclick = () => abrirEvento(null, estado.diaElegido);
   enganchatNoches(cont, hoy);
+  engancharClub(cont);
+}
+
+// ---------- el club ----------
+// No hay una base de clientes aparte: anotarse a una noche YA es el alta. La
+// gente del club son los invitados de todas las noches, juntados por teléfono
+// —que es el único dato que no se repite— y no por nombre, que cada uno
+// escribe distinto cada vez.
+//
+// Que no exista una colección nueva no es pereza: cada lugar donde se guarda
+// un teléfono es un lugar más que proteger, y este ya está protegido.
+function genteDelClub() {
+  const porTel = new Map();
+  for (const i of (estado.invitadosTodos || [])) {
+    const tel = digitosTel(i.telefono || '');
+    if (!tel) continue;
+    const cuando = i.creadoEn?.toMillis?.() || 0;
+    const ya = porTel.get(tel);
+    if (!ya) {
+      porTel.set(tel, {
+        tel, nombre: i.nombre || '', noches: new Set([i.eventoId]),
+        primera: cuando, ultima: cuando, entro: i.ingresadoEn ? 1 : 0,
+      });
+      continue;
+    }
+    ya.noches.add(i.eventoId);
+    if (i.ingresadoEn) ya.entro += 1;
+    if (cuando && cuando < ya.primera) ya.primera = cuando;
+    // El nombre que vale es el último que dejó: si lo escribió mejor, mejor.
+    if (cuando >= ya.ultima) { ya.ultima = cuando; ya.nombre = i.nombre || ya.nombre; }
+  }
+  return [...porTel.values()]
+    .map((p) => ({ ...p, noches: p.noches.size }))
+    .sort((a, b) => b.ultima - a.ultima);
+}
+
+function bloqueClub() {
+  const todos = genteDelClub();
+  if (!todos.length) {
+    return `<div class="grupo-personal">El club</div>
+      <p style="color:var(--suave);font-size:.9rem;margin:0">
+        Todavía no se anotó nadie. Cada persona que se anota a una noche entra
+        acá sola.</p>`;
+  }
+  const q = estado.buscaClub.trim().toLowerCase();
+  const qTel = digitosTel(estado.buscaClub);
+  const filtrados = q
+    ? todos.filter((p) => p.nombre.toLowerCase().includes(q)
+        || (qTel && p.tel.includes(qTel)))
+    : todos;
+  // Plegado por defecto: con doscientas personas, la pantalla no termina más.
+  const muestra = estado.verClub || q ? filtrados : filtrados.slice(0, 5);
+  const repiten = todos.filter((p) => p.noches > 1).length;
+
+  return `
+    <div class="grupo-personal">El club · ${todos.length}</div>
+    <p style="color:var(--suave);font-size:.86rem;margin:0 0 .6rem">
+      Todos los que se anotaron alguna vez, juntados por teléfono.${
+      repiten ? ` <b>${repiten}</b> volvieron más de una noche.` : ''}
+    </p>
+    <label class="campo">
+      <span>Buscar por nombre o teléfono</span>
+      <input id="buscaClub" value="${esc(estado.buscaClub)}" autocomplete="off">
+    </label>
+    ${muestra.map((p) => `
+      <div class="item">
+        <div class="cuerpo">
+          <div class="nombre">${esc(p.nombre || 'Sin nombre')}</div>
+          <div class="desc">${esc(p.tel)} · ${p.noches} noche${p.noches === 1 ? '' : 's'}${
+            p.entro ? ` · entró ${p.entro}` : ' · todavía no entró'}${
+            p.ultima ? ` · última vez ${new Date(p.ultima).toLocaleDateString('es-AR')}` : ''}</div>
+        </div>
+      </div>`).join('')}
+    ${!q && filtrados.length > muestra.length
+      ? `<button class="btn ancho-full" id="verClub" style="margin-top:.5rem">Ver los ${
+          filtrados.length - muestra.length} que faltan</button>`
+      : ''}
+    ${q && !filtrados.length
+      ? `<p style="color:var(--suave);font-size:.9rem;margin:.4rem 0 0">Nadie con ese nombre ni ese teléfono.</p>`
+      : ''}`;
+}
+
+function engancharClub(cont) {
+  const b = cont.querySelector('#buscaClub');
+  if (b) {
+    b.oninput = () => {
+      estado.buscaClub = b.value;
+      pintarCalendario();
+      // Repintar mata el campo: se vuelve a poner el foco donde estaba.
+      const otra = $('#buscaClub');
+      if (otra) { otra.focus(); otra.setSelectionRange(otra.value.length, otra.value.length); }
+    };
+  }
+  const v = cont.querySelector('#verClub');
+  if (v) v.onclick = () => { estado.verClub = true; pintarCalendario(); };
 }
 
 function filaNoche(e, hoy) {
@@ -998,6 +1016,7 @@ function filaNoche(e, hoy) {
       <div class="nombre">${esc(e.nombre)}</div>
       <div class="desc">${e._f.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
         · ${etiqueta}${e.capacidad ? ` · cupo ${e.capacidad}` : ''}${
+        Number(e.entrada || 0) ? ` · entrada ${plata(e.entrada)}` : ''}${
         estado.registros[e.id] ? ` · ${Number(estado.registros[e.id].registrados || 0)} anotados` : ''}${
         e.estado === 'cerrado' ? ` · ${plata(e.cierre?.facturado || 0)}` : ''}</div>
     </div>
@@ -1316,6 +1335,8 @@ function pintarPuerta() {
   const invs = estado.invitados;
   const adentro = invs.filter((i) => i.ingresadoEn).length;
   const cupo = Number(estado.registros[eventoDePuerta()]?.capacidad || 0);
+  // Lo que hay que cobrarle a cada uno, a la vista de quien está en la puerta.
+  const entrada = Number(estado.registros[eventoDePuerta()]?.entrada || 0);
   const lleno = cupo && adentro >= cupo;
   const busca = (estado.buscaInvitado || '').toLowerCase();
   const visibles = busca
@@ -1328,6 +1349,8 @@ function pintarPuerta() {
       <div><b>${invs.length}</b><span>registrados</span></div>
       <div><b>${cupo || '—'}</b><span>cupo</span></div>
     </div>
+    ${entrada ? `<div class="aviso" style="margin-top:.8rem"><span>🎟</span><div>
+      <b>Entrada ${plata(entrada)}</b> por persona. Se cobra acá.</div></div>` : ''}
     ${lleno ? `<div class="aviso mal" style="margin-top:.8rem"><span>⚠</span><div>
       <b>Se llenó.</b> Entraron ${adentro} de ${cupo}.</div></div>` : ''}
 
