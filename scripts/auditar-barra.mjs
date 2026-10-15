@@ -18,6 +18,13 @@ const env = await initializeTestEnvironment({
 await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   await setDoc(doc(db, 'accesosBarra/uid-aparato'), { usuario: 'barra', activo: true, rol: 'barra' });
+  await setDoc(doc(db, 'accesosBarra/uid-sadmin'), { usuario: 'guille', activo: true, rol: 'sadmin' });
+  await setDoc(doc(db, 'accesosBarra/uid-turno-ok'), { usuario: 'barra-lunes', activo: true, rol: 'barman' });
+  await setDoc(doc(db, 'accesosBarra/uid-recortado'), {
+    usuario: 'recortado', activo: true, rol: 'admin',
+    permisos: { caja: false, deposito: false, carta: false, calendario: false,
+                puerta: false, pedidos: false, noche: false },
+  });
   await setDoc(doc(db, 'accesosBarra/uid-gerente'), { usuario: 'guille', activo: true, rol: 'admin' });
   await setDoc(doc(db, 'carta/fernet'), { nombre: 'Fernet', precio: 4500, categoria: 'tragos', disponible: true, stock: 10, orden: 1 });
   await setDoc(doc(db, 'insumos/f750'), { nombre: 'Fernet 750', unidad: 'botella', medidas: 10, stock: 50, costo: 12000, minimo: 5 });
@@ -31,6 +38,8 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'publico/estado'), { tomandoPedidos: true });
   await setDoc(doc(db, 'publico/pagos'), { alias: 'x.y.z' });
   await setDoc(doc(db, 'conteos/caja-1'), { cajaId: 'c', nombre: 'Noche', apertura: {} });
+  await setDoc(doc(db, 'pedidos/pedido-1'), { clienteId: 'x', estado: 'nuevo', total: 100,
+    items: [{ id: 'fernet', nombre: 'Fernet', precio: 100, cantidad: 1 }], mesa: '1', creadoEn: serverTimestamp() });
 });
 
 const aparato = () => env.authenticatedContext('uid-aparato',
@@ -42,7 +51,7 @@ const puede = async (que, fn) => {
   catch { return { que, ok: false }; }
 };
 
-const pruebas = [
+let pruebas = [
   // Lo que SÍ definimos para el celular de la barra.
   ['DEBE  leer la carta', () => getDocs(collection(db, 'carta'))],
   ['DEBE  marcar agotado / ajustar stock', () => updateDoc(doc(db, 'carta/fernet'), { stock: 9 })],
@@ -74,7 +83,40 @@ const pruebas = [
   ['NO    cortar los pedidos del local', () => setDoc(doc(db, 'publico/estado'), { tomandoPedidos: false })],
 ];
 
-const r = await Promise.all(pruebas.map(([q, f]) => puede(q, f)));
+// ---- Un admin con todas las pantallas apagadas ----
+// Esconder una pestaña no es un permiso: lo que vale es que el dato no se
+// pueda escribir igual mandando la operación a mano.
+const rec = env.authenticatedContext('uid-recortado',
+  { email: 'recortado@barra.local', provider_id: 'password' }).firestore();
+
+const delRecortado = [
+  ['NO    (recortado) ver ni cargar gastos', () => getDocs(collection(rec, 'egresos'))],
+  ['NO    (recortado) cargar mercadería', () => setDoc(doc(rec, 'insumos/colado'), { nombre: 'Colado', unidad: 'u', medidas: 1, stock: 1, costo: 1 })],
+  ['NO    (recortado) tocar precios', () => updateDoc(doc(rec, 'carta/fernet'), { precio: 1 })],
+  ['NO    (recortado) agendar una noche', () => setDoc(doc(rec, 'barra/eventos/items/ev-colado'), { nombre: 'Colada', estado: 'agendado' })],
+  ['NO    (recortado) armar el turno', () => setDoc(doc(rec, 'barra/turno'), { eventoId: 'ev-1', barmanes: [] })],
+  ['NO    (recortado) mover un pedido', () => updateDoc(doc(rec, 'pedidos/pedido-1'), { estado: 'en_preparacion' })],
+  ['NO    (recortado) repartir permisos', () => updateDoc(doc(rec, 'accesosBarra/uid-aparato'), { usuario: 'barra', activo: true, rol: 'barra', permisos: { caja: true } })],
+  ['NO    (recortado) ascenderse a sadmin', () => updateDoc(doc(rec, 'accesosBarra/uid-recortado'), { usuario: 'recortado', activo: true, rol: 'sadmin' })],
+  ['DEBE  (recortado) seguir viendo lo que no se le apagó', () => getDocs(collection(rec, 'insumos'))],
+];
+
+// ---- El sadmin, que es el que reparte ----
+const sad = env.authenticatedContext('uid-sadmin',
+  { email: 'guille@barra.local', provider_id: 'password' }).firestore();
+
+const delSadmin = [
+  ['DEBE  (sadmin) repartir permisos', () => updateDoc(doc(sad, 'accesosBarra/uid-turno-ok'), { usuario: 'barra-lunes', activo: true, rol: 'barman', permisos: { caja: false } })],
+  ['DEBE  (sadmin) ver la caja sin que nadie lo recorte', () => getDocs(collection(sad, 'egresos'))],
+  ['NO    (sadmin) editar su propio acceso', () => updateDoc(doc(sad, 'accesosBarra/uid-sadmin'), { usuario: 'guille', activo: true, rol: 'sadmin', permisos: { caja: true } })],
+];
+
+pruebas.push(...delRecortado, ...delSadmin);
+
+// Una por una, no todas juntas: comparten la misma base y una prueba que
+// escribe le cambia el piso a la que estaba leyendo.
+const r = [];
+for (const [q, f] of pruebas) r.push(await puede(q, f));
 let mal = 0;
 console.log('\nCELULAR DE LA BARRA — lo que puede hacer de verdad\n');
 for (const { que, ok } of r) {

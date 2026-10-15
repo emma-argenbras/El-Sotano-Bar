@@ -628,6 +628,82 @@ const ctxTurno = await navegador.newContext({ viewport: { width: 390, height: 84
 const turno = await ctxTurno.newPage();
 turno.on('pageerror', (e) => errores.push('turno: ' + e.message));
 
+await chequear('el sadmin reparte pantallas, y lo que apaga se apaga de verdad', async () => {
+  // Lo que importa no es que la pestaña desaparezca: es que el dato no se
+  // pueda escribir igual. Por eso se prueban las dos cosas.
+  await barra.click('#tabEvento');
+  await barra.waitForSelector('#btnAltaAdmin', { timeout: 10000 });
+  barra.on('dialog', async (d) => d.accept());
+  try {
+    await barra.click('#btnAltaAdmin');
+    await barra.waitForSelector('#dlgPersona[open]', { timeout: 10000 });
+    await barra.fill('#inpPersonaUsuario', 'recortado');
+    await barra.fill('#inpPersonaClave', 'clave-recortada');
+    await barra.click('#btnConfirmarPersona');
+    await barra.waitForFunction(() =>
+      document.querySelector('#accesos')?.textContent.includes('recortado'),
+      null, { timeout: 15000 });
+  } finally { barra.removeAllListeners('dialog'); }
+
+  // El dueño ve Usuarios; un admin no.
+  await barra.waitForFunction(() =>
+    document.querySelector('#tabUsuarios')?.hidden === false, null, { timeout: 10000 })
+    .catch(() => { throw new Error('el dueño no ve la pestaña Usuarios'); });
+  await barra.click('#tabUsuarios');
+  await barra.waitForFunction(() =>
+    document.querySelector('#usuarios')?.textContent.includes('recortado'),
+    null, { timeout: 15000 });
+
+  // Se le apaga la Caja.
+  const uid = await barra.evaluate(() => {
+    const c = [...document.querySelectorAll('#usuarios [data-permiso]')]
+      .find((x) => x.dataset.permiso.endsWith(':caja'));
+    return c ? c.dataset.permiso.split(':')[0] : '';
+  });
+  if (!uid) throw new Error('no hay interruptores para el admin nuevo');
+  await barra.locator(`[data-permiso="${uid}:caja"]`).uncheck();
+  for (let i = 0; i < 40; i++) {
+    const d = await db.doc(`accesosBarra/${uid}`).get();
+    if (d.data()?.permisos?.caja === false) break;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  const guardado = (await db.doc(`accesosBarra/${uid}`).get()).data();
+  if (guardado?.permisos?.caja !== false)
+    throw new Error('no guardó el interruptor: ' + JSON.stringify(guardado?.permisos));
+
+  // Y con eso: no ve la pestaña NI puede cargar un gasto.
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  try {
+    await pg.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+    await pg.fill('#inpMail', 'recortado');
+    await pg.fill('#inpPass', 'clave-recortada');
+    await pg.click('#btnEntrar');
+    await pg.waitForSelector('#vistaPanel', { state: 'visible', timeout: 20000 });
+    await pg.waitForFunction(() =>
+      document.querySelector('#tabCaja')?.hidden === true, null, { timeout: 15000 })
+      .catch(() => { throw new Error('sigue viendo la pestaña Caja'); });
+    // Tampoco Usuarios: repartir es del sadmin.
+    if (await pg.locator('#tabUsuarios').isVisible())
+      throw new Error('un admin ve la pestaña Usuarios');
+    // Y lo que de verdad importa: la escritura frena, no solo la pestaña.
+    const pudo = await pg.evaluate(async () => {
+      const { getFirestore, doc, setDoc } = await import('/vendor/firebase.js');
+      try {
+        await setDoc(doc(getFirestore(), 'egresos', 'colado-por-la-consola'), {
+          concepto: 'Colado', categoria: 'retiro', monto: 1000,
+          pago: 'efectivo', fecha: new Date(),
+        });
+        return true;
+      } catch { return false; }
+    });
+    if (pudo) throw new Error('la pestaña estaba escondida pero el gasto entró igual');
+  } finally { await ctx.close(); }
+
+  // Se lo deja como estaba, que la caja la usan los casos que siguen.
+  await barra.locator(`[data-permiso="${uid}:caja"]`).check();
+});
+
 await chequear('cada uno puede cambiar su propia contraseña', async () => {
   // Es lo único que se puede sin un servidor: Firebase deja cambiar la propia,
   // nunca la de otro. Se prueba con el celular de la barra, que es la cuenta
@@ -835,9 +911,15 @@ await chequear('la barra marca agotado pero el servidor le rechaza un precio', a
 
 await chequear('apagarlo le corta el acceso al toque', async () => {
   barra.once('dialog', (d) => d.accept());
-  await barra.click('#accesos [data-acceso]');
-  await barra.waitForFunction(() =>
-    document.querySelector('#accesos')?.textContent.includes('dado de baja'), null, { timeout: 10000 });
+  // Por nombre, no "el primero de la lista": con otra cuenta dada de alta, el
+  // primero deja de ser quien uno cree y se apaga a cualquiera.
+  await barra.locator('#accesos .item', { hasText: 'barra-turno' })
+    .locator('[data-acceso]').click();
+  await barra.waitForFunction(() => {
+    const f = [...document.querySelectorAll('#accesos .item')]
+      .find((x) => x.textContent.includes('barra-turno'));
+    return f && f.textContent.includes('dado de baja');
+  }, null, { timeout: 10000 });
   // Se va solo, aunque tenga la app abierta: cada cuenta mira su permiso.
   turno.once('dialog', (d) => d.accept());
   await turno.waitForSelector('#vistaLogin:not([hidden])', { timeout: 20000 });

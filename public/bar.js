@@ -61,7 +61,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, permisos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Vive en /instalar.js, compartido con el pase del invitado: el camino para
@@ -988,6 +988,110 @@ function pintarCalendario() {
   engancharClub(cont);
 }
 
+// ---------- usuarios: quién es quién y qué ve ----------
+// Vive en su propia pestaña y la ve solo quien reparte. Lo que se toca acá es
+// el acceso de otro, nunca el propio: las reglas lo frenan, pero la pantalla
+// tampoco lo ofrece — un botón que va a fallar es peor que no tenerlo.
+const PANTALLAS = [
+  ['pedidos', 'Pedidos', 'El tablero: mover pedidos de estado'],
+  ['carta', 'Carta', 'Precios, altas y sacar productos'],
+  ['noche', 'Noche', 'Arrancar la noche y armar el turno'],
+  ['caja', 'Caja', 'La plata: ver y cargar gastos'],
+  ['deposito', 'Depósito', 'Insumos, compras y proveedores'],
+  ['calendario', 'Calendario', 'Agendar noches y abrir registros'],
+  ['puerta', 'Puerta', 'Escanear pases y marcar el ingreso'],
+];
+
+const QUE_ES_EL_ROL = {
+  sadmin: 'Hace todo, y además elige qué ve cada uno.',
+  admin: 'Administra todo salvo borrar y repartir permisos.',
+  barman: 'Mueve pedidos y cobra, la noche que está asignado.',
+  puerta: 'Escanea pases, la noche que está asignada.',
+  barra: 'El celular del local: entra siempre, sin depender del turno.',
+};
+
+// Los interruptores solo tienen sentido para quien administra: a un barman o
+// a la puerta los limita el rol, no esta pantalla.
+const SE_LE_ELIGE = (rol) => rol === 'admin';
+
+function pintarUsuarios() {
+  const cont = $('#usuarios');
+  if (!cont || $('#vistaUsuarios').hidden) return;
+  const yo = auth.currentUser?.uid;
+  const gente = [...estado.accesos].sort((a, b) =>
+    String(a.usuario).localeCompare(String(b.usuario)));
+
+  cont.innerHTML = `
+    <p style="color:var(--suave);font-size:.88rem;margin:0 0 .9rem">
+      Quién entra al panel y qué ve cada uno. Lo de abajo son pantallas: lo que
+      está apagado no se ve <b>ni se puede hacer</b>, aunque se sepa el camino.
+    </p>
+    ${gente.length ? gente.map((a) => {
+      const esYo = a.uid === yo;
+      const p = a.permisos || {};
+      const suyo = SE_LE_ELIGE(a.rol);
+      return `
+      <div class="item" style="flex-direction:column;align-items:stretch;gap:.5rem">
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+          <div class="cuerpo" style="flex:1">
+            <div class="nombre">${esc(a.usuario)}${esYo ? ' <small>(vos)</small>' : ''}</div>
+            <div class="desc">${esc(QUE_ES_EL_ROL[a.rol] || QUE_ES_EL_ROL.barman)}</div>
+          </div>
+          <span class="chip">${esc(a.rol || 'barman')}</span>
+          ${esYo ? '' : `<button class="btn ${a.activo ? '' : 'primario'}"
+            data-alternar="${esc(a.uid)}" style="padding:.35rem .7rem;font-size:.8rem">
+            ${a.activo ? 'Dar de baja' : 'Reactivar'}</button>`}
+        </div>
+        ${esYo ? `<small style="color:var(--suave)">
+          Tu propio acceso no se toca desde acá, ni el tuyo ni el de nadie sobre
+          sí mismo: es lo que evita que alguien se ascienda solo.</small>`
+        : suyo ? `
+        <div class="elegir-pantallas">
+          ${PANTALLAS.map(([k, t, ayuda]) => `
+            <label title="${esc(ayuda)}">
+              <input type="checkbox" data-permiso="${esc(a.uid)}:${k}"
+                     ${p[k] === false ? '' : 'checked'}>
+              <span>${t}</span>
+            </label>`).join('')}
+        </div>` : `<small style="color:var(--suave)">
+          A este nivel lo limita el rol, no las pantallas.</small>`}
+      </div>`;
+    }).join('')
+      : '<div class="vacio">Todavía no hay nadie dado de alta.</div>'}
+
+    <div class="grupo-personal">Dar de alta</div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn" id="btnAltaSadmin" style="flex:1">+ Superadmin</button>
+      <button class="btn" id="btnAltaAdmin2" style="flex:1">+ Administrador</button>
+    </div>`;
+
+  cont.querySelectorAll('[data-permiso]').forEach((c) => c.onchange = () => {
+    const [uid, que] = c.dataset.permiso.split(':');
+    guardarPermiso(uid, que, c.checked, c);
+  });
+  cont.querySelectorAll('[data-alternar]').forEach((b) => b.onclick = () =>
+    alternarAcceso(b.dataset.alternar));
+  $('#btnAltaSadmin').onclick = () => altaPersona('sadmin');
+  $('#btnAltaAdmin2').onclick = () => altaPersona('admin');
+}
+
+async function guardarPermiso(uid, que, valor, caja) {
+  const a = estado.accesos.find((x) => x.uid === uid);
+  if (!a) return;
+  caja.disabled = true;
+  try {
+    // Se manda el documento entero porque las reglas lo validan entero: si
+    // llegara solo el permiso, no habría con qué comprobar el rol.
+    await updateDoc(doc(db, 'accesosBarra', uid), {
+      usuario: a.usuario, rol: a.rol, activo: a.activo !== false,
+      permisos: { ...(a.permisos || {}), [que]: valor },
+    });
+  } catch (e) {
+    caja.checked = !valor;
+    alert('No se pudo: ' + (e.code || e.message));
+  } finally { caja.disabled = false; }
+}
+
 // ---------- Sótano Club ----------
 // No hay una base de clientes aparte: anotarse a una noche YA es el alta. La
 // gente de Sótano Club son los invitados de todas las noches, juntados por teléfono
@@ -1566,27 +1670,57 @@ function escucharAccesos() {
 // a evaluar la regla al instante. Así que cada cuenta mira su propio permiso
 // y se va sola cuando se lo apagan.
 // Mi rol: dueño (sin documento), gerente o barra.
+// Qué puede ver esta persona. Mismo criterio que las reglas: sin permisos
+// cargados manda el rol, y al sadmin no lo recorta nadie.
+//
+// Esto SOLO esconde pestañas. Lo que frena de verdad son las reglas: si esto
+// fuera lo único, alcanzaría con abrir la consola para saltearlo.
+const puedoVer = (que) => estado.sadmin || estado.permisos[que] !== false;
+
 function aplicarRol() {
   const b = document.body.classList;
+  // sadmin es un nivel arriba de admin: lo único que lo distingue, por ahora,
+  // es que elige qué ve cada uno. El dueño entra acá sin documento.
+  estado.sadmin = estado.dueno || estado.rol === 'sadmin';
+  const gerente = estado.sadmin || estado.rol === 'admin';
   b.toggle('es-dueno', estado.dueno);
-  b.toggle('es-gerente', estado.dueno || estado.rol === 'admin');
+  b.toggle('es-sadmin', estado.sadmin);
+  b.toggle('es-gerente', gerente);
   b.toggle('es-barra', !estado.dueno && estado.rol === 'barman');
   // El celular de la barra: no es una persona, es el aparato del local.
   estado.esAparato = !estado.dueno && estado.rol === 'barra';
   b.toggle('es-aparato', estado.esAparato);
   pintarQuienAtiende();
-  if (estado.dueno || estado.rol === 'admin') escucharPlataDeposito();
-  $('#tabCaja').hidden = !(estado.dueno || estado.rol === 'admin');
+  if (gerente && puedoVer('deposito')) escucharPlataDeposito();
+
+  // Primero el rol, después el interruptor: lo que el rol no da, ningún
+  // interruptor lo enciende.
+  $('#tabCaja').hidden = !(gerente && puedoVer('caja'));
   // El depósito también lo ve el celular de la barra: necesita saber qué hay
   // para no prometer un trago que no se puede hacer. Lo ve de mirar nada más
   // —adentro no hay ningún botón suyo—, y las reglas lo frenan igual.
-  $('#tabDeposito').hidden = !(estado.dueno || estado.rol === 'admin' || estado.esAparato);
+  $('#tabDeposito').hidden = !((gerente || estado.esAparato) && puedoVer('deposito'));
+  $('#tabCalendario').hidden = !(gerente && puedoVer('calendario'));
+  // Usuarios es de quien reparte, y de nadie más.
+  $('#tabUsuarios').hidden = !estado.sadmin;
   // El celular de la barra atiende la barra: pedidos, carta y la noche. La
   // puerta es de la gente de la puerta, con su propia cuenta.
-  $('#tabPuerta').hidden = estado.esAparato;
+  $('#tabPuerta').hidden = estado.esAparato || !puedoVer('puerta');
+  $('#tabTablero').hidden = !puedoVer('pedidos');
+  $('#tabCartaBar').hidden = !puedoVer('carta');
+  $('#tabEvento').hidden = !puedoVer('noche');
+
+  // Si quedó parado en una pantalla que ya no puede ver, se lo lleva a la
+  // primera que sí: que no quede mirando algo vacío sin entender por qué.
+  const abierta = [...document.querySelectorAll('.tabs [role=tab]')]
+    .find((t) => t.getAttribute('aria-selected') === 'true');
+  if (abierta && abierta.hidden) {
+    const otra = [...document.querySelectorAll('.tabs [role=tab]')].find((t) => !t.hidden);
+    if (otra) otra.click();
+  }
+
   if (estado.esAparato && !$('#vistaPuerta').hidden) irA('tablero');
   // La puerta no trabaja pedidos ni carta: se le deja su pantalla y nada más.
-  $('#tabCalendario').hidden = !(estado.dueno || estado.rol === 'admin');
   const soloPuerta = !estado.dueno && estado.rol === 'puerta';
   b.toggle('es-puerta', soloPuerta);
   if (soloPuerta && !$('#vistaPuerta').hidden === false) irA('puerta');
@@ -1598,7 +1732,11 @@ function vigilarMiAcceso(uid) {
   let loTuvo = false;
   let yendose = false;
   onSnapshot(doc(db, 'accesosBarra', uid), (d) => {
-    if (d.exists()) { estado.rol = d.data().rol || 'barman'; aplicarRol(); }
+    if (d.exists()) {
+      estado.rol = d.data().rol || 'barman';
+      estado.permisos = d.data().permisos || {};
+      aplicarRol();
+    }
     if (d.exists() && d.data().activo === true) { loTuvo = true; return; }
     if (!d.exists() && !loTuvo) return;
     if (yendose) return;
@@ -1609,6 +1747,8 @@ function vigilarMiAcceso(uid) {
 }
 
 const QUE_ES = {
+  sadmin: { nombre: 'superadministrador',
+            puede: 'Todo lo de un administrador y además elige qué ve cada uno. Es el único que reparte permisos.' },
   admin: { nombre: 'administrador',
            puede: 'Hace todo lo que hacés vos menos borrar la base. Cuenta permanente, no depende del evento.' },
   barman: { nombre: 'barman',
@@ -1728,6 +1868,7 @@ async function alternarAcceso(uid) {
 }
 
 function pintarAccesos() {
+  pintarUsuarios();
   const cont = $('#accesos');
   if (!cont) return;
   const admins = estado.accesos.filter((a) => a.rol === 'admin');
@@ -3194,11 +3335,13 @@ function irA(cual) {
   const vistas = { tablero: '#vistaTablero', carta: '#vistaCartaBar',
                    evento: '#vistaEvento', caja: '#vistaCaja',
                    deposito: '#vistaDeposito',
-                   calendario: '#vistaCalendario', puerta: '#vistaPuerta' };
+                   calendario: '#vistaCalendario', puerta: '#vistaPuerta',
+                   usuarios: '#vistaUsuarios' };
   const tabs = { tablero: '#tabTablero', carta: '#tabCartaBar',
                  evento: '#tabEvento', caja: '#tabCaja',
                  deposito: '#tabDeposito',
-                 calendario: '#tabCalendario', puerta: '#tabPuerta' };
+                 calendario: '#tabCalendario', puerta: '#tabPuerta',
+                 usuarios: '#tabUsuarios' };
   // La cámara se apaga al salir de Puerta: no se deja prendida de fondo.
   if (cual !== 'puerta') cerrarCamara();
   for (const k of Object.keys(vistas)) {
@@ -3213,6 +3356,7 @@ $('#tabCaja').onclick = () => { irA('caja'); pintarCajaGeneral(); };
 $('#tabDeposito').onclick = () => { irA('deposito'); pintarDeposito(); };
 $('#tabCalendario').onclick = () => irA('calendario');
 $('#tabPuerta').onclick = () => irA('puerta');
+$('#tabUsuarios').onclick = () => { irA('usuarios'); pintarUsuarios(); };
 
 // Los relojes de los tickets tienen que correr aunque no entre nada nuevo.
 setInterval(() => { if (!$('#vistaPanel').hidden && !$('#vistaTablero').hidden) pintarTablero(); }, 30_000);

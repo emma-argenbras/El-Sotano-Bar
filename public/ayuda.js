@@ -157,6 +157,29 @@
     },
     {
       quien: ['admin'],
+      titulo: 'Usuarios: quién entra y qué ve',
+      cuerpo: `
+        <p>La pestaña <b>Usuarios</b> la ve solo un <b>superadmin</b>. Ahí está
+        todo lo de las cuentas: quién entra, con qué nivel, y qué pantallas ve
+        cada administrador.</p>
+        <p>Los niveles van de arriba abajo: <b>dueño</b> (vos, por tu mail),
+        <b>superadmin</b>, <b>administrador</b>, y después barman, puerta y el
+        celular del local. La única diferencia entre superadmin y administrador,
+        por ahora, es que el superadmin reparte permisos.</p>
+        <p>Las casillas son las siete pantallas. Lo que está apagado
+        <b>no se ve y no se puede hacer</b>: no es que se esconda el botón, es
+        que la operación se rechaza aunque alguien sepa el camino.</p>
+        <p>Tres cosas que la app no deja hacer, a propósito: nadie edita su
+        propio acceso —ni el superadmin—, un administrador no puede hacer
+        superadmin a nadie ni tocar a uno, y a vos nadie te puede sacar el
+        acceso, porque el tuyo sale de tu mail y no de un documento.</p>
+        <p>Al barman, a la puerta y al celular del local no se les eligen
+        pantallas: a ellos los limita el rol. Y si alguien no tiene nada
+        configurado, ve lo de siempre — que esta pantalla exista no le saca
+        nada a nadie.</p>`,
+    },
+    {
+      quien: ['admin'],
       titulo: 'Personal: quién es quién',
       cuerpo: `
         <p>En <b>Evento → Personal</b>. Se registran una vez y después los asignás
