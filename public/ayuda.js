@@ -180,10 +180,10 @@
     },
     {
       quien: ['admin'],
-      titulo: 'Personal: quién es quién',
+      titulo: 'Personal: los niveles',
       cuerpo: `
-        <p>En <b>Evento → Personal</b>. Se registran una vez y después los asignás
-        a cada noche.</p>
+        <p>En la pestaña <b>Usuarios</b>. Se registran una vez y después los
+        asignás a cada noche desde <b>Noche → De turno</b>.</p>
         <p><b>Administrador</b> — todo lo que podés vos menos borrar. Cuenta
         permanente, no depende del evento.</p>
         <p><b>Barman</b> — mueve pedidos y marca agotado. Ve precios y caja.

@@ -1018,61 +1018,93 @@ function pintarUsuarios() {
   const cont = $('#usuarios');
   if (!cont || $('#vistaUsuarios').hidden) return;
   const yo = auth.currentUser?.uid;
-  const gente = [...estado.accesos].sort((a, b) =>
-    String(a.usuario).localeCompare(String(b.usuario)));
+
+  const fila = (a) => {
+    const esYo = a.uid === yo;
+    const p = a.permisos || {};
+    // Los interruptores son para quien administra: a un barman, a la puerta y
+    // al celular los limita el rol, no esta pantalla. Y los mueve un sadmin.
+    const conInterruptores = estado.sadmin && !esYo && SE_LE_ELIGE(a.rol);
+    return `
+    <div class="item ${a.activo ? '' : 'agotado'}" style="flex-direction:column;align-items:stretch;gap:.5rem">
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        <div class="cuerpo" style="flex:1">
+          <div class="nombre">${esc(a.usuario)}${esYo ? ' <small>(vos)</small>' : ''}${
+            a.activo ? '' : ' — <small>dado de baja</small>'}</div>
+          <div class="desc">${esc(QUE_ES_EL_ROL[a.rol] || QUE_ES_EL_ROL.barman)}${
+            (a.rol || 'barman') === 'barman'
+              ? ((estado.evento?.barmanes || []).includes(a.uid)
+                  ? ' · trabaja esta noche' : ' · sin turno asignado')
+              : ''}</div>
+        </div>
+        ${esYo ? '' : `<button class="btn ${a.activo ? 'peligro' : 'primario'}"
+          data-acceso="${esc(a.uid)}" style="padding:.4rem .7rem;font-size:.82rem">
+          ${a.activo ? 'Dar de baja' : 'Reactivar'}</button>`}
+      </div>
+      ${esYo ? `<small style="color:var(--suave)">
+        Tu propio acceso no se toca desde acá: es lo que evita que alguien se
+        ascienda solo.</small>`
+      : conInterruptores ? `
+      <div class="elegir-pantallas">
+        ${PANTALLAS.map(([k, t, ayuda]) => `
+          <label title="${esc(ayuda)}">
+            <input type="checkbox" data-permiso="${esc(a.uid)}:${k}"
+                   ${p[k] === false ? '' : 'checked'}>
+            <span>${t}</span>
+          </label>`).join('')}
+      </div>` : ''}
+    </div>`;
+  };
+
+  const grupo = (titulo, gente, vacio, boton) => `
+    <div class="grupo-personal">${titulo}</div>
+    ${gente.length ? gente.map(fila).join('')
+      : `<p style="color:var(--suave);font-size:.88rem;margin:0">${vacio}</p>`}
+    ${boton || ''}`;
+
+  const de = (rol) => estado.accesos.filter((a) => (a.rol || 'barman') === rol);
 
   cont.innerHTML = `
     <p style="color:var(--suave);font-size:.88rem;margin:0 0 .9rem">
-      Quién entra al panel y qué ve cada uno. Lo de abajo son pantallas: lo que
-      está apagado no se ve <b>ni se puede hacer</b>, aunque se sepa el camino.
+      Quién entra al panel. Se registran una vez, con usuario y contraseña;
+      después, al abrir cada noche, elegís qué barman trabaja.${estado.sadmin ? `
+      Las casillas son las pantallas de cada administrador: lo que está apagado
+      <b>no se ve ni se puede hacer</b>, aunque se sepa el camino.` : ''}
     </p>
-    ${gente.length ? gente.map((a) => {
-      const esYo = a.uid === yo;
-      const p = a.permisos || {};
-      const suyo = SE_LE_ELIGE(a.rol);
-      return `
-      <div class="item" style="flex-direction:column;align-items:stretch;gap:.5rem">
-        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-          <div class="cuerpo" style="flex:1">
-            <div class="nombre">${esc(a.usuario)}${esYo ? ' <small>(vos)</small>' : ''}</div>
-            <div class="desc">${esc(QUE_ES_EL_ROL[a.rol] || QUE_ES_EL_ROL.barman)}</div>
-          </div>
-          <span class="chip">${esc(a.rol || 'barman')}</span>
-          ${esYo ? '' : `<button class="btn ${a.activo ? '' : 'primario'}"
-            data-alternar="${esc(a.uid)}" style="padding:.35rem .7rem;font-size:.8rem">
-            ${a.activo ? 'Dar de baja' : 'Reactivar'}</button>`}
-        </div>
-        ${esYo ? `<small style="color:var(--suave)">
-          Tu propio acceso no se toca desde acá, ni el tuyo ni el de nadie sobre
-          sí mismo: es lo que evita que alguien se ascienda solo.</small>`
-        : suyo ? `
-        <div class="elegir-pantallas">
-          ${PANTALLAS.map(([k, t, ayuda]) => `
-            <label title="${esc(ayuda)}">
-              <input type="checkbox" data-permiso="${esc(a.uid)}:${k}"
-                     ${p[k] === false ? '' : 'checked'}>
-              <span>${t}</span>
-            </label>`).join('')}
-        </div>` : `<small style="color:var(--suave)">
-          A este nivel lo limita el rol, no las pantallas.</small>`}
-      </div>`;
-    }).join('')
-      : '<div class="vacio">Todavía no hay nadie dado de alta.</div>'}
 
-    <div class="grupo-personal">Dar de alta</div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-      <button class="btn" id="btnAltaSadmin" style="flex:1">+ Superadmin</button>
-      <button class="btn" id="btnAltaAdmin2" style="flex:1">+ Administrador</button>
-    </div>`;
+    ${estado.sadmin ? grupo('Superadministradores', de('sadmin'),
+      'Solo vos.',
+      `<button class="btn ancho-full" id="btnAltaSadmin" style="margin-top:.6rem">
+        Crear superadministrador</button>`) : ''}
+
+    ${grupo('Administradores', de('admin'), 'Solo vos.',
+      `<button class="btn ancho-full" id="btnAltaAdmin" style="margin-top:.6rem">
+        Crear administrador</button>`)}
+
+    ${grupo('Barman', de('barman'), 'Todavía no registraste ninguno.',
+      `<button class="btn primario ancho-full" id="btnAltaBarman" style="margin-top:.6rem">
+        Registrar barman</button>`)}
+
+    ${grupo('Celular de la barra', de('barra'),
+      'Todavía no hay. Es la cuenta del celular que queda en la barra: entra siempre, sin depender del turno.',
+      `<button class="btn ancho-full" id="btnAltaAparato" style="margin-top:.6rem">
+        Registrar celular de barra</button>`)}
+
+    ${grupo('Puerta', de('puerta'), 'Todavía no registraste ninguno.',
+      `<button class="btn ancho-full" id="btnAltaPuerta" style="margin-top:.6rem">
+        Registrar gente de puerta</button>`)}`;
 
   cont.querySelectorAll('[data-permiso]').forEach((c) => c.onchange = () => {
     const [uid, que] = c.dataset.permiso.split(':');
     guardarPermiso(uid, que, c.checked, c);
   });
-  cont.querySelectorAll('[data-alternar]').forEach((b) => b.onclick = () =>
-    alternarAcceso(b.dataset.alternar));
-  $('#btnAltaSadmin').onclick = () => altaPersona('sadmin');
-  $('#btnAltaAdmin2').onclick = () => altaPersona('admin');
+  cont.querySelectorAll('[data-acceso]').forEach((b) =>
+    b.onclick = () => alternarAcceso(b.dataset.acceso));
+  if ($('#btnAltaSadmin')) $('#btnAltaSadmin').onclick = () => altaPersona('sadmin');
+  $('#btnAltaAdmin').onclick = () => altaPersona('admin');
+  $('#btnAltaBarman').onclick = () => altaPersona('barman');
+  $('#btnAltaAparato').onclick = () => altaPersona('barra');
+  $('#btnAltaPuerta').onclick = () => altaPersona('puerta');
 }
 
 async function guardarPermiso(uid, que, valor, caja) {
@@ -1655,13 +1687,13 @@ function escucharAccesos() {
     estado.accesos = snap.docs.map((d) => ({ uid: d.id, ...d.data() }))
       .sort((a, b) => Number(!!b.activo) - Number(!!a.activo)
         || String(a.usuario).localeCompare(String(b.usuario)));
-    pintarAccesos();
+    pintarUsuarios();
   }, (e) => {
     // permission-denied acá es la respuesta esperada para el personal de
     // turno: no es dueño, no ve la administración y no pasa nada.
     estado.dueno = false;
     aplicarRol();
-    if (e.code !== 'permission-denied') fallo('#accesos')(e);
+    if (e.code !== 'permission-denied') fallo('#usuarios')(e);
   });
 }
 
@@ -1701,8 +1733,9 @@ function aplicarRol() {
   // —adentro no hay ningún botón suyo—, y las reglas lo frenan igual.
   $('#tabDeposito').hidden = !((gerente || estado.esAparato) && puedoVer('deposito'));
   $('#tabCalendario').hidden = !(gerente && puedoVer('calendario'));
-  // Usuarios es de quien reparte, y de nadie más.
-  $('#tabUsuarios').hidden = !estado.sadmin;
+  // Todo lo de cuentas vive acá. La ve quien administra —un admin tiene que
+  // poder dar de alta un barman—; los interruptores, solo el sadmin.
+  $('#tabUsuarios').hidden = !gerente;
   // El celular de la barra atiende la barra: pedidos, carta y la noche. La
   // puerta es de la gente de la puerta, con su propia cuenta.
   $('#tabPuerta').hidden = estado.esAparato || !puedoVer('puerta');
@@ -1865,60 +1898,6 @@ async function alternarAcceso(uid) {
     + 'Pierde el acceso al toque, aunque tenga la app abierta.')) return;
   try { await updateDoc(doc(db, 'accesosBarra', uid), { activo: !a.activo }); }
   catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
-}
-
-function pintarAccesos() {
-  pintarUsuarios();
-  const cont = $('#accesos');
-  if (!cont) return;
-  const admins = estado.accesos.filter((a) => a.rol === 'admin');
-  const barmanes = estado.accesos.filter((a) => (a.rol || 'barman') === 'barman');
-  const puertas = estado.accesos.filter((a) => a.rol === 'puerta');
-  const aparatos = estado.accesos.filter((a) => a.rol === 'barra');
-
-  const fila = (a) => `
-    <div class="item ${a.activo ? '' : 'agotado'}">
-      <div class="cuerpo">
-        <div class="nombre">${esc(a.usuario)}${a.activo ? '' : ' — <small>dado de baja</small>'}</div>
-        <div class="desc">${a.rol === 'admin'
-          ? 'administra todo menos borrar'
-          : a.rol === 'barra'
-            ? 'el aparato del local: entra siempre'
-            : (estado.evento?.barmanes || []).includes(a.uid) ? 'trabaja esta noche' : 'sin turno asignado'}</div>
-      </div>
-      <button class="btn ${a.activo ? 'peligro' : 'primario'}" data-acceso="${esc(a.uid)}"
-              style="padding:.4rem .7rem;font-size:.82rem">${a.activo ? 'Dar de baja' : 'Reactivar'}</button>
-    </div>`;
-
-  cont.innerHTML = `
-    <div class="grupo-personal">Administradores</div>
-    ${admins.length ? admins.map(fila).join('')
-      : '<p style="color:var(--suave);font-size:.88rem;margin:0">Solo vos.</p>'}
-    <button class="btn ancho-full" id="btnAltaAdmin" style="margin-top:.6rem">Crear administrador</button>
-
-    <div class="grupo-personal">Barman</div>
-    ${barmanes.length ? barmanes.map(fila).join('')
-      : '<p style="color:var(--suave);font-size:.88rem;margin:0">Todavía no registraste ninguno.</p>'}
-    <button class="btn primario ancho-full" id="btnAltaBarman" style="margin-top:.6rem">Registrar barman</button>
-
-    <div class="grupo-personal">Celular de la barra</div>
-    ${aparatos.length ? aparatos.map(fila).join('')
-      : `<p style="color:var(--suave);font-size:.88rem;margin:0">
-         Todavía no hay. Es la cuenta del celular que queda en la barra: entra
-         siempre, sin depender del turno.</p>`}
-    <button class="btn ancho-full" id="btnAltaAparato" style="margin-top:.6rem">Registrar celular de barra</button>
-
-    <div class="grupo-personal">Puerta</div>
-    ${puertas.length ? puertas.map(fila).join('')
-      : '<p style="color:var(--suave);font-size:.88rem;margin:0">Todavía no registraste ninguno.</p>'}
-    <button class="btn ancho-full" id="btnAltaPuerta" style="margin-top:.6rem">Registrar gente de puerta</button>`;
-
-  $('#btnAltaAdmin').onclick = () => altaPersona('admin');
-  $('#btnAltaBarman').onclick = () => altaPersona('barman');
-  $('#btnAltaAparato').onclick = () => altaPersona('barra');
-  $('#btnAltaPuerta').onclick = () => altaPersona('puerta');
-  cont.querySelectorAll('[data-acceso]').forEach((b) =>
-    b.onclick = () => alternarAcceso(b.dataset.acceso));
 }
 
 // ---------- pedidos ----------

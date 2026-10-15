@@ -518,7 +518,7 @@ await chequear('no avisa "sin conexión" si los datos están llegando', async ()
 
 console.log('\nUSUARIO DE BARRA DEL TURNO');
 await chequear('el dueño crea un usuario de barra sin mail y sin perder su sesión', async () => {
-  await barra.click('#tabEvento');
+  await barra.click('#tabUsuarios');
   await barra.waitForSelector('#btnAltaBarman', { timeout: 10000 });
   barra.on('dialog', async (d) => d.accept());
   await barra.click('#btnAltaBarman');
@@ -541,7 +541,7 @@ await chequear('el dueño crea un usuario de barra sin mail y sin perder su sesi
   await barra.fill('#inpPersonaClave', 'clave-de-prueba');
   await barra.click('#btnConfirmarPersona');
   await barra.waitForFunction(() =>
-    document.querySelector('#accesos')?.textContent.includes('barra-turno'), null, { timeout: 15000 });
+    document.querySelector('#usuarios')?.textContent.includes('barra-turno'), null, { timeout: 15000 });
   // El alta usa una app aparte justamente para esto: el dueño sigue adentro.
   if (await barra.locator('#vistaPanel').isHidden()) throw new Error('al dueño lo sacó de su propio panel');
   barra.removeAllListeners('dialog');
@@ -560,7 +560,7 @@ await chequear('el celular de la barra se registra y entra sin turno', async () 
     await barra.fill('#inpPersonaClave', 'clave-del-aparato');
     await barra.click('#btnConfirmarPersona');
     await barra.waitForFunction(() =>
-      document.querySelector('#accesos')?.textContent.includes('el aparato del local'),
+      document.querySelector('#usuarios')?.textContent.includes('El celular del local'),
       null, { timeout: 15000 });
   } finally { barra.removeAllListeners('dialog'); }
 
@@ -631,7 +631,7 @@ turno.on('pageerror', (e) => errores.push('turno: ' + e.message));
 await chequear('el sadmin reparte pantallas, y lo que apaga se apaga de verdad', async () => {
   // Lo que importa no es que la pestaña desaparezca: es que el dato no se
   // pueda escribir igual. Por eso se prueban las dos cosas.
-  await barra.click('#tabEvento');
+  await barra.click('#tabUsuarios');
   await barra.waitForSelector('#btnAltaAdmin', { timeout: 10000 });
   barra.on('dialog', async (d) => d.accept());
   try {
@@ -641,7 +641,7 @@ await chequear('el sadmin reparte pantallas, y lo que apaga se apaga de verdad',
     await barra.fill('#inpPersonaClave', 'clave-recortada');
     await barra.click('#btnConfirmarPersona');
     await barra.waitForFunction(() =>
-      document.querySelector('#accesos')?.textContent.includes('recortado'),
+      document.querySelector('#usuarios')?.textContent.includes('recortado'),
       null, { timeout: 15000 });
   } finally { barra.removeAllListeners('dialog'); }
 
@@ -683,9 +683,16 @@ await chequear('el sadmin reparte pantallas, y lo que apaga se apaga de verdad',
     await pg.waitForFunction(() =>
       document.querySelector('#tabCaja')?.hidden === true, null, { timeout: 15000 })
       .catch(() => { throw new Error('sigue viendo la pestaña Caja'); });
-    // Tampoco Usuarios: repartir es del sadmin.
-    if (await pg.locator('#tabUsuarios').isVisible())
-      throw new Error('un admin ve la pestaña Usuarios');
+    // Usuarios sí la ve —tiene que poder dar de alta un barman—, pero no los
+    // interruptores: repartir permisos es del sadmin.
+    await pg.click('#tabUsuarios');
+    await pg.waitForFunction(() =>
+      (document.querySelector('#usuarios')?.textContent || '').includes('Barman'),
+      null, { timeout: 15000 });
+    if (await pg.locator('#usuarios [data-permiso]').count())
+      throw new Error('un admin ve los interruptores de permisos');
+    if (await pg.locator('#btnAltaSadmin').count())
+      throw new Error('un admin puede crear un superadministrador');
     // Y lo que de verdad importa: la escritura frena, no solo la pestaña.
     const pudo = await pg.evaluate(async () => {
       const { getFirestore, doc, setDoc } = await import('/vendor/firebase.js');
@@ -850,7 +857,7 @@ await chequear('la ayuda del barman habla de lo suyo y no de la caja', async () 
   for (const debe of ['El tablero de pedidos', 'Carta y stock', 'Si algo no anda']) {
     if (!t.includes(debe)) throw new Error('le falta: ' + debe);
   }
-  for (const noDebe of ['La caja', 'Personal: quién es quién', 'Agendar una noche', 'Controlar la entrada']) {
+  for (const noDebe of ['La caja', 'Personal: los niveles', 'Agendar una noche', 'Controlar la entrada']) {
     if (t.includes(noDebe)) throw new Error('le sobra: ' + noDebe);
   }
   // "Sacar" es de admin: dentro de Carta y stock no tiene que aparecer.
@@ -863,7 +870,9 @@ await chequear('el de la barra ve lo suyo y nada mas', async () => {
   await turno.waitForTimeout(800);
   if (await turno.locator('#tabCalendario').isVisible()) throw new Error('ve el calendario');
   if (await turno.locator('#btnAltaBarman').isVisible()) throw new Error('puede crear usuarios');
-  if (await turno.locator('.solo-gerente').isVisible()) throw new Error('ve la administración');
+  // Todo lo de cuentas vive en Usuarios, y esa pestaña es de quien administra.
+  if (!(await turno.locator('#tabUsuarios').isHidden()))
+    throw new Error('un barman ve la pestaña Usuarios');
   if (await turno.locator('#btnCerrarEvento').isVisible()) throw new Error('puede cerrar el evento');
   if (await turno.locator('#btnTomando').isVisible()) throw new Error('puede cortar los pedidos');
   // El evento lo ve, con la caja y el ranking: necesita los precios.
@@ -910,13 +919,17 @@ await chequear('la barra marca agotado pero el servidor le rechaza un precio', a
 });
 
 await chequear('apagarlo le corta el acceso al toque', async () => {
+  await barra.click('#tabUsuarios');
+  await barra.waitForFunction(() =>
+    (document.querySelector('#usuarios')?.textContent || '').includes('barra-turno'),
+    null, { timeout: 15000 });
   barra.once('dialog', (d) => d.accept());
   // Por nombre, no "el primero de la lista": con otra cuenta dada de alta, el
   // primero deja de ser quien uno cree y se apaga a cualquiera.
-  await barra.locator('#accesos .item', { hasText: 'barra-turno' })
+  await barra.locator('#usuarios .item', { hasText: 'barra-turno' })
     .locator('[data-acceso]').click();
   await barra.waitForFunction(() => {
-    const f = [...document.querySelectorAll('#accesos .item')]
+    const f = [...document.querySelectorAll('#usuarios .item')]
       .find((x) => x.textContent.includes('barra-turno'));
     return f && f.textContent.includes('dado de baja');
   }, null, { timeout: 10000 });
@@ -1289,7 +1302,7 @@ await chequear('el administrador carga el depósito con su cuenta, de punta a pu
   // probaba con la cuenta de la casa, que resuelve por mail y no pasa por
   // accesosBarra. Si el alta no anda con cuenta de administrador, la carga
   // inicial no la puede hacer nadie más que el dueño.
-  await barra.click('#tabEvento');
+  await barra.click('#tabUsuarios');
   await barra.waitForSelector('#btnAltaAdmin', { timeout: 10000 });
   barra.on('dialog', async (d) => d.accept());
   try {
@@ -1299,7 +1312,7 @@ await chequear('el administrador carga el depósito con su cuenta, de punta a pu
     await barra.fill('#inpPersonaClave', 'clave-del-gerente');
     await barra.click('#btnConfirmarPersona');
     await barra.waitForFunction(() =>
-      document.querySelector('#accesos')?.textContent.includes('guille'),
+      document.querySelector('#usuarios')?.textContent.includes('guille'),
       null, { timeout: 15000 });
   } finally { barra.removeAllListeners('dialog'); }
 
@@ -2032,7 +2045,7 @@ await chequear('la ayuda del admin tiene todo', async () => {
   await barra.waitForSelector('#dlgAyuda[open]', { timeout: 5000 });
   const t = await barra.textContent('#temasAyuda');
   for (const debe of ['Entrar e instalar', 'Agendar una noche', 'Arrancar y cerrar la noche',
-                      'Invitados y el link de registro', 'La caja', 'Personal: quién es quién',
+                      'Invitados y el link de registro', 'La caja', 'Personal: los niveles',
                       'El tablero de pedidos', 'Carta y stock', 'Controlar la entrada',
                       'El depósito: insumos y compras', 'Si algo no anda']) {
     if (!t.includes(debe)) throw new Error('le falta: ' + debe);
