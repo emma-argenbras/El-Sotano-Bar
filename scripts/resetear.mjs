@@ -71,8 +71,8 @@ if (quiere('plata')) {
   total += await vaciar(db.collection('conteos'), 'conteos de la noche');
   const turno = db.doc('barra/turno');
   if ((await turno.get()).exists) {
-    console.log('  · el turno abierto: 1 para borrar');
     if (aplicar) await turno.delete();
+    console.log(`  · el turno abierto: 1 ${aplicar ? 'borrado' : 'para borrar'}`);
     total += 1;
   }
 }
