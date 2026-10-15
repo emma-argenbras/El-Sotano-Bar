@@ -1129,7 +1129,7 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
       throw new Error('la compra no sumo stock. Dice: '
         + (await barra.textContent('#deposito')).slice(0, 250));
     });
-  if (!(await barra.textContent('#deposito')).includes('Deuda con proveedores'))
+  if (!(await barra.textContent('#deposito')).includes('Cuenta corriente de proveedores'))
     throw new Error('la compra a cuenta no quedó como deuda');
 
   // Un producto de la carta que sale de esa botella: una medida por trago.
@@ -1226,6 +1226,81 @@ await chequear('un ingreso en $0 no pasa, y el que se cargó mal se puede borrar
     if (stockDespues !== stockAntes)
       throw new Error(`borrar el papel movió el stock: ${stockAntes} -> ${stockDespues}`);
   } finally { barra.removeListener('dialog', oir); }
+});
+
+await chequear('la cuenta corriente del proveedor suma, resta y se puede mirar', async () => {
+  // Lo que ya quedó del caso anterior: 3 botellas a $12.000 a cuenta de
+  // "Distribuidora Prueba" = $36.000 de deuda.
+  let dijo = '';
+  const oir = async (d) => { dijo = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#tabDeposito');
+    await barra.waitForSelector('#btnNuevaCompra', { timeout: 10000 });
+    const deudaDice = async () => (await barra.textContent('#deposito'))
+      .split('Cuenta corriente de proveedores')[1]?.slice(0, 400) || '';
+    if (!(await deudaDice()).includes('36.000'))
+      throw new Error('no arranca con la deuda de la compra a cuenta: ' + await deudaDice());
+
+    // Al mismo proveedor se le compra algo y se le paga en el acto. Eso NO es
+    // un pago a cuenta: la deuda vieja tiene que quedar donde estaba.
+    await barra.click('#btnNuevaCompra');
+    await barra.waitForSelector('#dlgCompra[open]', { timeout: 5000 });
+    await barra.fill('#inpCompraProv', 'Distribuidora Prueba');
+    await barra.click('[data-condicion="contado"]');
+    await barra.locator('[data-compra-u]').first().fill('1');
+    await barra.locator('[data-compra-c]').first().fill('5000');
+    await barra.click('#btnGuardarCompra');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgCompra')?.open, null, { timeout: 10000 });
+    await barra.waitForTimeout(600);
+    if (!(await deudaDice()).includes('36.000'))
+      throw new Error('la compra al contado tocó la deuda a cuenta: ' + await deudaDice());
+
+    // Un gasto con el proveedor apuntado sí es un pago: baja la deuda.
+    await barra.click('#tabCaja');
+    await barra.waitForSelector('#btnNuevoEgreso', { timeout: 10000 });
+    await barra.click('#btnNuevoEgreso');
+    await barra.waitForSelector('#dlgEgreso[open]', { timeout: 5000 });
+    await barra.fill('#inpEgrConcepto', 'Pago a cuenta');
+    await barra.fill('#inpEgrMonto', '10000');
+    await barra.selectOption('#inpEgrCategoria', 'proveedor');
+    const cual = await barra.$eval('#inpEgrProveedor', (sel) =>
+      [...sel.options].find((o) => o.textContent.includes('Distribuidora Prueba'))?.value);
+    if (!cual) throw new Error('el gasto no ofrece al proveedor');
+    await barra.selectOption('#inpEgrProveedor', cual);
+    await barra.click('#btnGuardarEgreso');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgEgreso')?.open, null, { timeout: 10000 });
+
+    await barra.click('#tabDeposito');
+    await barra.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('26.000'),
+      null, { timeout: 10000 }).catch(async () => {
+        throw new Error('el pago no bajó la deuda: ' + await deudaDice());
+      });
+
+    // Y la cuenta se puede abrir y leer movimiento por movimiento.
+    await barra.locator('[data-ver-prov]').first().click();
+    await barra.waitForSelector('#dlgProveedor[open]', { timeout: 5000 });
+    const cuenta = await barra.textContent('#cuerpoProveedor');
+    if (!cuenta.includes('se le debe')) throw new Error('no dice el saldo: ' + cuenta.slice(0, 200));
+    if (!cuenta.includes('Mercadería')) throw new Error('no lista la compra a cuenta');
+    if (!cuenta.includes('Pago a cuenta')) throw new Error('no lista el pago');
+    if (cuenta.includes('5.000')) throw new Error('mete la compra al contado en la cuenta corriente');
+
+    // El nombre se corrige desde ahí y los ingresos viejos lo siguen.
+    await barra.fill('#inpNombreProv', 'Distribuidora Prueba SRL');
+    await barra.click('#btnGuardarProveedor');
+    await barra.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('Distribuidora Prueba SRL'),
+      null, { timeout: 10000 });
+    if (dijo) throw new Error('el panel se quejó: ' + dijo);
+  } finally {
+    barra.removeListener('dialog', oir);
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+  }
 });
 
 await chequear('la carta se queda sin stock sola cuando el depósito se vacía', async () => {

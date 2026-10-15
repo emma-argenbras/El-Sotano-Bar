@@ -2503,14 +2503,58 @@ function escucharPlataDeposito() {
 
 // La cuenta corriente sale de dos cosas que ya existen: lo que se compró a
 // cuenta y lo que se le pagó (un gasto con ese proveedor apuntado).
+//
+// Un gasto con compraId adentro NO es un pago a cuenta: es la compra que se
+// pagó en el acto, que nunca generó deuda. Contarlo bajaba una deuda que
+// seguía estando: le comás $50.000 al contado al mismo que ya le debías
+// $100.000 y la app te decía que debías $50.000.
+const esPagoACuenta = (e) => !!e.proveedorId && !e.compraId;
+
+function pagosProveedor(id) {
+  return (estado.egresosTodos || []).filter((e) => e.proveedorId === id && esPagoACuenta(e));
+}
+
+function comprasACuenta(id) {
+  return estado.compras.filter((c) => c.proveedorId === id && c.condicion === 'cuenta');
+}
+
 function saldoProveedor(id) {
-  const debe = estado.compras
-    .filter((c) => c.proveedorId === id && c.condicion === 'cuenta')
-    .reduce((a, c) => a + Number(c.total || 0), 0);
-  const pagado = (estado.egresosTodos || [])
-    .filter((e) => e.proveedorId === id)
-    .reduce((a, e) => a + Number(e.monto || 0), 0);
+  const debe = comprasACuenta(id).reduce((a, c) => a + Number(c.total || 0), 0);
+  const pagado = pagosProveedor(id).reduce((a, e) => a + Number(e.monto || 0), 0);
   return debe - pagado;
+}
+
+// El resumen de cuenta: cada compra a cuenta suma, cada pago resta, y al lado
+// de cada renglón queda cuánto se debía en ese momento. Sin esto el saldo es
+// un número que hay que creer; con esto se puede discutir con el proveedor.
+function movimientosProveedor(id) {
+  const movs = [
+    ...comprasACuenta(id).map((c) => ({
+      cuando: c.fecha?.seconds || 0,
+      fecha: c.fecha?.toDate?.().toLocaleDateString('es-AR') || '',
+      detalle: `Mercadería · ${(c.items || []).length} producto${
+        (c.items || []).length === 1 ? '' : 's'}`,
+      debe: Number(c.total || 0), haber: 0,
+    })),
+    ...pagosProveedor(id).map((e) => ({
+      cuando: e.fecha?.seconds || 0,
+      fecha: e.fecha?.toDate?.().toLocaleDateString('es-AR') || '',
+      detalle: `Pago · ${e.concepto || ''}${e.pago === 'virtual' ? ' (virtual)' : ''}`,
+      debe: 0, haber: Number(e.monto || 0),
+    })),
+  ].sort((a, b) => a.cuando - b.cuando);
+
+  let saldo = 0;
+  for (const m of movs) { saldo += m.debe - m.haber; m.saldo = saldo; }
+  return movs;
+}
+
+// El nombre del proveedor vive en su ficha. En la compra queda una copia del
+// día que se cargó: si después se corrige un nombre mal escrito, vale el de
+// la ficha, no la copia vieja.
+function comoSeLlamaProveedor(c) {
+  const p = estado.proveedores.find((x) => x.id === c.proveedorId);
+  return p?.nombre || c.proveedor || '';
 }
 
 function pintarDeposito() {
@@ -2518,10 +2562,14 @@ function pintarDeposito() {
   if (!cont || $('#vistaDeposito').hidden) return;
   const bajos = estado.insumos.filter((i) =>
     Number(i.minimo || 0) > 0 && unidadesDe(i) < Number(i.minimo));
-  const conDeuda = estado.proveedores
-    .map((p) => ({ ...p, saldo: saldoProveedor(p.id) }))
-    .filter((p) => Math.abs(p.saldo) > 0.5);
-  const deuda = conDeuda.reduce((a, p) => a + p.saldo, 0);
+  // Se listan todos los que tuvieron movimiento, no solo los que deben: al
+  // que está al día también hay que poder abrirle la cuenta y mirarla.
+  const conCuenta = estado.proveedores
+    .map((p) => ({ ...p, saldo: saldoProveedor(p.id),
+                   movs: movimientosProveedor(p.id).length }))
+    .filter((p) => p.movs > 0)
+    .sort((a, b) => b.saldo - a.saldo);
+  const deuda = conCuenta.reduce((a, p) => a + Math.max(0, p.saldo), 0);
 
   // El celular de la barra mira y nada más: no da de alta mercadería, no
   // carga compras y no ve la plata. Mostrarle esos botones sería ofrecerle
@@ -2541,14 +2589,17 @@ function pintarDeposito() {
     ${bajos.length ? `<div class="aviso mal"><span>⚠</span><div>
       <b>Se está por acabar:</b> ${bajos.map((i) => esc(i.nombre)).join(', ')}.</div></div>` : ''}
 
-    ${deuda && !soloMira ? `<div class="caja-evento" style="margin-bottom:.9rem">
-      <div class="titulo">Deuda con proveedores</div>
+    ${conCuenta.length && !soloMira ? `<div class="caja-evento" style="margin-bottom:.9rem">
+      <div class="titulo">Cuenta corriente de proveedores</div>
       <div class="numeros"><div class="plata"><b>${plata(deuda)}</b><span>se debe</span></div></div>
-      <table class="ranking"><tbody>${conDeuda.map((p) => `
-        <tr><td>${esc(p.nombre)}</td><td class="n">${plata(p.saldo)}</td></tr>`).join('')}
+      <table class="ranking"><tbody>${conCuenta.map((p) => `
+        <tr data-ver-prov="${esc(p.id)}" style="cursor:pointer">
+          <td>${esc(p.nombre)} <small style="color:var(--suave)">ver cuenta ›</small></td>
+          <td class="n">${p.saldo > 0.5 ? plata(p.saldo)
+            : p.saldo < -0.5 ? `a favor ${plata(-p.saldo)}` : 'al día'}</td></tr>`).join('')}
       </tbody></table>
       <p style="font-size:.76rem;color:var(--suave);margin:.7rem 0 0">
-        Para bajarla, cargá el pago en <b>Caja → + Cargar gasto</b> eligiendo al proveedor.</p>
+        Para bajar una deuda, cargá el pago en <b>Caja → + Cargar gasto</b> eligiendo al proveedor.</p>
     </div>` : ''}
 
     ${estado.insumos.length ? estado.insumos.map((i) => {
@@ -2577,7 +2628,7 @@ function pintarDeposito() {
       ${estado.compras.slice(0, 8).map((c) => `
         <div class="item">
           <div class="cuerpo">
-            <div class="nombre">${esc(c.proveedor || 'Compra suelta')}</div>
+            <div class="nombre">${esc(comoSeLlamaProveedor(c) || 'Compra suelta')}</div>
             <div class="desc">${c.fecha?.toDate?.()?.toLocaleDateString('es-AR') || ''}
               · ${(c.items || []).length} producto${(c.items || []).length === 1 ? '' : 's'}
               · ${c.condicion === 'inicial' ? 'carga inicial'
@@ -2599,6 +2650,64 @@ function pintarDeposito() {
     abrirInsumo(estado.insumos.find((i) => i.id === b.dataset.editarInsumo)));
   cont.querySelectorAll('[data-borrar-compra]').forEach((b) => b.onclick = () =>
     borrarCompra(estado.compras.find((c) => c.id === b.dataset.borrarCompra)));
+  cont.querySelectorAll('[data-ver-prov]').forEach((f) => f.onclick = () =>
+    abrirProveedor(f.dataset.verProv));
+}
+
+// ---------- la cuenta de un proveedor ----------
+let mirandoProveedor = null;
+
+function abrirProveedor(id) {
+  const p = estado.proveedores.find((x) => x.id === id);
+  if (!p) return;
+  mirandoProveedor = p;
+  $('#dlgProveedor').showModal();
+  pintarProveedor();
+}
+
+function pintarProveedor() {
+  const p = mirandoProveedor;
+  if (!p || !$('#dlgProveedor')?.open) return;
+  const movs = movimientosProveedor(p.id);
+  const saldo = saldoProveedor(p.id);
+
+  $('#tituloProveedor').textContent = p.nombre;
+  $('#cuerpoProveedor').innerHTML = `
+    <div class="numeros" style="margin-bottom:.8rem">
+      <div class="plata"><b>${saldo > 0.5 ? plata(saldo)
+        : saldo < -0.5 ? plata(-saldo) : plata(0)}</b>
+        <span>${saldo > 0.5 ? 'se le debe' : saldo < -0.5 ? 'quedó a favor' : 'al día'}</span></div>
+    </div>
+
+    <table class="ranking"><tbody>
+      ${movs.map((m) => `
+        <tr>
+          <td><small style="color:var(--suave)">${esc(m.fecha)}</small><br>${esc(m.detalle)}</td>
+          <td class="n" style="color:${m.debe ? 'var(--naranja)' : 'var(--verde)'}">
+            ${m.debe ? '+' : '−'}${plata(m.debe || m.haber)}</td>
+          <td class="n"><small style="color:var(--suave)">${plata(m.saldo)}</small></td>
+        </tr>`).join('')}
+    </tbody></table>
+
+    <p style="font-size:.76rem;color:var(--suave);margin:.8rem 0 0">
+      Lo naranja es mercadería que se llevó a cuenta; lo verde, lo que se le pagó.
+      La última columna es cuánto se le debía después de cada movimiento.</p>
+
+    <label class="campo" style="margin-top:1rem">
+      <span>Nombre <small>(corregilo si quedó mal escrito)</small></span>
+      <input id="inpNombreProv" maxlength="60" autocomplete="off" value="${esc(p.nombre)}">
+    </label>`;
+  $('#btnGuardarProveedor').onclick = guardarNombreProveedor;
+}
+
+async function guardarNombreProveedor() {
+  const p = mirandoProveedor;
+  const nombre = ($('#inpNombreProv')?.value || '').trim();
+  if (!p || nombre.length < 2 || nombre === p.nombre) { $('#dlgProveedor').close(); return; }
+  try {
+    await updateDoc(doc(db, 'proveedores', p.id), { nombre });
+    $('#dlgProveedor').close();
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 
 // ---------- borrar un ingreso de mercadería ----------
