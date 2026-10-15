@@ -48,5 +48,5 @@ if (!aplicar) {
 if (acceso.exists) await acceso.ref.delete();
 await auth.deleteUser(u.uid);
 console.log(`\n✓ Borrada. El nombre "${usuario}" quedó libre.`);
-console.log('  Dala de alta de nuevo desde Noche → Personal, con la contraseña que quieras.');
+console.log('  Dala de alta de nuevo desde la pestaña Usuarios, con la contraseña que quieras.');
 process.exit(0);
