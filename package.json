@@ -25,7 +25,8 @@
     "completar:registros": "node scripts/completar-registros.mjs",
     "auditar:barra": "firebase emulators:exec --only firestore --project demo-el-sotano \"node scripts/auditar-barra.mjs\"",
     "borrar:usuario": "node scripts/borrar-usuario.mjs",
-    "exportar:deposito": "node scripts/exportar-deposito.mjs"
+    "exportar:deposito": "node scripts/exportar-deposito.mjs",
+    "resetear": "node scripts/resetear.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

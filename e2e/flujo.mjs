@@ -1361,6 +1361,28 @@ await chequear('poner al día el depósito le abre la cuenta a cada proveedor', 
     await barra.waitForSelector('#dlgProveedor[open]', { timeout: 5000 });
     if (!(await barra.textContent('#cuerpoProveedor')).includes('se le debe'))
       throw new Error('la cuenta del proveedor nuevo no muestra el saldo');
+    await barra.click('#btnGuardarProveedor');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgProveedor')?.open, null, { timeout: 5000 });
+
+    // La otra mitad: cuando el depósito arranca de cero, la misma pantalla
+    // tiene que cargar el stock en vez de dejarlo como está.
+    await barra.click('#btnAlDia');
+    await barra.waitForSelector('#dlgAlDia[open]', { timeout: 5000 });
+    await barra.click('[data-ald-stock="cargar"]');
+    const otra = barra.locator('#cuerpoAlDia .item', { hasText: 'Gancia 950' });
+    await otra.locator('[data-ald-prov]').fill('Bebidas del Sur');
+    await otra.locator('[data-ald-costo]').fill('9000');
+    await otra.locator('[data-ald-uni]').fill('3');
+    await barra.click('#btnGuardarAlDia');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgAlDia')?.open, null, { timeout: 10000 });
+    for (let i = 0; i < 40; i++) {
+      const d = (await db.collection('insumos').where('nombre', '==', 'Gancia 950').get()).docs[0];
+      if (Number(d.data().stock) === 15) break;
+      if (i === 39) throw new Error('no cargó el stock: quedó en ' + d.data().stock);
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
     if (dijo) throw new Error('el panel se quejó: ' + dijo);
   } finally {
     barra.removeListener('dialog', oir);

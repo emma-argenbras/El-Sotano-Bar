@@ -61,7 +61,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, alDia: { filas: {}, condicion: 'cuenta' }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, permisos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, alDia: { filas: {}, condicion: 'cuenta', stock: 'ya' }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, permisos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Vive en /instalar.js, compartido con el pase del invitado: el camino para
@@ -2725,7 +2725,10 @@ function pintarProveedor() {
 // sumarlas las contaría dos veces. Lo único que escribe es el papel que
 // faltaba: de quién vino cada cosa, cuánto salió, y si se debe o ya se pagó.
 function abrirAlDia() {
-  estado.alDia = { filas: {}, condicion: 'cuenta' };
+  // Si el depósito está en cero es porque todavía no se cargó nada: la
+  // pantalla arranca cargando el stock. Si ya hay botellas contadas, no.
+  const hayStock = estado.insumos.some((i) => Number(i.stock || 0) > 0);
+  estado.alDia = { filas: {}, condicion: 'cuenta', stock: hayStock ? 'ya' : 'cargar' };
   for (const i of estado.insumos) {
     const medidas = Math.max(1, Number(i.medidas || 1));
     estado.alDia.filas[i.id] = {
@@ -2763,6 +2766,19 @@ function pintarAlDia() {
         : 'Queda el precio y el proveedor anotados, sin deuda y sin tocar la caja.'}</small>
     </div>
 
+    <div class="campo">
+      <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">
+        Y en el depósito…</span>
+      <div style="display:flex;gap:.4rem">
+        ${[['ya', 'Ya está contada'], ['cargar', 'Cargá el stock']].map(([k, t]) => `
+          <button type="button" class="btn ${estado.alDia.stock === k ? 'primario' : ''}"
+                  data-ald-stock="${k}" style="flex:1;font-size:.84rem">${t}</button>`).join('')}
+      </div>
+      <small class="pista">${estado.alDia.stock === 'ya'
+        ? 'No se toca lo guardado: ya está contado y sumarlo de nuevo lo duplica.'
+        : 'Lo guardado de cada producto pasa a ser lo que cargues acá.'}</small>
+    </div>
+
     <datalist id="listaProvAlDia">
       ${estado.proveedores.map((p) => `<option value="${esc(p.nombre)}">`).join('')}
     </datalist>
@@ -2796,6 +2812,9 @@ function pintarAlDia() {
   $('#cuerpoAlDia').querySelectorAll('[data-ald-cond]').forEach((b) => b.onclick = () => {
     estado.alDia.condicion = b.dataset.aldCond; pintarAlDia();
   });
+  $('#cuerpoAlDia').querySelectorAll('[data-ald-stock]').forEach((b) => b.onclick = () => {
+    estado.alDia.stock = b.dataset.aldStock; pintarAlDia();
+  });
   const anotar = (sel, campo) =>
     $('#cuerpoAlDia').querySelectorAll(sel).forEach((e) => e.oninput = () => {
       const id = e.dataset.aldProv || e.dataset.aldCosto || e.dataset.aldUni;
@@ -2819,6 +2838,7 @@ async function guardarAlDia() {
     return;
   }
   const condicion = estado.alDia.condicion;
+  const cargaStock = estado.alDia.stock === 'cargar';
   const btn = $('#btnGuardarAlDia');
   btn.disabled = true; btn.textContent = 'Guardando…';
 
@@ -2851,17 +2871,22 @@ async function guardarAlDia() {
         items,
         total: items.reduce((a, i) => a + i.unidades * i.costoUnit, 0),
         condicion,
-        // La mercadería ya estaba contada: este ingreso no la vuelve a sumar.
-        sinStock: true,
+        // Cuando la mercadería ya estaba contada, este ingreso no la vuelve a
+        // sumar: hacerlo la contaría dos veces.
+        ...(cargaStock ? {} : { sinStock: true }),
         cargadoPor: estado.usuario || 'casa',
         creadoEn: serverTimestamp(),
       });
 
       // Y cada insumo se queda con su precio y su proveedor, que es lo que
       // después dice cuánto deja cada trago.
-      await Promise.all(filas.map((f) =>
-        updateDoc(doc(db, 'insumos', f.ins.id),
-          { costo: Number(f.costo), proveedorId })));
+      await Promise.all(filas.map((f) => {
+        const medidas = Math.max(1, Number(f.ins.medidas || 1));
+        return updateDoc(doc(db, 'insumos', f.ins.id), {
+          costo: Number(f.costo), proveedorId,
+          ...(cargaStock ? { stock: Number(f.unidades) * medidas } : {}),
+        });
+      }));
     }
     $('#dlgAlDia').close();
   } catch (e) {
