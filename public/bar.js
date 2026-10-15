@@ -61,7 +61,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, alDia: { filas: {}, condicion: 'cuenta', stock: 'ya' }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, permisos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, alDia: { filas: {}, condicion: 'cuenta', stock: 'ya' }, egresosTodos: [], sinPagos: false, veCaja: false, conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, permisos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Vive en /instalar.js, compartido con el pase del invitado: el camino para
@@ -1729,7 +1729,10 @@ function aplicarRol() {
 
   // Primero el rol, después el interruptor: lo que el rol no da, ningún
   // interruptor lo enciende.
-  $('#tabCaja').hidden = !(gerente && puedoVer('caja'));
+  // Quien no ve la Caja no ve los pagos a proveedores, y sin los pagos un
+  // saldo de cuenta corriente contaría como pendiente plata ya abonada.
+  estado.veCaja = gerente && puedoVer('caja');
+  $('#tabCaja').hidden = !estado.veCaja;
   // El depósito también lo ve el celular de la barra: necesita saber qué hay
   // para no prometer un trago que no se puede hacer. Lo ve de mirar nada más
   // —adentro no hay ningún botón suyo—, y las reglas lo frenan igual.
@@ -1759,6 +1762,12 @@ function aplicarRol() {
   const soloPuerta = !estado.dueno && estado.rol === 'puerta';
   b.toggle('es-puerta', soloPuerta);
   if (soloPuerta && !$('#vistaPuerta').hidden === false) irA('puerta');
+
+  // El panel se pinta antes de que llegue el documento de acceso: hasta ese
+  // momento no se sabe qué pantallas tiene apagadas. Lo que ya se dibujó con
+  // el dato viejo hay que volver a dibujarlo, o queda mostrando de más.
+  pintarDeposito();
+  pintarCartaBar();
 }
 
 function vigilarMiAcceso(uid) {
@@ -2479,10 +2488,15 @@ function escucharPlataDeposito() {
 
   // Los gastos con proveedor apuntado son los pagos a cuenta: hacen falta
   // completos, no solo los del rango que esté mirando la caja.
+  //
+  // A quien tiene apagada la pantalla de Caja las reglas se los niegan, y sin
+  // los pagos la cuenta corriente daría la deuda entera: mostraría que se
+  // debe plata que ya se pagó. Cuando pasa, el depósito no muestra cuentas.
   onSnapshot(collection(db, 'egresos'), (snap) => {
     estado.egresosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    estado.sinPagos = false;
     pintarDeposito();
-  }, () => {});
+  }, () => { estado.sinPagos = true; pintarDeposito(); });
 
   // El alias al que transfieren la entrada. Vive en publico/ porque el
   // invitado lo tiene que poder leer sin cuenta: es lo único que necesita
@@ -2583,6 +2597,10 @@ function pintarDeposito() {
   // con qué saber cuánto deja cada trago.
   // Se mira contra las fichas que existen hoy: un proveedor borrado deja al
   // insumo apuntando a la nada, y eso también es un producto sin proveedor.
+  // Dos motivos para no mostrar saldos: no tener la pantalla de Caja, o que
+  // las reglas nieguen los gastos. Cualquiera de los dos deja la cuenta coja.
+  const sinPagos = estado.sinPagos || !estado.veCaja;
+
   const sinDatos = estado.insumos.filter((i) =>
     !estado.proveedores.some((p) => p.id === i.proveedorId) || !Number(i.costo || 0));
 
@@ -2606,7 +2624,12 @@ function pintarDeposito() {
     ${bajos.length ? `<div class="aviso mal"><span>⚠</span><div>
       <b>Se está por acabar:</b> ${bajos.map((i) => esc(i.nombre)).join(', ')}.</div></div>` : ''}
 
-    ${conCuenta.length && !soloMira ? `<div class="caja-evento" style="margin-bottom:.9rem">
+    ${conCuenta.length && !soloMira && sinPagos ? `<div class="aviso" style="margin-bottom:.9rem">
+      <span>🔒</span><div>Las cuentas corrientes de proveedores se miran con el
+      permiso de <b>Caja</b>: sin los pagos cargados, el saldo contaría como
+      pendiente plata que ya fue abonada.</div></div>` : ''}
+
+    ${conCuenta.length && !soloMira && !sinPagos ? `<div class="caja-evento" style="margin-bottom:.9rem">
       <div class="titulo">Cuenta corriente de proveedores</div>
       <div class="numeros"><div class="plata"><b>${plata(deuda)}</b><span>se debe</span></div></div>
       <table class="ranking"><tbody>${conCuenta.map((p) => `
@@ -3572,7 +3595,19 @@ function pintarCartaBar() {
     cont.innerHTML = `<div class="vacio">La carta está vacía.<br><small>Desde la Mac: <code>npm run seed</code></small></div>`;
     return;
   }
-  cont.innerHTML = estado.carta.map((i) => {
+  // La carta tiene que salir siempre del depósito: un producto sin receta se
+  // vende sin descontar ninguna botella, y el depósito deja de servir para
+  // saber qué hay. Mientras falte alguno, el panel lo dice arriba de todo.
+  const sueltos = estado.carta.filter((i) =>
+    i.enCarta !== false && !((i.receta || []).length));
+
+  cont.innerHTML = `${sueltos.length && !estado.esAparato ? `
+    <div class="aviso mal" style="margin-bottom:.9rem"><span>⚠</span><div>
+      <b>${sueltos.length} de ${estado.carta.filter((i) => i.enCarta !== false).length}
+      productos no salen del depósito.</b> Venderlos no descuenta ninguna botella.
+      Tocales el 🧾+ y deciles de qué insumo salen y cuántas medidas llevan:
+      ${esc(sueltos.map((i) => i.nombre || i.id).join(', '))}.</div></div>` : ''}`
+    + estado.carta.map((i) => {
     const fuera = i.enCarta === false;   // retirado: el cliente no lo ve
     // Con receta, el número no se toca a mano: lo pone el depósito. Mostrar
     // los − + ahí sería mentir, porque la próxima venta lo vuelve a calcular.
@@ -3582,8 +3617,10 @@ function pintarCartaBar() {
     <div class="item ${fuera || i.disponible === false || rinde === 0 ? 'agotado' : ''}">
       <div class="cuerpo">
         <div class="nombre">${esc(i.nombre || i.id)}${fuera ? ' — <small>fuera de carta</small>' : ''}</div>
-        <div class="desc">${esc(i.categoria || '')} · ${plata(i.precio)}${
-          delDeposito ? ` · ${rinde === 0 ? 'sin material en el depósito' : 'sale del depósito'}` : ''}</div>
+        <div class="desc">${esc(i.categoria || '')} · ${plata(i.precio)} · ${
+          delDeposito
+            ? (rinde === 0 ? 'sin material en el depósito' : 'sale del depósito')
+            : '<b style="color:var(--naranja)">no sale del depósito</b>'}</div>
       </div>
       ${delDeposito ? `
       <div class="cant" title="Lo que el depósito alcanza a dar. Para que suba, cargá mercadería.">

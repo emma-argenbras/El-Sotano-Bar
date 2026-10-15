@@ -1303,6 +1303,62 @@ await chequear('la cuenta corriente del proveedor suma, resta y se puede mirar',
   }
 });
 
+await chequear('la carta avisa cuándo un producto no sale del depósito', async () => {
+  // Un producto sin receta se vende sin descontar ninguna botella. Eso no se
+  // puede descubrir tres meses después mirando por qué no cierra el stock.
+  await barra.click('#tabCartaBar');
+  await barra.waitForSelector('#cartaBar .item', { timeout: 10000 });
+  const dice = await barra.textContent('#cartaBar');
+  if (!dice.includes('no salen del depósito'))
+    throw new Error('no avisa que hay productos sueltos: ' + dice.slice(0, 250));
+  if (!dice.includes('no sale del depósito'))
+    throw new Error('no lo marca producto por producto');
+  // Y el que sí tiene receta no aparece marcado.
+  const conReceta = await barra.locator('#cartaBar .item', { hasText: 'Fernet con coca' }).textContent();
+  if (conReceta.includes('no sale del depósito'))
+    throw new Error('marca como suelto a uno que tiene receta');
+});
+
+await chequear('sin Caja no se muestra ningún saldo de proveedor', async () => {
+  // El admin recortado no puede leer los gastos: las reglas se los niegan.
+  // Sin los pagos, un saldo diría que se debe plata que ya se pagó. Antes
+  // que un número falso, ninguno.
+  // Otro caso le devuelve el permiso de Caja, así que este fija el suyo en vez
+  // de confiar en cómo lo dejó el anterior.
+  const suyo = (await db.collection('accesosBarra')
+    .where('usuario', '==', 'recortado').get()).docs[0];
+  if (!suyo) throw new Error('no está la cuenta recortada');
+  await suyo.ref.update({ permisos: { caja: false } });
+
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  try {
+    await pg.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
+    await pg.fill('#inpMail', 'recortado');
+    await pg.fill('#inpPass', 'clave-recortada');
+    await pg.click('#btnEntrar');
+    await pg.waitForSelector('#vistaPanel', { state: 'visible', timeout: 20000 });
+    await pg.waitForFunction(() =>
+      document.querySelector('#tabCaja')?.hidden === true, null, { timeout: 15000 });
+    await pg.click('#tabDeposito');
+    await pg.waitForSelector('#btnNuevoInsumo', { timeout: 15000 });
+    await pg.waitForTimeout(1000);
+    const dice = (await pg.textContent('#deposito')).replace(/\s+/g, ' ');
+    if (!dice.includes('permiso de'))
+      throw new Error('no avisa por qué no hay cuentas: ' + dice.slice(0, 300));
+    // Los ingresos de mercadería sí los ve con su importe: eso es el papel de
+    // la compra, no un saldo. Lo que no puede aparecer es la cuenta corriente.
+    if (dice.includes('Cuenta corriente de proveedores'))
+      throw new Error('le muestra las cuentas sin poder leer los pagos');
+    if (dice.includes('ver cuenta'))
+      throw new Error('le deja abrir la cuenta de un proveedor');
+  } finally {
+    await ctx.close();
+    // Se lo devuelve como estaba, para no romperle el caso al que sigue.
+    await suyo.ref.update({ permisos: { caja: true } });
+  }
+});
+
 await chequear('poner al día el depósito le abre la cuenta a cada proveedor', async () => {
   // La barra cargó la mercadería sin precio y sin proveedor para poder
   // vender. Esto lo completa después, de una sola vez, sin volver a sumar el
