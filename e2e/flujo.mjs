@@ -1178,6 +1178,56 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
   } finally { barra.removeListener('dialog', oirAlertas); }
 });
 
+await chequear('un ingreso en $0 no pasa, y el que se cargó mal se puede borrar', async () => {
+  // Lo que pasó de verdad en la barra: se cargó la mercadería que ya estaba
+  // con la opción que venía puesta ("A cuenta") y sin precios. Quedaron ocho
+  // "Compra suelta · $0" en el histórico. Dos cosas tienen que andar: que el
+  // panel lo frene antes, y que lo que ya entró se pueda sacar sin perder el
+  // stock —las botellas están, aunque el papel esté mal.
+  let dijo = '';
+  const oir = async (d) => { dijo = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#tabDeposito');
+    await barra.waitForSelector('#btnNuevaCompra', { timeout: 10000 });
+    const cuantas = async () => (await db.collection('compras').get()).size;
+    const antes = await cuantas();
+
+    // Sin precios y "a cuenta": no se guarda y se explica por qué.
+    await barra.click('#btnNuevaCompra');
+    await barra.waitForSelector('#dlgCompra[open]', { timeout: 5000 });
+    await barra.locator('[data-compra-u]').first().fill('2');
+    await barra.click('#btnGuardarCompra');
+    await barra.waitForFunction(() => true);
+    if (!dijo.includes('No pusiste los precios'))
+      throw new Error('guardó un ingreso de $0 a cuenta. Dijo: ' + (dijo || '(nada)'));
+    if (await cuantas() !== antes)
+      throw new Error('igual escribió la compra en $0');
+
+    // La misma carga, pero como "Carga inicial": eso sí entra.
+    await barra.click('[data-condicion="inicial"]');
+    await barra.click('#btnGuardarCompra');
+    await barra.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('carga inicial'),
+      null, { timeout: 10000 });
+
+    // Y se puede borrar sin que se caiga el stock que sumó.
+    const stockAntes = (await db.collection('insumos')
+      .where('nombre', '==', 'Fernet 750').get()).docs[0].data().stock;
+    await barra.locator('#deposito .item', { hasText: 'carga inicial' })
+      .locator('[data-borrar-compra]').click();
+    await barra.waitForFunction(() =>
+      !document.querySelector('#deposito')?.textContent.includes('carga inicial'),
+      null, { timeout: 10000 });
+    if (await cuantas() !== antes)
+      throw new Error('el ingreso no se borró');
+    const stockDespues = (await db.collection('insumos')
+      .where('nombre', '==', 'Fernet 750').get()).docs[0].data().stock;
+    if (stockDespues !== stockAntes)
+      throw new Error(`borrar el papel movió el stock: ${stockAntes} -> ${stockDespues}`);
+  } finally { barra.removeListener('dialog', oir); }
+});
+
 await chequear('la carta se queda sin stock sola cuando el depósito se vacía', async () => {
   // Lo que el cliente ve no puede depender de que alguien se acuerde de tocar
   // "Agotar": si no hay fernet en el depósito, el fernet con coca no se puede
@@ -1389,7 +1439,8 @@ await chequear('el celular de la barra ve el depósito, pero solo de mirar', asy
       });
 
     // Nada de lo que no puede hacer.
-    for (const q of ['#btnNuevoInsumo', '#btnNuevaCompra', '[data-editar-insumo]', '[data-baja-insumo]'])
+    for (const q of ['#btnNuevoInsumo', '#btnNuevaCompra', '[data-editar-insumo]',
+                     '[data-baja-insumo]', '[data-borrar-compra]'])
       if (await cel.locator(q).count()) throw new Error('le muestra ' + q);
     const dice = await cel.textContent('#deposito');
     if (dice.includes('Deuda con proveedores')) throw new Error('le muestra la deuda');

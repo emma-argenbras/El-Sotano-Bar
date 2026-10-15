@@ -2584,6 +2584,9 @@ function pintarDeposito() {
                  : c.condicion === 'cuenta' ? 'a cuenta' : 'pagada'}</div>
           </div>
           <div class="total">${c.condicion === 'inicial' ? '—' : plata(c.total)}</div>
+          ${soloMira ? '' : `
+          <button class="btn peligro" data-borrar-compra="${esc(c.id)}"
+                  title="Borrar este ingreso" style="padding:.3rem .55rem;font-size:.78rem">✕</button>`}
         </div>`).join('')}` : ''}`;
 
   // Para el celular de la barra estos botones no existen: se engancha lo que
@@ -2594,6 +2597,32 @@ function pintarDeposito() {
     abrirBaja(estado.insumos.find((i) => i.id === b.dataset.bajaInsumo)));
   cont.querySelectorAll('[data-editar-insumo]').forEach((b) => b.onclick = () =>
     abrirInsumo(estado.insumos.find((i) => i.id === b.dataset.editarInsumo)));
+  cont.querySelectorAll('[data-borrar-compra]').forEach((b) => b.onclick = () =>
+    borrarCompra(estado.compras.find((c) => c.id === b.dataset.borrarCompra)));
+}
+
+// ---------- borrar un ingreso de mercadería ----------
+// Se borra el papel, no la mercadería: el stock que sumó ese ingreso queda
+// como está, porque las botellas siguen en el depósito. Sirve para los
+// ingresos cargados mal —sin precio, con la condición que no era— que
+// después ensucian la deuda con proveedores.
+//
+// Si la compra se había pagado en el acto, el gasto que dejó en la caja se
+// va con ella: si no, la caja quedaría pagando algo que ya no existe.
+async function borrarCompra(c) {
+  if (!c) return;
+  const quien = c.proveedor || 'Compra suelta';
+  const gasto = (estado.egresosTodos || []).find((e) => e.compraId === c.id);
+  if (!confirm(`¿Borrar el ingreso de "${quien}"?\n\n`
+    + `El stock que sumó NO se toca: la mercadería sigue en el depósito.\n`
+    + `Solo desaparece de "Últimos ingresos"`
+    + (c.condicion === 'cuenta' && Number(c.total || 0) > 0
+      ? ` y de la deuda con el proveedor.` : '.')
+    + (gasto ? `\n\nTambién se borra el gasto de ${plata(gasto.monto)} que dejó en la caja.` : ''))) return;
+  try {
+    if (gasto) await deleteDoc(doc(db, 'egresos', gasto.id));
+    await deleteDoc(doc(db, 'compras', c.id));
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 
 // ---------- dar de baja un insumo ----------
@@ -2818,6 +2847,19 @@ async function guardarCompra() {
   btn.disabled = true; btn.textContent = 'Guardando…';
   const nombreProv = ($('#inpCompraProv')?.value || '').trim();
   const total = c.condicion === 'inicial' ? 0 : totalCompra();
+
+  // Un ingreso en $0 que dice "a cuenta" o "pagada" no es una compra: es
+  // mercadería que ya estaba y se cargó con la opción que venía puesta.
+  // Dejarlo pasar llena el depósito de ingresos de $0 y, si alguno llevara
+  // precio, inventaría una deuda con el proveedor que nadie contrajo.
+  if (c.condicion !== 'inicial' && total === 0) {
+    alert('No pusiste los precios.\n\n'
+      + 'Si esto es mercadería que ya tenías, elegí "Carga inicial": '
+      + 'suma el stock y no toca la plata.');
+    btn.disabled = false; btn.textContent = 'Guardar el ingreso';
+    return;
+  }
+
   try {
     // El proveedor se da de alta solo la primera vez que se lo nombra.
     let proveedorId = '';
@@ -2866,6 +2908,7 @@ async function guardarCompra() {
     alert('No se pudo: ' + (e.code || e.message));
   }
   btn.disabled = false;
+  btn.textContent = c.condicion === 'inicial' ? 'Cargar el stock inicial' : 'Guardar el ingreso';
 }
 
 // ---------- de qué sale cada producto de la carta ----------
