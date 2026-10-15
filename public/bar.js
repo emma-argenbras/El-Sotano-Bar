@@ -2581,7 +2581,10 @@ function pintarDeposito() {
   // Lo que entró al depósito sin decir de quién vino ni cuánto salió: la
   // mercadería está, pero no hay con qué armar la cuenta del proveedor ni
   // con qué saber cuánto deja cada trago.
-  const sinDatos = estado.insumos.filter((i) => !i.proveedorId || !Number(i.costo || 0));
+  // Se mira contra las fichas que existen hoy: un proveedor borrado deja al
+  // insumo apuntando a la nada, y eso también es un producto sin proveedor.
+  const sinDatos = estado.insumos.filter((i) =>
+    !estado.proveedores.some((p) => p.id === i.proveedorId) || !Number(i.costo || 0));
 
   cont.innerHTML = `
     ${soloMira ? '' : `
