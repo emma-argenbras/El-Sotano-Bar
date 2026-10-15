@@ -61,7 +61,7 @@ const COLUMNAS = [
   { clave: 'entregado',      titulo: 'Entregados', siguiente: null,             accion: null },
 ];
 
-const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, permisos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
+const estado = { pedidos: [], carta: [], evento: null, eventos: [], agenda: [], mes: null, diaElegido: null, editandoEvento: null, accesos: [], invitados: [], invitadosTodos: [], invitandoA: null, registros: {}, esAparato: false, insumos: [], proveedores: [], compras: [], compra: { items: {} }, alDia: { filas: {}, condicion: 'cuenta' }, egresosTodos: [], conteo: null, conteoDe: null, cortarConteo: null, cargandoConteo: {}, egresos: [], pedidosCaja: [], cortarCaja: null, venta: {}, rangoCaja: 'mes', pliegues: { faltan: true, adentro: false, anotados: false }, verTodos: {}, registro: null, buscaInvitado: '', buscaClub: '', verClub: false, pagos: {}, permisos: {}, dueno: false, rol: '', ordenCaja: 'fecha', detalleEvento: null, tomandoPedidos: true, desdeCache: false, usuario: '', sonido: localStorage.getItem('sotano:sonido') !== 'no', vistos: new Set() };
 
 // ---------- instalar la app ----------
 // Vive en /instalar.js, compartido con el pase del invitado: el camino para
@@ -365,6 +365,8 @@ $('#btnVirtual').onclick = () => cerrarCobro('virtual');
 $('#btnCancelarCobro').onclick = () => { cobrando = null; $('#dlgCobro').close(); };
 $('#btnCancelarVenta').onclick = () => $('#dlgVenta').close();
 $('#btnCancelarEgreso').onclick = () => $('#dlgEgreso').close();
+$('#btnCancelarAlDia').onclick = () => $('#dlgAlDia').close();
+$('#btnGuardarAlDia').onclick = guardarAlDia;
 $('#btnGuardarEgreso').onclick = guardarEgreso;
 $('#btnConfirmarEvento').onclick = async () => {
   const nombre = $('#inpEvento').value.trim();
@@ -2576,12 +2578,24 @@ function pintarDeposito() {
   // algo que las reglas le van a negar.
   const soloMira = estado.esAparato;
 
+  // Lo que entró al depósito sin decir de quién vino ni cuánto salió: la
+  // mercadería está, pero no hay con qué armar la cuenta del proveedor ni
+  // con qué saber cuánto deja cada trago.
+  const sinDatos = estado.insumos.filter((i) => !i.proveedorId || !Number(i.costo || 0));
+
   cont.innerHTML = `
     ${soloMira ? '' : `
     <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem">
       <button class="btn primario" id="btnNuevaCompra" style="flex:1">+ Ingreso de mercadería</button>
       <button class="btn" id="btnNuevoInsumo" style="flex:1">+ Insumo</button>
     </div>`}
+
+    ${!soloMira && sinDatos.length ? `<div class="aviso" style="margin-bottom:.9rem">
+      <span>📋</span><div>
+      <b>${sinDatos.length} producto${sinDatos.length === 1 ? '' : 's'} sin proveedor ni precio.</b>
+      Cargalos de una y cada proveedor arranca su cuenta corriente.
+      <button class="btn primario ancho-full" id="btnAlDia" style="margin-top:.6rem">
+        Poner al día el depósito</button></div></div>` : ''}
 
     ${soloMira ? `<p style="color:var(--suave);font-size:.86rem;margin:0 0 .9rem">
       Lo que hay guardado, para saber qué se puede hacer. Lo carga la casa.</p>` : ''}
@@ -2632,9 +2646,11 @@ function pintarDeposito() {
             <div class="desc">${c.fecha?.toDate?.()?.toLocaleDateString('es-AR') || ''}
               · ${(c.items || []).length} producto${(c.items || []).length === 1 ? '' : 's'}
               · ${c.condicion === 'inicial' ? 'carga inicial'
-                 : c.condicion === 'cuenta' ? 'a cuenta' : 'pagada'}</div>
+                 : c.condicion === 'cuenta' ? 'a cuenta' : 'pagada'}${
+                 c.sinStock ? ' · sin sumar stock' : ''}</div>
           </div>
-          <div class="total">${c.condicion === 'inicial' ? '—' : plata(c.total)}</div>
+          <div class="total">${c.condicion === 'inicial' && !Number(c.total || 0)
+            ? '—' : plata(c.total)}</div>
           ${soloMira ? '' : `
           <button class="btn peligro" data-borrar-compra="${esc(c.id)}"
                   title="Borrar este ingreso" style="padding:.3rem .55rem;font-size:.78rem">✕</button>`}
@@ -2644,6 +2660,7 @@ function pintarDeposito() {
   // haya, no lo que debería haber.
   if ($('#btnNuevoInsumo')) $('#btnNuevoInsumo').onclick = () => abrirInsumo(null);
   if ($('#btnNuevaCompra')) $('#btnNuevaCompra').onclick = abrirCompra;
+  if ($('#btnAlDia')) $('#btnAlDia').onclick = abrirAlDia;
   cont.querySelectorAll('[data-baja-insumo]').forEach((b) => b.onclick = () =>
     abrirBaja(estado.insumos.find((i) => i.id === b.dataset.bajaInsumo)));
   cont.querySelectorAll('[data-editar-insumo]').forEach((b) => b.onclick = () =>
@@ -2698,6 +2715,159 @@ function pintarProveedor() {
       <input id="inpNombreProv" maxlength="60" autocomplete="off" value="${esc(p.nombre)}">
     </label>`;
   $('#btnGuardarProveedor').onclick = guardarNombreProveedor;
+}
+
+// ---------- poner al día el depósito ----------
+// La barra cargó la mercadería para poder vender: sin precios y sin decir de
+// quién vino. Acá se completa todo junto y cada proveedor arranca su cuenta.
+//
+// NO toca el stock. Las botellas ya están contadas en el depósito; volver a
+// sumarlas las contaría dos veces. Lo único que escribe es el papel que
+// faltaba: de quién vino cada cosa, cuánto salió, y si se debe o ya se pagó.
+function abrirAlDia() {
+  estado.alDia = { filas: {}, condicion: 'cuenta' };
+  for (const i of estado.insumos) {
+    const medidas = Math.max(1, Number(i.medidas || 1));
+    estado.alDia.filas[i.id] = {
+      proveedor: estado.proveedores.find((p) => p.id === i.proveedorId)?.nombre || '',
+      costo: Number(i.costo || 0) || '',
+      unidades: Math.round(Number(i.stock || 0) / medidas * 100) / 100,
+    };
+  }
+  $('#dlgAlDia').showModal();
+  pintarAlDia();
+}
+
+function filasAlDia() {
+  return estado.insumos
+    .map((i) => ({ ins: i, ...(estado.alDia.filas[i.id] || {}) }))
+    .filter((f) => String(f.proveedor || '').trim().length >= 2
+      && Number(f.costo) > 0 && Number(f.unidades) > 0);
+}
+
+function pintarAlDia() {
+  const listas = filasAlDia();
+  const total = listas.reduce((a, f) => a + Number(f.costo) * Number(f.unidades), 0);
+
+  $('#cuerpoAlDia').innerHTML = `
+    <div class="campo">
+      <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">
+        Esta mercadería…</span>
+      <div style="display:flex;gap:.4rem">
+        ${[['cuenta', 'Se la debemos'], ['inicial', 'Ya está pagada']].map(([k, t]) => `
+          <button type="button" class="btn ${estado.alDia.condicion === k ? 'primario' : ''}"
+                  data-ald-cond="${k}" style="flex:1;font-size:.84rem">${t}</button>`).join('')}
+      </div>
+      <small class="pista">${estado.alDia.condicion === 'cuenta'
+        ? 'Arranca la cuenta corriente de cada proveedor con lo que se le debe.'
+        : 'Queda el precio y el proveedor anotados, sin deuda y sin tocar la caja.'}</small>
+    </div>
+
+    <datalist id="listaProvAlDia">
+      ${estado.proveedores.map((p) => `<option value="${esc(p.nombre)}">`).join('')}
+    </datalist>
+
+    ${estado.insumos.map((i) => {
+      const f = estado.alDia.filas[i.id] || {};
+      const medidas = Math.max(1, Number(i.medidas || 1));
+      return `
+      <div class="item"><div class="cuerpo" style="width:100%">
+        <div class="nombre">${esc(i.nombre)}</div>
+        <div class="desc">hay ${Math.round(Number(i.stock || 0) / medidas * 100) / 100}
+          ${esc(i.unidad || 'unidad')}${medidas > 1 ? ` de ${medidas} medidas` : ''}</div>
+        <div style="display:flex;gap:.4rem;margin-top:.45rem;flex-wrap:wrap">
+          <input data-ald-prov="${esc(i.id)}" list="listaProvAlDia" maxlength="60"
+                 autocomplete="off" placeholder="Proveedor"
+                 value="${esc(f.proveedor || '')}" style="flex:2;min-width:9rem">
+          <input data-ald-costo="${esc(i.id)}" type="number" min="0" inputmode="numeric"
+                 placeholder="$ por ${esc(i.unidad || 'unidad')}"
+                 value="${esc(String(f.costo ?? ''))}" style="flex:1;min-width:6rem">
+          <input data-ald-uni="${esc(i.id)}" type="number" min="0" step="0.01" inputmode="decimal"
+                 placeholder="cuántas" value="${esc(String(f.unidades ?? ''))}"
+                 style="flex:1;min-width:5rem">
+        </div>
+      </div></div>`;
+    }).join('')}
+
+    <div class="total-venta"><span>${listas.length} producto${
+      listas.length === 1 ? '' : 's'} listo${listas.length === 1 ? '' : 's'}</span>
+      <b>${plata(total)}</b></div>`;
+
+  $('#cuerpoAlDia').querySelectorAll('[data-ald-cond]').forEach((b) => b.onclick = () => {
+    estado.alDia.condicion = b.dataset.aldCond; pintarAlDia();
+  });
+  const anotar = (sel, campo) =>
+    $('#cuerpoAlDia').querySelectorAll(sel).forEach((e) => e.oninput = () => {
+      const id = e.dataset.aldProv || e.dataset.aldCosto || e.dataset.aldUni;
+      estado.alDia.filas[id] = { ...(estado.alDia.filas[id] || {}), [campo]: e.value };
+      // El total de abajo se escribe a mano para no repintar mientras escribe.
+      const l = filasAlDia();
+      const t = l.reduce((a, f) => a + Number(f.costo) * Number(f.unidades), 0);
+      const pie = $('#cuerpoAlDia .total-venta');
+      if (pie) pie.innerHTML = `<span>${l.length} producto${l.length === 1 ? '' : 's'} listo${
+        l.length === 1 ? '' : 's'}</span><b>${plata(t)}</b>`;
+    });
+  anotar('[data-ald-prov]', 'proveedor');
+  anotar('[data-ald-costo]', 'costo');
+  anotar('[data-ald-uni]', 'unidades');
+}
+
+async function guardarAlDia() {
+  const listas = filasAlDia();
+  if (!listas.length) {
+    alert('Completá al menos un producto con proveedor, precio y cantidad.');
+    return;
+  }
+  const condicion = estado.alDia.condicion;
+  const btn = $('#btnGuardarAlDia');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+
+  // Una compra por proveedor, con todo lo que le compramos adentro.
+  const porProveedor = new Map();
+  for (const f of listas) {
+    const nombre = String(f.proveedor).trim();
+    const clave = nombre.toLowerCase();
+    if (!porProveedor.has(clave)) porProveedor.set(clave, { nombre, filas: [] });
+    porProveedor.get(clave).filas.push(f);
+  }
+
+  try {
+    for (const { nombre, filas } of porProveedor.values()) {
+      let proveedorId = estado.proveedores.find((p) =>
+        p.nombre.toLowerCase() === nombre.toLowerCase())?.id;
+      if (!proveedorId) {
+        const ref = await addDoc(collection(db, 'proveedores'),
+          { nombre, creadoEn: serverTimestamp() });
+        proveedorId = ref.id;
+      }
+
+      const items = filas.map((f) => ({
+        insumoId: f.ins.id, nombre: f.ins.nombre,
+        unidades: Number(f.unidades), costoUnit: Number(f.costo),
+      }));
+      await addDoc(collection(db, 'compras'), {
+        proveedor: nombre, proveedorId,
+        fecha: Timestamp.fromDate(new Date()),
+        items,
+        total: items.reduce((a, i) => a + i.unidades * i.costoUnit, 0),
+        condicion,
+        // La mercadería ya estaba contada: este ingreso no la vuelve a sumar.
+        sinStock: true,
+        cargadoPor: estado.usuario || 'casa',
+        creadoEn: serverTimestamp(),
+      });
+
+      // Y cada insumo se queda con su precio y su proveedor, que es lo que
+      // después dice cuánto deja cada trago.
+      await Promise.all(filas.map((f) =>
+        updateDoc(doc(db, 'insumos', f.ins.id),
+          { costo: Number(f.costo), proveedorId })));
+    }
+    $('#dlgAlDia').close();
+  } catch (e) {
+    alert('No se pudo: ' + (e.code || e.message));
+  }
+  btn.disabled = false; btn.textContent = 'Guardar';
 }
 
 async function guardarNombreProveedor() {
@@ -2832,6 +3002,8 @@ async function guardarInsumo() {
     stock: Number(editandoInsumo?.stock || 0),
     costo: Math.max(0, Number($('#inpInsCosto').value) || 0),
     minimo: Math.max(0, Number($('#inpInsMinimo').value) || 0),
+    // El proveedor no se toca desde acá: si no se reenvía, se borra.
+    ...(editandoInsumo?.proveedorId ? { proveedorId: editandoInsumo.proveedorId } : {}),
     ...(editandoInsumo ? {} : { creadoEn: serverTimestamp() }),
   };
   try {

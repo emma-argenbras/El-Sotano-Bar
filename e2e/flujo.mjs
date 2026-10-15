@@ -1303,6 +1303,72 @@ await chequear('la cuenta corriente del proveedor suma, resta y se puede mirar',
   }
 });
 
+await chequear('poner al día el depósito le abre la cuenta a cada proveedor', async () => {
+  // La barra cargó la mercadería sin precio y sin proveedor para poder
+  // vender. Esto lo completa después, de una sola vez, sin volver a sumar el
+  // stock —que ya está contado— y abriendo la cuenta del proveedor.
+  let dijo = '';
+  const oir = async (d) => { dijo = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#tabDeposito');
+    await barra.waitForSelector('#btnNuevoInsumo', { timeout: 10000 });
+
+    // Un insumo como los carga la barra: nombre y poco más.
+    await barra.click('#btnNuevoInsumo');
+    await barra.waitForSelector('#dlgInsumo[open]', { timeout: 5000 });
+    await barra.fill('#inpInsNombre', 'Gancia 950');
+    await barra.fill('#inpInsUnidad', 'botella');
+    await barra.fill('#inpInsMedidas', '5');
+    await barra.fill('#inpInsCosto', '');
+    await barra.click('#btnGuardarInsumo');
+    await barra.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('Gancia 950'),
+      null, { timeout: 10000 });
+
+    // El panel avisa que falta y ofrece completarlo.
+    await barra.waitForSelector('#btnAlDia', { timeout: 10000 });
+    await barra.click('#btnAlDia');
+    await barra.waitForSelector('#dlgAlDia[open]', { timeout: 5000 });
+
+    const fila = barra.locator('#cuerpoAlDia .item', { hasText: 'Gancia 950' });
+    await fila.locator('[data-ald-prov]').fill('Bebidas del Sur');
+    await fila.locator('[data-ald-costo]').fill('9000');
+    await fila.locator('[data-ald-uni]').fill('2');
+    await barra.click('#btnGuardarAlDia');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgAlDia')?.open, null, { timeout: 10000 });
+
+    // La deuda quedó abierta con ese proveedor…
+    await barra.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('Bebidas del Sur'),
+      null, { timeout: 10000 });
+    const dice = await barra.textContent('#deposito');
+    if (!dice.includes('18.000')) throw new Error('no abrió la deuda: ' + dice.slice(0, 300));
+    if (!dice.includes('sin sumar stock'))
+      throw new Error('no avisa que el ingreso no sumó stock');
+
+    // …y el stock sigue donde estaba: la mercadería ya estaba contada.
+    const g = (await db.collection('insumos').where('nombre', '==', 'Gancia 950').get()).docs[0];
+    if (Number(g.data().stock) !== 0)
+      throw new Error('volvió a sumar stock: quedó en ' + g.data().stock);
+    if (Number(g.data().costo) !== 9000)
+      throw new Error('no le guardó el precio al insumo');
+    if (!g.data().proveedorId) throw new Error('no le guardó el proveedor al insumo');
+
+    // Y la cuenta del proveedor nuevo se puede abrir.
+    await barra.locator('#deposito tr', { hasText: 'Bebidas del Sur' }).click();
+    await barra.waitForSelector('#dlgProveedor[open]', { timeout: 5000 });
+    if (!(await barra.textContent('#cuerpoProveedor')).includes('se le debe'))
+      throw new Error('la cuenta del proveedor nuevo no muestra el saldo');
+    if (dijo) throw new Error('el panel se quejó: ' + dijo);
+  } finally {
+    barra.removeListener('dialog', oir);
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+  }
+});
+
 await chequear('la carta se queda sin stock sola cuando el depósito se vacía', async () => {
   // Lo que el cliente ve no puede depender de que alguien se acuerde de tocar
   // "Agotar": si no hay fernet en el depósito, el fernet con coca no se puede

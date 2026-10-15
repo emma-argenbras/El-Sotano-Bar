@@ -301,6 +301,16 @@ describe('ingresos de mercadería y proveedores', () => {
       compra({ condicion: 'inicial', total: 0 })));
   });
 
+  it('y la que solo deja constancia, sin volver a sumar stock', async () => {
+    await assertSucceeds(setDoc(doc(barra(), 'compras/compra-3'),
+      compra({ sinStock: true })));
+  });
+
+  it('pero sinStock tiene que ser sí o no, no cualquier cosa', async () => {
+    await assertFails(setDoc(doc(barra(), 'compras/mala-3'),
+      compra({ sinStock: 'puede ser' })));
+  });
+
   it('con una condición inventada NO', async () => {
     await assertFails(setDoc(doc(barra(), 'compras/mala-1'),
       compra({ condicion: 'fiado' })));

@@ -244,8 +244,11 @@ service cloud.firestore {
     // no es plata que salió. 'contado' se paga en el acto y además queda como
     // gasto; 'cuenta' no toca la caja hasta que se le pague al proveedor.
     function compraValida(d) {
+      // sinStock marca el ingreso que solo deja constancia: la mercadería ya
+      // estaba contada en el depósito y volver a sumarla la contaría dos veces.
       return d.keys().hasOnly(['proveedorId', 'proveedor', 'fecha', 'items', 'total',
-                               'condicion', 'pago', 'cargadoPor', 'creadoEn'])
+                               'condicion', 'pago', 'cargadoPor', 'creadoEn', 'sinStock'])
+        && (!('sinStock' in d.keys()) || d.sinStock is bool)
         && d.items is list && d.items.size() > 0 && d.items.size() <= 60
         && d.total is number && d.total >= 0 && d.total <= 50000000
         && d.condicion in ['contado', 'cuenta', 'inicial']
