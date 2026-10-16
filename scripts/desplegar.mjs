@@ -54,7 +54,7 @@ const BLOQUES = {
   },
 };
 
-const SITIO = 'https://el-sotano-bar.web.app';
+const SITIO = 'https://sotano.web.app';
 
 // ---------------------------------------------------------------------------
 const letra = (process.argv[2] || '').trim().toUpperCase();

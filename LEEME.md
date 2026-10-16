@@ -3,8 +3,8 @@
 Los clientes escanean el QR de su mesa, ven la carta y piden desde el celular.
 La barra ve los pedidos entrar en vivo y los va moviendo hasta entregarlos.
 
-- **Cliente:** https://el-sotano-bar.web.app
-- **Barra:** https://el-sotano-bar.web.app/bar.html
+- **Cliente:** https://sotano.web.app
+- **Barra:** https://sotano.web.app/bar.html
 - **Proyecto Firebase:** `el-sotano-bar` (Firestore en São Paulo, plan Spark)
 
 ---

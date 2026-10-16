@@ -72,7 +72,7 @@ Si algo falla, se detiene ahí y dice qué pasó. No sigue a ver si funciona.
 
 ## Qué mirar después de cada bloque
 
-En **https://el-sotano-bar.web.app/bar.html**.
+En **https://sotano.web.app/bar.html**.
 
 Nada de esto vende, carga ni mueve stock: es todo mirar.
 

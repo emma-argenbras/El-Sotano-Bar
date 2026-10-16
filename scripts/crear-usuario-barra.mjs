@@ -38,6 +38,6 @@ Abrí este link UNA vez y elegí la contraseña de la barra:
 
 ${link}
 
-Después entrá en https://el-sotano-bar.web.app/bar.html
+Después entrá en https://sotano.web.app/bar.html
 (el claim de rol se aplica al volver a iniciar sesión)
 `);
