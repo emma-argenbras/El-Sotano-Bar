@@ -13,7 +13,7 @@ import { app, db } from './conexion.js';
 import { comoSeDice, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
 import { hora } from './invitados.js';
 import { cajaActual, pintarTablero, quienAtiende } from './pedidos.js';
-import { moverInsumos } from './stock.js';
+import { moverInsumos, opcionesDe } from './stock.js';
 
 // ---------- de qué sale cada producto de la carta ----------
 export let recetaDe = null;
@@ -37,7 +37,58 @@ export function abrirReceta(item) {
       }).join('')}</div>`
     : `<div class="aviso mal"><span>⚠</span><div>
         <b>Todavía no hay insumos.</b> Cargalos en <b>Depósito</b> y volvé.</div></div>`;
+  pintarMarcas(item);
+  verPestañaReceta('receta');
+  $('#tabsReceta').querySelectorAll('[data-tabreceta]').forEach((b) =>
+    b.onclick = () => verPestañaReceta(b.dataset.tabreceta));
   $('#dlgReceta').showModal();
+}
+
+function verPestañaReceta(cual) {
+  $('#cuerpoReceta').hidden = cual !== 'receta';
+  $('#cuerpoMarcas').hidden = cual !== 'marcas';
+  $('#tabsReceta').querySelectorAll('[data-tabreceta]').forEach((b) =>
+    b.setAttribute('aria-selected', String(b.dataset.tabreceta === cual)));
+}
+
+// ---------- las marcas entre las que elige el cliente ----------
+//
+// Una cerveza en lata no es un producto: son cuatro latas distintas al mismo
+// precio, cada una de su propia caja. Separarlas en cuatro productos llena la
+// carta de renglones casi iguales; esto las deja en uno solo y hace que el
+// cliente diga cuál quiere antes de agregarla.
+//
+// Lo que define una marca es de qué insumo sale. Sin eso no es una marca: es
+// un texto, y el depósito no se entera de nada.
+export function pintarMarcas(item) {
+  const marcas = opcionesDe(item);
+  $('#cuerpoMarcas').innerHTML = !estado.insumos.length
+    ? `<div class="aviso mal"><span>⚠</span><div>
+        <b>Todavía no hay insumos.</b> Cargalos en <b>Depósito</b> y volvé.</div></div>`
+    : `<p style="color:var(--suave);font-size:.84rem;margin:0 0 .7rem">
+        Marcá los insumos entre los que el cliente elige. Cada uno se le
+        ofrece como una opción y descuenta de su propia caja. Si no marcás
+        ninguno, el producto se vende sin preguntar nada.</p>
+      <div class="lista-conteo">${estado.insumos.map((i) => {
+        const puesta = marcas.find((o) => o.insumoId === i.id);
+        return `
+        <div class="item">
+          <label class="cuerpo" style="display:flex;align-items:center;gap:.6rem;cursor:pointer">
+            <input type="checkbox" data-marca="${esc(i.id)}" style="width:auto;margin:0"
+                   ${puesta ? 'checked' : ''}>
+            <span>
+              <span class="nombre">${esc(i.nombre)}</span>
+              <span class="desc" style="display:block">hay ${comoSeDice(i)}</span>
+            </span>
+          </label>
+          <input class="conteo-num" type="number" min="0" inputmode="numeric"
+                 data-marca-medidas="${esc(i.id)}" placeholder="1"
+                 title="Medidas que se lleva esta marca"
+                 value="${puesta?.medidas ?? ''}">
+        </div>`;
+      }).join('')}</div>
+      <p style="font-size:.76rem;color:var(--suave);margin:.6rem 0 0">
+        El número es cuántas medidas se lleva esa marca. Vacío cuenta como 1.</p>`;
 }
 
 export async function guardarReceta() {
@@ -46,8 +97,28 @@ export async function guardarReceta() {
     const medidas = Number(inp.value) || 0;
     if (medidas > 0) receta.push({ insumoId: inp.dataset.receta, medidas });
   });
+
+  // El id de la marca es el del insumo: es lo único que no se repite y no
+  // hay que inventarlo. El nombre se copia del depósito para que el cliente
+  // vea "Quilmes" y no un código.
+  const opciones = [];
+  $('#cuerpoMarcas').querySelectorAll('[data-marca]').forEach((chk) => {
+    if (!chk.checked) return;
+    const id = chk.dataset.marca;
+    const ins = estado.insumos.find((i) => i.id === id);
+    const medidas = Math.max(1,
+      Number($(`[data-marca-medidas="${CSS.escape(id)}"]`)?.value) || 1);
+    opciones.push({ id, nombre: ins?.nombre || id, insumoId: id, medidas });
+  });
+
+  if (opciones.length === 1) {
+    alert('Una sola marca no es una elección.\n\nPoné dos o más, o ninguna y '
+      + 'cargala en "Siempre lleva".');
+    return;
+  }
+
   try {
-    await updateDoc(doc(db, 'carta', recetaDe.id), { receta });
+    await updateDoc(doc(db, 'carta', recetaDe.id), { receta, opciones });
     $('#dlgReceta').close();
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }

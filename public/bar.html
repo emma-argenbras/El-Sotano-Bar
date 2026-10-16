@@ -310,7 +310,12 @@
   <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 1rem">
     Cuántas medidas del depósito se lleva cada uno que se vende. Si lo dejás
     vacío, este producto no descuenta del depósito.</p>
+  <div class="tabs chicas" id="tabsReceta">
+    <button data-tabreceta="receta" aria-selected="true">Siempre lleva</button>
+    <button data-tabreceta="marcas" aria-selected="false">Elige el cliente</button>
+  </div>
   <div id="cuerpoReceta"></div>
+  <div id="cuerpoMarcas" hidden></div>
   <div style="display:flex;gap:.6rem;margin-top:1rem">
     <button class="btn" id="btnCancelarReceta" style="flex:1">Volver</button>
     <button class="btn primario" id="btnGuardarReceta" style="flex:1.4">Guardar</button>

@@ -149,9 +149,15 @@ service cloud.firestore {
     // apagadoAMano es del que está en la barra: se rompió la botella y el
     // depósito todavía dice que hay. Por eso entra acá y no en lo que solo
     // toca un administrador —el que ve el problema es el que atiende—.
+    // Lo que la barra puede tocar de un producto: cuánto queda y si se vende.
+    //
+    // opcionesStock es cuántas quedan de cada marca. Va aparte de 'opciones',
+    // que es de qué caja del depósito sale cada una: eso lo decide la casa.
+    // Si fueran el mismo campo, escribir el stock sería poder cambiar de
+    // dónde se descuenta.
     function soloStock() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['stock', 'disponible', 'apagadoAMano']);
+        .hasOnly(['stock', 'disponible', 'apagadoAMano', 'opcionesStock']);
     }
 
     function esDueno(uid) {

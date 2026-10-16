@@ -248,12 +248,54 @@ function pintarCarta() {
 
   cont.querySelectorAll('[data-mas]').forEach((b) => b.onclick = () => sumar(b.dataset.mas, +1));
   cont.querySelectorAll('[data-menos]').forEach((b) => b.onclick = () => sumar(b.dataset.menos, -1));
+  cont.querySelectorAll('[data-elegir]').forEach((b) => b.onclick = () => abrirOpcion(b.dataset.elegir));
 }
 
+// Los productos con marca: una cerveza en lata son cuatro latas distintas al
+// mismo precio. El cliente elige cuál antes de agregarla, y lo que elige
+// viaja con el pedido para que la barra sepa qué sacar de la heladera.
+const marcasDe = (i) => (i?.opciones || []).filter((o) => o && o.id && o.nombre);
+
+// En el carrito, un producto con marca ocupa un renglón por marca: dos
+// Quilmes y una Brahma son dos renglones, no tres latas iguales.
+const claveDe = (id, opcionId) => (opcionId ? `${id}::${opcionId}` : id);
+const partirClave = (clave) => {
+  const i = clave.indexOf('::');
+  return i < 0 ? { id: clave, opcionId: null } : { id: clave.slice(0, i), opcionId: clave.slice(i + 2) };
+};
+
+// Cuántas quedan de esa marca. Lo escribe el panel en la misma operación que
+// mueve el stock; si todavía no lo escribió nunca, se asume que hay.
+const hayDeLaMarca = (i, o) => Number(i?.opcionesStock?.[o.id] ?? 1) > 0;
+
 function filaItem(i) {
-  const n = estado.carrito.get(i.id) || 0;
+  const marcas = marcasDe(i);
+  const enCarrito = [...estado.carrito]
+    .filter(([k]) => partirClave(k).id === i.id)
+    .reduce((s, [, n]) => s + n, 0);
   const sinStock = i.disponible === false || (typeof i.stock === 'number' && i.stock <= 0);
   const topeStock = typeof i.stock === 'number' ? i.stock : Infinity;
+
+  // Con marcas no hay +/-: hay un botón que abre la pregunta. Sumar sin
+  // elegir dejaría a la barra adivinando qué lata sacar.
+  if (marcas.length) {
+    return `
+    <div class="item ${sinStock ? 'agotado' : ''}">
+      <div class="cuerpo">
+        <div class="nombre">${esc(i.nombre || i.id)}${sinStock ? ' — <small>sin stock</small>' : ''}</div>
+        <div class="desc">${i.descripcion ? esc(i.descripcion) + ' · ' : ''}${
+          marcas.map((o) => esc(o.nombre)).join(' · ')}</div>
+      </div>
+      <div class="precio">${plata(i.precio)}</div>
+      ${sinStock ? '' : `
+      <div class="cant">
+        <button class="btn primario" data-elegir="${i.id}" style="padding:.35rem .8rem">
+          ${enCarrito ? `Agregar otra · ${enCarrito}` : 'Elegir'}</button>
+      </div>`}
+    </div>`;
+  }
+
+  const n = estado.carrito.get(i.id) || 0;
   return `
   <div class="item ${sinStock ? 'agotado' : ''}">
     <div class="cuerpo">
@@ -270,22 +312,63 @@ function filaItem(i) {
   </div>`;
 }
 
+// La pregunta. Nada de preseleccionar: el botón de agregar arranca apagado y
+// se prende cuando el cliente toca una marca. Una marca elegida sin querer
+// es una lata equivocada servida en la barra.
+let eligiendo = null;
+function abrirOpcion(id) {
+  const i = estado.carta.find((x) => x.id === id);
+  if (!i) return;
+  eligiendo = { id, opcionId: null };
+  $('#tituloOpcion').textContent = i.nombre || id;
+  $('#cuerpoOpcion').innerHTML = `
+    <p style="color:var(--suave);font-size:.9rem;margin:.2rem 0 1rem">
+      Elegí cuál querés. ${plata(i.precio)} cualquiera.</p>
+    ${marcasDe(i).map((o) => {
+      const hay = hayDeLaMarca(i, o);
+      return `
+      <button class="btn ancho-full" data-opcion="${esc(o.id)}" ${hay ? '' : 'disabled'}
+              style="margin-bottom:.5rem;text-align:left;padding:.85rem .9rem;${
+                hay ? '' : 'opacity:.45'}">
+        <b>${esc(o.nombre)}</b>${hay ? '' : '<span style="font-weight:400"> — se acabó</span>'}
+      </button>`;
+    }).join('')}`;
+
+  $('#cuerpoOpcion').querySelectorAll('[data-opcion]').forEach((b) => b.onclick = () => {
+    eligiendo.opcionId = b.dataset.opcion;
+    $('#cuerpoOpcion').querySelectorAll('[data-opcion]').forEach((x) =>
+      x.classList.toggle('primario', x === b));
+    $('#btnAgregarOpcion').disabled = false;
+  });
+  $('#btnAgregarOpcion').disabled = true;
+  $('#dlgOpcion').showModal();
+}
+
 // ---------- carrito ----------
-function sumar(id, delta) {
+function sumar(clave, delta) {
+  const { id } = partirClave(clave);
   const item = estado.carta.find((i) => i.id === id);
   if (!item) return;
   const tope = typeof item.stock === 'number' ? item.stock : 99;
-  const n = Math.max(0, Math.min(tope, (estado.carrito.get(id) || 0) + delta));
-  if (n === 0) estado.carrito.delete(id); else estado.carrito.set(id, n);
+  const n = Math.max(0, Math.min(tope, (estado.carrito.get(clave) || 0) + delta));
+  if (n === 0) estado.carrito.delete(clave); else estado.carrito.set(clave, n);
   if (navigator.vibrate) navigator.vibrate(8);
   pintarCarta();
   pintarCarrito();
 }
 
 function lineas() {
-  return [...estado.carrito].map(([id, cantidad]) => {
+  return [...estado.carrito].map(([clave, cantidad]) => {
+    const { id, opcionId } = partirClave(clave);
     const i = estado.carta.find((x) => x.id === id);
-    return { id, nombre: i?.nombre || id, precio: Number(i?.precio || 0), cantidad };
+    const o = opcionId ? marcasDe(i).find((x) => x.id === opcionId) : null;
+    return {
+      id,
+      nombre: i?.nombre || id,
+      precio: Number(i?.precio || 0),
+      cantidad,
+      ...(o ? { opcionId: o.id, opcionNombre: o.nombre } : {}),
+    };
   });
 }
 const totalCarrito = () => lineas().reduce((s, l) => s + l.precio * l.cantidad, 0);
@@ -301,6 +384,14 @@ function pintarCarrito() {
 
 $('#btnVaciar').onclick = () => { estado.carrito.clear(); pintarCarta(); pintarCarrito(); };
 
+$('#btnCancelarOpcion').onclick = () => { eligiendo = null; $('#dlgOpcion').close(); };
+$('#btnAgregarOpcion').onclick = () => {
+  if (!eligiendo?.opcionId) return;
+  sumar(claveDe(eligiendo.id, eligiendo.opcionId), +1);
+  eligiendo = null;
+  $('#dlgOpcion').close();
+};
+
 $('#btnConfirmar').onclick = () => {
   if (!estado.tomandoPedidos) {
     alert('Por ahora no se están tomando pedidos. Acercate a la barra.');
@@ -308,7 +399,8 @@ $('#btnConfirmar').onclick = () => {
   }
   $('#inpNombre').value = $('#inpNombre').value || quienSoy;
   $('#resumenPedido').innerHTML = lineas().map((l) =>
-    `<div style="display:flex;gap:.5rem"><span style="flex:1">${l.cantidad}× ${esc(l.nombre)}</span>
+    `<div style="display:flex;gap:.5rem"><span style="flex:1">${l.cantidad}× ${esc(l.nombre)}${
+       l.opcionNombre ? ' · ' + esc(l.opcionNombre) : ''}</span>
      <b>${plata(l.precio * l.cantidad)}</b></div>`).join('')
     + `<div style="display:flex;gap:.5rem;margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--borde)">
        <span style="flex:1">Total</span><b style="color:var(--oro)">${plata(totalCarrito())}</b></div>`;

@@ -545,6 +545,55 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
   });
 
+  // Las marcas de un producto: de qué caja sale cada una (configuración de
+  // la casa) contra cuántas quedan (lo que pasa esta noche).
+  describe('las marcas de un producto', () => {
+    it('la casa define de qué caja sale cada marca', async () => {
+      await assertSucceeds(updateDoc(doc(gerente(), 'carta/fernet'), {
+        opciones: [
+          { id: 'quilmes', nombre: 'Quilmes', insumoId: 'ins-quilmes', medidas: 1 },
+          { id: 'brahma', nombre: 'Brahma', insumoId: 'ins-brahma', medidas: 1 },
+        ],
+      }));
+    });
+
+    it('la barra escribe cuántas quedan de cada marca', async () => {
+      await assertSucceeds(updateDoc(doc(aparato(), 'carta/fernet'), {
+        stock: 5, disponible: true, opcionesStock: { quilmes: 2, brahma: 3 },
+      }));
+    });
+
+    // El candado que importa: escribir el stock no puede ser la puerta de
+    // atrás para cambiar de qué caja se descuenta.
+    it('la barra NO puede cambiar de qué caja sale una marca', async () => {
+      await assertFails(updateDoc(doc(aparato(), 'carta/fernet'), {
+        opciones: [{ id: 'quilmes', nombre: 'Quilmes', insumoId: 'otra-caja', medidas: 1 }],
+      }));
+      await assertFails(updateDoc(doc(aparato(), 'carta/fernet'), {
+        opcionesStock: { quilmes: 0 },
+        opciones: [{ id: 'quilmes', nombre: 'Quilmes', insumoId: 'otra-caja', medidas: 1 }],
+      }));
+    });
+
+    it('y el cliente no toca nada de esto', async () => {
+      await assertFails(updateDoc(doc(anon(), 'carta/fernet'), { opcionesStock: { quilmes: 99 } }));
+      await assertFails(updateDoc(doc(anon(), 'carta/fernet'), { opciones: [] }));
+    });
+
+    it('pero sí las lee: tiene que poder elegir', async () => {
+      await assertSucceeds(getDoc(doc(sinLoguear(), 'carta/fernet')));
+    });
+
+    // Un pedido con la marca elegida adentro: la barra tiene que saber qué
+    // lata sacar de la heladera.
+    it('el pedido viaja con la marca elegida', async () => {
+      await assertSucceeds(setDoc(doc(anon(), 'pedidos/pedido-con-marca-1'), pedidoDe('cliente-anon-1', {
+        items: [{ id: 'fernet', nombre: 'Cerveza en lata', precio: 4500, cantidad: 2,
+                  opcionId: 'quilmes', opcionNombre: 'Quilmes' }],
+      })));
+    });
+  });
+
   // La merma de un conteo aplicado. Es la única explicación que queda de por
   // qué el stock cambió sin una venta ni una compra.
   describe('la merma de un conteo aplicado', () => {

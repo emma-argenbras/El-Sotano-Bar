@@ -11,7 +11,7 @@ import {
   where,
 } from '/vendor/firebase.js';
 import { $, COLUMNAS, DEMORA_MS, esc, estado, plata } from './base.js';
-import { costoDeItems, moverInsumos } from './stock.js';
+import { costoDeItems, moverInsumos, opcionesDe, recetaCompleta } from './stock.js';
 import { app, auth, db, pintarConexion } from './conexion.js';
 import { cajaDeHoy } from './jornada.js';
 import { desdeCuando, pintarEvento, resumirCaja } from './eventos.js';
@@ -121,7 +121,8 @@ export function ticket(p, col) {
       <span class="reloj ${tarde ? 'tarde' : ''}">${min < 1 ? 'recién' : min + ' min'}</span>
     </div>
     <ul>${(p.items || []).map((i) =>
-      `<li><b>${Number(i.cantidad)}×</b> ${esc(i.nombre)}</li>`).join('')}</ul>
+      `<li><b>${Number(i.cantidad)}×</b> ${esc(i.nombre)}${
+        i.opcionNombre ? ` · <b style="color:var(--oro)">${esc(i.opcionNombre)}</b>` : ''}</li>`).join('')}</ul>
     ${p.nota ? `<div class="nota">📝 ${esc(p.nota)}</div>` : ''}
     ${desfasado ? `<div class="sospecha">${aviso}</div>` : ''}
     <div class="pie">
@@ -200,32 +201,63 @@ export function abrirVenta() {
   pintarVenta();
 }
 
+// En la barra, un producto con marcas se muestra desarmado: un renglón por
+// marca. Acá no hay que preguntar nada —el que atiende ya sabe cuál le
+// pidieron— y un diálogo de más por lata es una cola más larga.
+export const claveVenta = (id, opcionId) => (opcionId ? `${id}::${opcionId}` : id);
+export function partirVenta(clave) {
+  const i = clave.indexOf('::');
+  return i < 0 ? { id: clave, opcionId: null } : { id: clave.slice(0, i), opcionId: clave.slice(i + 2) };
+}
+
+// Cada renglón vendible: el producto solo, o el producto por cada marca.
+export function renglonesVendibles() {
+  const out = [];
+  for (const i of estado.carta.filter((x) => x.enCarta !== false)) {
+    const marcas = opcionesDe(i);
+    if (!marcas.length) {
+      out.push({ clave: i.id, item: i, opcion: null, nombre: i.nombre || i.id,
+                 agotado: i.disponible === false });
+      continue;
+    }
+    for (const o of marcas) {
+      out.push({
+        clave: claveVenta(i.id, o.id), item: i, opcion: o,
+        nombre: `${i.nombre || i.id} · ${o.nombre}`,
+        agotado: i.disponible === false || Number(i.opcionesStock?.[o.id] ?? 1) <= 0,
+      });
+    }
+  }
+  return out;
+}
+
 export function totalVenta() {
-  return Object.entries(estado.venta).reduce((s, [id, cant]) => {
+  return Object.entries(estado.venta).reduce((s, [clave, cant]) => {
+    const { id } = partirVenta(clave);
     const c = estado.carta.find((x) => x.id === id);
     return s + Number(c?.precio || 0) * cant;
   }, 0);
 }
 
 export function pintarVenta() {
-  const vendibles = estado.carta.filter((i) => i.enCarta !== false);
+  const vendibles = renglonesVendibles();
   const total = totalVenta();
   const quien = quienAtiende();
   $('#cuerpoVenta').innerHTML = `
     ${estado.esAparato && !quien ? `<div class="aviso mal"><span>⚠</span><div>
       <b>Elegí quién está atendiendo</b> arriba, antes de cobrar.</div></div>` : ''}
     <div class="lista-venta">
-      ${vendibles.map((i) => `
-        <div class="item ${i.disponible === false ? 'agotado' : ''}">
+      ${vendibles.map((v) => `
+        <div class="item ${v.agotado ? 'agotado' : ''}">
           <div class="cuerpo">
-            <div class="nombre">${esc(i.nombre || i.id)}</div>
-            <div class="desc">${plata(i.precio)}${i.disponible === false ? ' · agotado' : ''}</div>
+            <div class="nombre">${esc(v.nombre)}</div>
+            <div class="desc">${plata(v.item.precio)}${v.agotado ? ' · agotado' : ''}</div>
           </div>
           <div class="cant">
-            <button data-venta="${i.id}" data-d="-1" aria-label="Quitar">−</button>
-            <span class="n">${estado.venta[i.id] || 0}</span>
-            <button data-venta="${i.id}" data-d="1" aria-label="Agregar"
-                    ${i.disponible === false ? 'disabled' : ''}>+</button>
+            <button data-venta="${esc(v.clave)}" data-d="-1" aria-label="Quitar">−</button>
+            <span class="n">${estado.venta[v.clave] || 0}</span>
+            <button data-venta="${esc(v.clave)}" data-d="1" aria-label="Agregar"
+                    ${v.agotado ? 'disabled' : ''}>+</button>
           </div>
         </div>`).join('')}
     </div>
@@ -240,9 +272,9 @@ export function pintarVenta() {
     </div>`;
 
   $('#cuerpoVenta').querySelectorAll('[data-venta]').forEach((b) => b.onclick = () => {
-    const id = b.dataset.venta;
-    const cuanto = (estado.venta[id] || 0) + Number(b.dataset.d);
-    if (cuanto <= 0) delete estado.venta[id]; else estado.venta[id] = cuanto;
+    const clave = b.dataset.venta;
+    const cuanto = (estado.venta[clave] || 0) + Number(b.dataset.d);
+    if (cuanto <= 0) delete estado.venta[clave]; else estado.venta[clave] = cuanto;
     pintarVenta();
   });
   if ($('#btnVentaEfectivo')) $('#btnVentaEfectivo').onclick = () => cobrarVenta('efectivo');
@@ -250,9 +282,14 @@ export function pintarVenta() {
 }
 
 export async function cobrarVenta(pago) {
-  const items = Object.entries(estado.venta).map(([id, cantidad]) => {
+  const items = Object.entries(estado.venta).map(([clave, cantidad]) => {
+    const { id, opcionId } = partirVenta(clave);
     const c = estado.carta.find((x) => x.id === id) || {};
-    return { id, nombre: c.nombre || id, precio: Number(c.precio || 0), cantidad };
+    const o = opcionId ? opcionesDe(c).find((x) => x.id === opcionId) : null;
+    return {
+      id, nombre: c.nombre || id, precio: Number(c.precio || 0), cantidad,
+      ...(o ? { opcionId: o.id, opcionNombre: o.nombre } : {}),
+    };
   });
   if (!items.length) return;
   const quien = quienAtiende();
@@ -302,9 +339,12 @@ export async function moverStock(pedido, signo) {
     const c = estado.carta.find((x) => x.id === i.id);
     if (!c) continue;
     const cuantos = Number(i.cantidad || 0);
-    if (Array.isArray(c.receta) && c.receta.length) {
+    // Con marca, la receta incluye la caja de esa marca y no la de otra: el
+    // que pidió Quilmes descuenta Quilmes.
+    const receta = recetaCompleta(c, i.opcionId);
+    if (receta.length) {
       // Sale del depósito: una medida por vez, no una botella.
-      for (const r of c.receta) {
+      for (const r of receta) {
         porInsumo.set(r.insumoId,
           (porInsumo.get(r.insumoId) || 0) + Number(r.medidas || 0) * cuantos);
       }

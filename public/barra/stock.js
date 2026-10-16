@@ -105,8 +105,23 @@ export function apuntarDisponibilidad(lote, movimientos, quedan) {
   for (const c of tocados) {
     const rinde = rindeCon(c, mapa);
     const disponible = c.apagadoAMano === true ? false : rinde > 0;
-    if (c.stock === rinde && c.disponible === disponible) continue;
-    lote.update(doc(db, 'carta', c.id), { stock: rinde, disponible });
+
+    // Cuántas quedan de cada marca. Va aparte de la lista de marcas: eso es
+    // configuración de la casa y esto es lo que pasa esta noche. Separarlos
+    // es lo que deja que el celular de la barra escriba el stock sin poder
+    // tocar de qué caja sale cada marca.
+    const marcas = opcionesDe(c);
+    const porMarca = marcas.length
+      ? Object.fromEntries(marcas.map((o) => [o.id, rindeOpcion(c, o.id, mapa)]))
+      : null;
+    const marcasIguales = !porMarca
+      || marcas.every((o) => Number(c.opcionesStock?.[o.id]) === porMarca[o.id]);
+
+    if (c.stock === rinde && c.disponible === disponible && marcasIguales) continue;
+    lote.update(doc(db, 'carta', c.id), {
+      stock: rinde, disponible,
+      ...(porMarca ? { opcionesStock: porMarca } : {}),
+    });
   }
   return tocados.length;
 }
