@@ -11,10 +11,30 @@ import { writeBatch, doc, increment } from '/vendor/firebase.js';
 import { estado } from './base.js';
 import { db } from './conexion.js';
 
-// Cuántas veces sale un producto con el stock que se le pase. Infinity es
-// "no lleva cuenta": los productos sin receta no salen del depósito.
-export function rindeCon(item, stockPorInsumo) {
-  const receta = (item.receta || []).filter((r) => Number(r.medidas) > 0);
+// Las marcas entre las que elige el cliente. Una cerveza en lata no es un
+// producto: son cuatro latas distintas con el mismo precio, y cada una sale
+// de su propia caja del depósito.
+//
+//   opciones: [{ id, nombre, insumoId, medidas }]
+//
+// Un producto sin opciones se comporta como siempre.
+export const opcionesDe = (item) => (item?.opciones || [])
+  .filter((o) => o && o.id && o.insumoId && Number(o.medidas) > 0);
+
+export const opcionDe = (item, opcionId) =>
+  opcionesDe(item).find((o) => o.id === opcionId) || null;
+
+// Lo que se lleva del depósito una unidad de este producto con esta marca:
+// la receta común más lo de la marca elegida.
+export function recetaCompleta(item, opcionId) {
+  const base = (item?.receta || []).filter((r) => Number(r.medidas) > 0);
+  const o = opcionId ? opcionDe(item, opcionId) : null;
+  return o ? [...base, { insumoId: o.insumoId, medidas: Number(o.medidas) }] : base;
+}
+
+// Cuántas salen con el stock que se le pase. Infinity es "no lleva cuenta":
+// los productos sin receta no salen del depósito.
+function rindeReceta(receta, stockPorInsumo) {
   if (!receta.length) return Infinity;
   let menor = Infinity;
   for (const r of receta) {
@@ -25,6 +45,27 @@ export function rindeCon(item, stockPorInsumo) {
   }
   return Math.max(0, menor);
 }
+
+// Cuántas veces sale un producto. Con marcas, es la suma de lo que rinde
+// cada una: quedan dos Quilmes y tres Brahma, hay cinco latas para vender.
+// Que se acabe una marca no agota el producto —esa es la gracia de esto—,
+// pero que se acaben todas, sí.
+export function rindeCon(item, stockPorInsumo) {
+  const marcas = opcionesDe(item);
+  if (!marcas.length) return rindeReceta(recetaCompleta(item), stockPorInsumo);
+  let total = 0;
+  for (const o of marcas) {
+    const r = rindeReceta(recetaCompleta(item, o.id), stockPorInsumo);
+    if (r === Infinity) return Infinity;
+    total += r;
+  }
+  return total;
+}
+
+// Cuántas salen de una marca en particular. Es lo que decide si esa opción
+// se le ofrece al cliente o se le muestra agotada.
+export const rindeOpcion = (item, opcionId, stockPorInsumo) =>
+  rindeReceta(recetaCompleta(item, opcionId), stockPorInsumo);
 
 // El stock que va a quedar después del movimiento, según lo que el panel tiene
 // en memoria. Es una estimación: la resta de verdad la hace el servidor con
@@ -48,7 +89,8 @@ function stockDespues(movimientos) {
 export function productosQueUsan(insumoIds) {
   const ids = new Set(insumoIds);
   return estado.carta.filter((c) =>
-    (c.receta || []).some((r) => ids.has(r.insumoId)));
+    (c.receta || []).some((r) => ids.has(r.insumoId))
+    || opcionesDe(c).some((o) => ids.has(o.insumoId)));
 }
 
 // Agrega al lote lo que hay que escribir en la carta por un movimiento de
@@ -72,9 +114,12 @@ export function apuntarDisponibilidad(lote, movimientos, quedan) {
 // Lo que le cuesta a la casa una unidad de un producto, según su receta y lo
 // que valen hoy los insumos. null = no se sabe: falta el costo de al menos
 // una botella, y media cuenta es peor que ninguna.
-export function costoDeReceta(item) {
-  const receta = (item.receta || []).filter((r) => Number(r.medidas) > 0);
+export function costoDeReceta(item, opcionId) {
+  const receta = recetaCompleta(item, opcionId);
   if (!receta.length) return null;
+  // Con marcas y sin saber cuál se vendió no hay un costo: dos latas
+  // distintas cuestan distinto, y promediarlas sería inventar.
+  if (!opcionId && opcionesDe(item).length) return null;
   let total = 0;
   for (const r of receta) {
     const ins = estado.insumos.find((i) => i.id === r.insumoId);
@@ -101,7 +146,7 @@ export function costoDeItems(items) {
   let de = 0;
   for (const i of (items || [])) {
     const c = estado.carta.find((x) => x.id === i.id);
-    const unitario = c ? costoDeReceta(c) : null;
+    const unitario = c ? costoDeReceta(c, i.opcionId) : null;
     if (unitario === null) continue;
     const cuantos = Number(i.cantidad || 0);
     mercaderia += unitario * cuantos;
