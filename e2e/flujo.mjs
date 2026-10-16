@@ -1311,6 +1311,38 @@ await chequear('la cuenta corriente del proveedor suma, resta y se puede mirar',
   }
 });
 
+await chequear('el precio se cambia en Administración, al lado de lo que deja', async () => {
+  // Poner un precio sin ver el costo es apostar. Acá los dos números están
+  // en la misma fila, y el margen se recalcula al guardar.
+  await barra.click('#tabCaja');
+  await barra.waitForSelector('#admCostos [data-precio]', { timeout: 15000 });
+
+  const fila = barra.locator('#admCostos tr', { hasText: 'Fernet con coca' });
+  const campo = fila.locator('[data-precio]');
+  const antes = Number(await campo.inputValue());
+  if (!antes) throw new Error('el producto no tiene precio para cambiar');
+
+  await campo.fill(String(antes + 1000));
+  await campo.blur();
+  for (let i = 0; i < 40; i++) {
+    const d = (await db.collection('carta').where('nombre', '==', 'Fernet con coca').get()).docs[0];
+    if (Number(d.data().precio) === antes + 1000) break;
+    if (i === 39) throw new Error('no guardó el precio: quedó en ' + d.data().precio);
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+
+  // Y lo deja como estaba, para no ensuciarle la carta a los casos que siguen.
+  await barra.waitForTimeout(500);
+  await fila.locator('[data-precio]').fill(String(antes));
+  await fila.locator('[data-precio]').blur();
+  for (let i = 0; i < 40; i++) {
+    const d = (await db.collection('carta').where('nombre', '==', 'Fernet con coca').get()).docs[0];
+    if (Number(d.data().precio) === antes) break;
+    if (i === 39) throw new Error('no pudo volver al precio original');
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
 await chequear('la carta avisa cuándo un producto no sale del depósito', async () => {
   // Un producto sin receta se vende sin descontar ninguna botella. Eso no se
   // puede descubrir tres meses después mirando por qué no cierra el stock.

@@ -51,6 +51,9 @@ before(async () => {
       total: 4500, creadoEn: new Date(),
     });
     await setDoc(doc(db, 'barra/caja'), { abierta: true, totalNoche: 182000 });
+    await setDoc(doc(db, 'barra/eventos/items/ev-1'), {
+      nombre: 'Noche', estado: 'agendado', capacidad: 100, entrada: 5000,
+    });
     // Personal de turno: uno habilitado y uno apagado.
     await setDoc(doc(db, 'accesosBarra/uid-turno-ok'), { usuario: 'nico', activo: true, rol: 'barman' });
     await setDoc(doc(db, 'accesosBarra/uid-gerente'), { usuario: 'guille', activo: true, rol: 'admin' });
@@ -1109,6 +1112,16 @@ describe('las pantallas apagadas frenan de verdad', () => {
 
   it('sin ninguna de las dos, las compras siguen cerradas', async () => {
     await assertFails(getDocs(collection(recortado(), 'compras')));
+  });
+
+  // El precio de la entrada es plata; la fecha y el cupo son del Calendario.
+  it('desde Administración se toca el precio de la entrada y nada más', async () => {
+    await assertSucceeds(updateDoc(
+      doc(soloPlata(), 'barra/eventos/items/ev-1'), { entrada: 8000 }));
+    await assertFails(updateDoc(
+      doc(soloPlata(), 'barra/eventos/items/ev-1'), { entrada: 8000, capacidad: 999 }));
+    await assertFails(updateDoc(
+      doc(soloPlata(), 'barra/eventos/items/ev-1'), { capacidad: 999 }));
   });
 
   it('sin depósito no carga mercadería ni ve las compras', async () => {

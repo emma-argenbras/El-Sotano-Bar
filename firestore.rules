@@ -287,7 +287,10 @@ service cloud.firestore {
       // Precios, nombres y altas: gerente para arriba.
       allow create: if esAdmin() && puedo('carta');
       // La barra solo marca agotado y ajusta el stock de lo que ya existe.
-      allow update: if (esAdmin() && puedo('carta')) || (esBarra() && soloStock());
+      // El precio también se toca desde Administración, al lado del costo:
+      // poner un precio sin ver lo que deja es apostar.
+      allow update: if (esAdmin() && (puedo('carta') || puedo('caja')))
+        || (esBarra() && soloStock());
       // Borrar es del dueño y de nadie más.
       allow delete: if esElDueno();
     }
@@ -341,8 +344,16 @@ service cloud.firestore {
       allow delete: if esElDueno();
     }
 
+    // La noche se agenda desde el Calendario. El precio de la entrada es
+    // plata, así que también se toca desde Administración —pero solo eso:
+    // la fecha, el cupo y los barmanes siguen siendo del Calendario.
+    function soloEntrada() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['entrada']);
+    }
     match /barra/eventos/items/{id} {
-      allow create, update: if esAdmin() && puedo('calendario');
+      allow create: if esAdmin() && puedo('calendario');
+      allow update: if esAdmin()
+        && (puedo('calendario') || (puedo('caja') && soloEntrada()));
     }
 
     match /barra/turno {

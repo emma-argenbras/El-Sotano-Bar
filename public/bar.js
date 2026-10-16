@@ -234,7 +234,7 @@ function escucharEvento() {
   // abierto para una noche agendada sin que la noche haya empezado.
   onSnapshot(query(EVENTOS(), where('estado', '==', 'agendado'), orderBy('fecha', 'asc')), (snap) => {
     estado.agenda = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    pintarEvento(); pintarCalendario();
+    pintarEvento(); pintarCalendario(); pintarAdminEntradas();
   }, fallo('#evento'));
 
   onSnapshot(query(EVENTOS(), where('estado', '==', 'abierto'), limit(1)), (snap) => {
@@ -2632,6 +2632,51 @@ function pintarAdmin() {
   pintarAdminProveedores();
   pintarAdminMercaderia();
   pintarAdminCostos();
+  pintarAdminEntradas();
+}
+
+// ---------- Administración: lo que se cobra en la puerta ----------
+// La noche se agenda en el Calendario; acá solo se le pone precio a la
+// entrada, que es plata y por eso vive en el mismo lugar que el resto.
+function pintarAdminEntradas() {
+  const cont = $('#admEntradas');
+  if (!cont || $('#vistaCaja').hidden) return;
+  if (cont.contains(document.activeElement)) return;
+
+  const noches = [
+    ...(estado.evento ? [{ ...estado.evento, ahora: true }] : []),
+    ...estado.agenda,
+  ];
+
+  cont.innerHTML = !noches.length
+    ? `<div class="vacio">No hay noches agendadas.<br>
+       <small>Se agendan en <b>Calendario</b>.</small></div>`
+    : `<table class="ranking"><tbody>
+      ${noches.map((e) => `
+        <tr>
+          <td>${esc(e.nombre || 'Noche')}${e.ahora
+            ? ' <small style="color:var(--verde)">en curso</small>' : ''}
+            <br><small style="color:var(--suave)">${
+              e.fecha?.toDate?.().toLocaleDateString('es-AR') || ''}</small></td>
+          <td class="n" style="width:7rem">
+            <input data-entrada="${esc(e.id)}" type="number" min="0" inputmode="numeric"
+                   value="${Number(e.entrada || 0) || ''}" placeholder="gratis"
+                   aria-label="Entrada de ${esc(e.nombre || 'la noche')}"
+                   style="width:100%;text-align:right">
+            <small style="color:var(--suave)">entrada</small></td>
+        </tr>`).join('')}
+    </tbody></table>`;
+
+  cont.querySelectorAll('[data-entrada]').forEach((el) => el.onchange = async () => {
+    const ev = noches.find((x) => x.id === el.dataset.entrada);
+    const nuevo = Math.max(0, Math.round(Number(el.value) || 0));
+    if (!ev || nuevo === Number(ev.entrada || 0)) return;
+    try { await updateDoc(doc(EVENTOS(), ev.id), { entrada: nuevo }); }
+    catch (err) {
+      el.value = Number(ev.entrada || 0) || '';
+      alert('No se pudo: ' + (err.code || err.message));
+    }
+  });
 }
 
 function pintarAdminProveedores() {
@@ -2739,13 +2784,16 @@ function costoDeReceta(item) {
 function pintarAdminCostos() {
   const cont = $('#admCostos');
   if (!cont || $('#vistaCaja').hidden) return;
+  // Si está escribiendo un precio, repintar le borra lo que escribió a mitad
+  // de camino. La tabla espera: el próximo cambio la vuelve a dibujar.
+  if (cont.contains(document.activeElement)) return;
 
   const filas = estado.carta
     .filter((i) => i.enCarta !== false)
     .map((i) => {
       const costo = costoDeReceta(i);
       const precio = Number(i.precio || 0);
-      return { nombre: i.nombre || i.id, precio, costo,
+      return { id: i.id, nombre: i.nombre || i.id, precio, costo,
                deja: costo === null ? null : precio - costo };
     });
   const conCuenta = filas.filter((f) => f.deja !== null);
@@ -2755,8 +2803,12 @@ function pintarAdminCostos() {
       ${filas.map((f) => `
         <tr>
           <td>${esc(f.nombre)}<br><small style="color:var(--suave)">
-            ${f.costo === null ? 'sin costo cargado'
-              : `cuesta ${plata(f.costo)} · se vende ${plata(f.precio)}`}</small></td>
+            ${f.costo === null ? 'sin costo cargado' : `cuesta ${plata(f.costo)}`}</small></td>
+          <td class="n" style="width:6.5rem">
+            <input data-precio="${esc(f.id)}" type="number" min="0" inputmode="numeric"
+                   value="${f.precio || ''}" aria-label="Precio de ${esc(f.nombre)}"
+                   style="width:100%;text-align:right">
+            <small style="color:var(--suave)">se vende</small></td>
           <td class="n">${f.deja === null ? '—'
             : `<b style="color:var(--${f.deja > 0 ? 'verde' : 'rojo'})">${plata(f.deja)}</b>
                <br><small style="color:var(--suave)">${f.precio
@@ -2768,6 +2820,19 @@ function pintarAdminCostos() {
         Los que dicen “sin costo cargado” no tienen receta o les falta el precio
         del insumo. Se arregla en <b>Carta → 🧾</b> y acá arriba en
         <b>Poner al día</b>.</p>` : ''}`;
+
+  // El precio se guarda al salir del campo, no en cada tecla: escribir 2500
+  // pasaría por 2, 25 y 250, y cada uno sería un precio real por un rato.
+  cont.querySelectorAll('[data-precio]').forEach((e) => e.onchange = async () => {
+    const i = estado.carta.find((x) => x.id === e.dataset.precio);
+    const nuevo = Math.max(0, Math.round(Number(e.value) || 0));
+    if (!i || nuevo === Number(i.precio || 0)) return;
+    try { await updateDoc(doc(db, 'carta', i.id), { precio: nuevo }); }
+    catch (err) {
+      e.value = i.precio || '';
+      alert('No se pudo: ' + (err.code || err.message));
+    }
+  });
 }
 
 // ---------- la cuenta de un proveedor ----------
