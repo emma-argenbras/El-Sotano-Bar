@@ -545,6 +545,90 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
   });
 
+  // La merma de un conteo aplicado. Es la única explicación que queda de por
+  // qué el stock cambió sin una venta ni una compra.
+  describe('la merma de un conteo aplicado', () => {
+    let n = 0;
+    const merma = (extra = {}) => ({
+      cajaId: 'dia-2026-10-16', clave: 'ins:fernet', nombre: 'Fernet',
+      unidad: 'botella', enApp: 40, contado: 36, diferencia: -4,
+      motivo: 'se rompieron dos botellas en la barra',
+      quien: 'nico', cuando: serverTimestamp(), ...extra,
+    });
+    const nueva = () => `merma-${++n}`;
+
+    it('la casa la escribe al aplicar el conteo', async () => {
+      await assertSucceeds(setDoc(doc(gerente(), 'mermas/' + nueva()), merma()));
+    });
+
+    it('un sobrante también se anota', async () => {
+      await assertSucceeds(setDoc(doc(gerente(), 'mermas/' + nueva()),
+        merma({ enApp: 36, contado: 40, diferencia: 4 })));
+    });
+
+    // Si el número no sale de los otros dos, la merma no explica el ajuste
+    // que la acompaña: queda un stock movido con una excusa que no cierra.
+    it('una diferencia que no cierra con la cuenta NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'mermas/' + nueva()),
+        merma({ enApp: 40, contado: 36, diferencia: -10 })));
+    });
+
+    it('una merma de cero NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'mermas/' + nueva()),
+        merma({ enApp: 40, contado: 40, diferencia: 0 })));
+    });
+
+    it('sin motivo, o con un motivo de una letra, NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'mermas/' + nueva()),
+        merma({ motivo: '' })));
+      await assertFails(setDoc(doc(gerente(), 'mermas/' + nueva()),
+        merma({ motivo: 'x' })));
+    });
+
+    it('un conteo negativo NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'mermas/' + nueva()),
+        merma({ enApp: 0, contado: -4, diferencia: -4 })));
+    });
+
+    it('la fecha la pone el servidor', async () => {
+      await assertFails(setDoc(doc(gerente(), 'mermas/' + nueva()),
+        merma({ cuando: new Date(2020, 0, 1) })));
+    });
+
+    it('un campo de más NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'mermas/' + nueva()),
+        merma({ inventado: true })));
+    });
+
+    // Ajustar el depósito es de quien lo administra: el barman carga los
+    // números del conteo, la casa decide aplicarlos.
+    it('el barman no ajusta el depósito', async () => {
+      await assertFails(setDoc(doc(turnoOk(), 'mermas/' + nueva()), merma()));
+      await assertFails(setDoc(doc(aparato(), 'mermas/' + nueva()), merma()));
+      await assertFails(setDoc(doc(anon(), 'mermas/' + nueva()), merma()));
+    });
+
+    it('un admin con el Depósito apagado tampoco', async () => {
+      await assertFails(setDoc(doc(soloPlata(), 'mermas/' + nueva()), merma()));
+    });
+
+    // Una merma que se puede retocar no sirve para controlar a nadie.
+    it('no se edita ni se borra, ni por el dueño', async () => {
+      const id = nueva();
+      await assertSucceeds(setDoc(doc(gerente(), 'mermas/' + id), merma()));
+      await assertFails(updateDoc(doc(barra(), 'mermas/' + id), { diferencia: 0 }));
+      await assertFails(updateDoc(doc(barra(), 'mermas/' + id), { motivo: 'otra cosa' }));
+      await assertFails(deleteDoc(doc(barra(), 'mermas/' + id)));
+    });
+
+    it('la lee quien administra la plata o el depósito', async () => {
+      await assertSucceeds(getDocs(collection(gerente(), 'mermas')));
+      await assertSucceeds(getDocs(collection(soloPlata(), 'mermas')));
+      await assertFails(getDocs(collection(turnoOk(), 'mermas')));
+      await assertFails(getDocs(collection(anon(), 'mermas')));
+    });
+  });
+
   // El costo de la mercadería, congelado al entregar. Es lo que hace que la
   // ganancia de una noche no se mueva sola cuando entra una compra más cara.
   describe('el costo congelado de un pedido', () => {

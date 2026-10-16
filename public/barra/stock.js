@@ -130,10 +130,12 @@ export async function moverInsumos(movimientos, extras, apuntes) {
       : { stock: increment(Number(m.delta || 0)) });
   }
   // Lo que no sale del depósito y lleva su propio número: los productos de la
-  // carta sin receta.
+  // carta sin receta. Igual que arriba: delta suma, valor deja en ese número.
   for (const e of (extras || [])) {
     lote.update(doc(db, 'carta', e.id), {
-      stock: increment(Number(e.delta || 0)),
+      ...(e.valor !== undefined
+        ? { stock: Math.max(0, Number(e.valor)) }
+        : { stock: increment(Number(e.delta || 0)) }),
       ...(e.disponible === undefined ? {} : { disponible: e.disponible }),
     });
   }
@@ -141,7 +143,8 @@ export async function moverInsumos(movimientos, extras, apuntes) {
   // el costo de la mercadería de un pedido entregado: si se escribiera aparte
   // y fallara, quedaría stock descontado sin costo, o al revés.
   for (const a of (apuntes || [])) {
-    lote.update(doc(db, a.coleccion, a.id), a.datos);
+    const ref = doc(db, a.coleccion, a.id);
+    if (a.crear) lote.set(ref, a.datos); else lote.update(ref, a.datos);
   }
   apuntarDisponibilidad(lote, reales);
   await lote.commit();

@@ -652,6 +652,43 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ---------- mermas: la diferencia de un conteo aplicado ----------
+    // Lo que apareció de menos (o de más) cuando se aplicó un conteo al
+    // depósito. Es la única explicación que queda de por qué el stock cambió
+    // sin una venta ni una compra, así que se escribe en el MISMO lote que el
+    // ajuste: sin esto, el stock se movería sin motivo y nadie podría
+    // reconstruir qué pasó esa noche.
+    //
+    // No se edita ni se borra. Una merma que se puede retocar no sirve para
+    // controlar a nadie, que es justamente para lo que está.
+    //
+    // Ajustar el depósito es de quien lo administra, no de quien cuenta: el
+    // barman carga los números, la casa decide aplicarlos.
+    match /mermas/{id} {
+      allow read: if esAdmin() && (puedo('deposito') || puedo('caja'));
+      allow create: if esAdmin() && puedo('deposito')
+        && request.resource.data.keys().hasAll(
+             ['nombre', 'motivo', 'quien', 'cuando', 'enApp', 'contado', 'diferencia'])
+        && request.resource.data.keys().hasOnly(
+             ['cajaId', 'clave', 'nombre', 'unidad', 'enApp', 'contado',
+              'diferencia', 'motivo', 'quien', 'cuando'])
+        && request.resource.data.motivo is string
+        && request.resource.data.motivo.size() >= 3
+        && request.resource.data.motivo.size() <= 200
+        && request.resource.data.enApp is int
+        && request.resource.data.contado is int
+        && request.resource.data.contado >= 0
+        && request.resource.data.diferencia is int
+        // La cuenta tiene que cerrar: si el número no sale de los otros dos,
+        // la merma anotada no explica el ajuste que la acompaña.
+        && request.resource.data.diferencia
+             == request.resource.data.contado - request.resource.data.enApp
+        // Una merma de cero no es una merma: es ruido que tapa las de verdad.
+        && request.resource.data.diferencia != 0
+        && request.resource.data.cuando == request.time;
+      allow update, delete: if false;
+    }
+
     // ---------- el conteo de la noche ----------
     // Control, no inventario: lo que se cuenta a mano al abrir y al cerrar.
     // NO mueve el stock de la carta — ese baja solo al entregar. Sirve para

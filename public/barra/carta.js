@@ -13,6 +13,7 @@ import { app, db } from './conexion.js';
 import { comoSeDice, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
 import { hora } from './invitados.js';
 import { cajaActual, pintarTablero, quienAtiende } from './pedidos.js';
+import { moverInsumos } from './stock.js';
 
 // ---------- de qué sale cada producto de la carta ----------
 export let recetaDe = null;
@@ -172,9 +173,15 @@ export function pintarConteo() {
       <p style="font-size:.76rem;color:var(--suave);margin:.8rem 0 0">
         Lo contó ${esc(c.aperturaPor || '—')} al abrir y ${esc(c.cierrePor || '—')} al cerrar.
         Lo del depósito va en medidas. El conteo no movió el stock.</p>
+      <button class="btn primario ancho-full solo-gerente-inline" id="btnAplicarConteo"
+              style="margin-top:.9rem">Aplicar conteo al depósito</button>
+      <p class="solo-gerente-inline" style="font-size:.76rem;color:var(--suave);margin:.4rem 0 0">
+        Deja el stock en lo que contaste y anota la diferencia como merma.
+        Vas a ver qué cambia antes de confirmar.</p>
       <button class="btn ancho-full solo-gerente-inline" id="btnRehacerConteo"
               style="margin-top:.7rem">Empezar un conteo nuevo</button>`;
     if ($('#btnRehacerConteo')) $('#btnRehacerConteo').onclick = rehacerConteo;
+    if ($('#btnAplicarConteo')) $('#btnAplicarConteo').onclick = pedirAplicarConteo;
     return;
   }
 
@@ -246,6 +253,152 @@ export async function guardarConteo(etapa) {
     alert('No se pudo guardar: ' + (e.code || e.message));
   }
   btn.disabled = false;
+}
+
+// ---------- aplicar el conteo al depósito ----------
+//
+// El conteo por sí solo no mueve nada: es control. Esto es el paso aparte,
+// a mano y con confirmación, que dice "lo que hay es lo que conté".
+//
+// Nunca automático, a propósito. Un conteo mal cargado que ajusta solo es
+// peor que no contar: borra las ventas de la noche sin que nadie se entere.
+//
+// Lo que se aplica es "lo contado contra lo que dice la app AHORA", no contra
+// lo que decía cuando se contó. Si entre el conteo y esto alguien vendió, la
+// diferencia lo muestra y el que confirma lo ve.
+export function diferenciasDelConteo() {
+  const c = estado.conteo || {};
+  if (!c.cierreEn) return [];
+  return cosasAContar()
+    .filter((x) => c.cierre?.[x.clave] !== undefined)
+    .map((x) => {
+      const contado = Number(c.cierre[x.clave]);
+      const enApp = Number(x.enApp || 0);
+      return { x, contado, enApp, dif: contado - enApp };
+    })
+    .filter((f) => f.dif !== 0);
+}
+
+export function pedirAplicarConteo() {
+  const filas = diferenciasDelConteo();
+  const comoSe = (f, n) => f.x.medidas > 1
+    ? `${n} <small>med</small>` : String(n);
+
+  if (!filas.length) {
+    $('#cuerpoConteo').innerHTML = `
+      <div class="aviso ok"><span>✓</span><div>
+        <b>No hay nada que ajustar.</b> Lo que contaste es exactamente lo que
+        dice la app.</div></div>
+      <button class="btn ancho-full" id="btnVolverConteo" style="margin-top:.9rem">Volver</button>`;
+    $('#btnVolverConteo').onclick = pintarConteo;
+    return;
+  }
+
+  const faltan = filas.filter((f) => f.dif < 0);
+  const sobran = filas.filter((f) => f.dif > 0);
+
+  $('#cuerpoConteo').innerHTML = `
+    <div class="aviso mal"><span>⚠</span><div>
+      <b>Esto cambia el stock del depósito.</b><br>
+      ${faltan.length ? `${faltan.length} con menos de lo que dice la app` : ''}${
+        faltan.length && sobran.length ? ' · ' : ''}${
+        sobran.length ? `${sobran.length} con más` : ''}.
+      Lo que falta queda anotado como merma, con tu motivo, y no se borra.</div></div>
+
+    <table class="ranking tabla-conteo" style="margin-top:.8rem"><thead>
+      <tr><th>Qué</th><th class="n">Dice la app</th><th class="n">Contaste</th>
+          <th class="n">Queda en</th><th class="n">Dif</th></tr></thead><tbody>
+      ${filas.map((f) => `
+        <tr class="${f.dif < 0 ? 'falta' : 'sobra'}">
+          <td>${esc(f.x.nombre)}</td>
+          <td class="n">${comoSe(f, f.enApp)}</td>
+          <td class="n">${comoSe(f, f.contado)}</td>
+          <td class="n"><b>${comoSe(f, f.contado)}</b></td>
+          <td class="n">${f.dif > 0 ? '+' : ''}${f.dif}</td>
+        </tr>`).join('')}
+    </tbody></table>
+
+    <label class="campo" style="margin-top:.9rem">
+      <span>¿Por qué la diferencia? <small>(queda anotado para siempre)</small></span>
+      <input id="inpMotivoConteo" maxlength="200" autocomplete="off"
+             placeholder="ej. se rompieron dos botellas en la barra">
+    </label>
+    <div id="errorConteo" class="aviso mal oculto" style="margin:.2rem 0 .6rem">
+      <span>⚠</span><div id="errorConteoTexto"></div></div>
+
+    <div style="display:flex;gap:.6rem;margin-top:.4rem">
+      <button class="btn" id="btnVolverConteo" style="flex:1">Volver</button>
+      <button class="btn primario" id="btnConfirmarConteo" style="flex:1.4">
+        Ajustar ${filas.length} producto${filas.length === 1 ? '' : 's'}</button>
+    </div>`;
+
+  $('#btnVolverConteo').onclick = pintarConteo;
+  $('#btnConfirmarConteo').onclick = aplicarConteo;
+  $('#inpMotivoConteo').focus();
+}
+
+export async function aplicarConteo() {
+  const filas = diferenciasDelConteo();
+  if (!filas.length) { pintarConteo(); return; }
+
+  const motivo = $('#inpMotivoConteo').value.trim();
+  const fallar = (t) => {
+    $('#errorConteoTexto').textContent = t;
+    $('#errorConteo').classList.remove('oculto');
+  };
+  if (motivo.length < 3) {
+    fallar('Escribí el motivo: es lo único que queda después del ajuste.');
+    $('#inpMotivoConteo').focus();
+    return;
+  }
+
+  const btn = $('#btnConfirmarConteo');
+  btn.disabled = true; btn.textContent = 'Ajustando…';
+
+  // Todo en un lote: el stock nuevo y la merma anotada. Si se cayera en el
+  // medio, quedaría el stock cambiado sin ninguna explicación de por qué.
+  const quien = quienAtiende() || estado.usuario || 'la casa';
+  const lote = cajaActual();
+  const movimientos = [];
+  const extras = [];
+  const apuntes = [];
+
+  for (const f of filas) {
+    if (f.x.insumo) movimientos.push({ insumoId: f.x.insumo.id, valor: f.contado });
+    else extras.push({ id: f.x.clave.slice('item:'.length), valor: f.contado });
+
+    apuntes.push({
+      coleccion: 'mermas',
+      id: doc(collection(db, 'mermas')).id,
+      crear: true,
+      datos: {
+        cajaId: lote,
+        clave: f.x.clave,
+        nombre: f.x.nombre,
+        unidad: f.x.unidad || 'unidad',
+        enApp: f.enApp,
+        contado: f.contado,
+        diferencia: f.dif,
+        motivo, quien,
+        cuando: serverTimestamp(),
+      },
+    });
+  }
+
+  try {
+    await moverInsumos(movimientos, extras, apuntes);
+    $('#cuerpoConteo').innerHTML = `
+      <div class="aviso ok"><span>✓</span><div>
+        <b>Listo.</b> El depósito quedó en lo que contaste, y la diferencia
+        quedó anotada.</div></div>
+      <button class="btn ancho-full" id="btnVolverConteo" style="margin-top:.9rem">Volver</button>`;
+    $('#btnVolverConteo').onclick = pintarConteo;
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = `Ajustar ${filas.length} producto${filas.length === 1 ? '' : 's'}`;
+    fallar('No se pudo: ' + (e.code || e.message)
+      + '. No se cambió nada: el ajuste va entero o no va.');
+  }
 }
 
 export async function rehacerConteo() {
