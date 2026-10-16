@@ -50,7 +50,9 @@ for (const d of carta.docs) {
     orden: Number(c.orden ?? 999),
     // enCarta false = lo sacaron de la venta. En el catálogo eso es "inactivo":
     // sigue estando para poder volver a usarlo, pero no entra en una fecha nueva.
-    activo: c.enCarta !== false,
+    // Decisión de la casa: lo que hoy está agotado y apagado nace apagado en
+    // el catálogo, para que no se cuele en la primera fecha que se arme.
+    activo: c.enCarta !== false && c.disponible !== false,
     ...(receta.length ? { receta } : {}),
   };
 
