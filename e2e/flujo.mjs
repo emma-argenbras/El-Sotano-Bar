@@ -2946,6 +2946,118 @@ await chequear('también marca el pedido con un id que no existe en la carta', a
   if (!marcado) throw new Error('el pedido con id inventado pasó sin marcar');
 });
 
+// ---------- el cierre de la jornada ----------
+// El número con el que se termina la noche. Lo que importa no es que la
+// pantalla dibuje: es que al cerrar los números queden CONGELADOS.
+console.log('\nEL CIERRE DE LA JORNADA');
+
+await chequear('el tablero muestra los cinco números de la noche', async () => {
+  await barra.click('#tabCaja');
+  await barra.waitForSelector('#cierre .tarjeta', { timeout: 20000 });
+  const t = await barra.textContent('#cierre');
+  for (const debe of ['Total vendido', 'Diferencia de caja', 'Ganancia', 'Lo más vendido']) {
+    if (!t.includes(debe)) throw new Error('le falta "' + debe + '": ' + t.slice(0, 300));
+  }
+  if (!t.includes('Jornada en curso'))
+    throw new Error('no avisa que la jornada está abierta y los números se mueven');
+});
+
+await chequear('sin contar el cajón no se cierra nada', async () => {
+  await barra.click('#btnCerrarJornada');
+  await barra.waitForSelector('#dlgCerrarJornada[open]', { timeout: 10000 });
+
+  // Contar ANTES de ver lo esperado: si se ve primero, se copia.
+  const antes = await barra.textContent('#cuerpoCerrarJornada');
+  if (/esperad/i.test(antes))
+    throw new Error('muestra lo esperado antes de que cuenten: se copia');
+
+  await barra.click('#btnVerCierre');
+  await barra.waitForFunction(() =>
+    !document.querySelector('#errorCierre')?.classList.contains('oculto'),
+    null, { timeout: 10000 })
+    .catch(() => { throw new Error('dejó seguir sin contar el cajón'); });
+  if (!(await db.collection('jornadas').get()).empty)
+    throw new Error('cerró la jornada igual');
+});
+
+await chequear('contado el cajón, muestra la diferencia exacta', async () => {
+  // Un número cualquiera: lo que importa es que la resta se vea.
+  await barra.fill('#inpContado', '1');
+  await barra.click('#btnVerCierre');
+  await barra.waitForFunction(() =>
+    document.querySelector('#cuerpoCerrarJornada')?.textContent.includes('Diferencia de caja'),
+    null, { timeout: 10000 });
+  const t = await barra.textContent('#cuerpoCerrarJornada');
+  // Sin tolerancia: cualquier diferencia se dice, con el monto.
+  if (!/Faltan|Sobran|cuadra/i.test(t))
+    throw new Error('no dice si falta o sobra: ' + t.slice(0, 200));
+  if (!t.includes('congelados')) throw new Error('no avisa que se congela');
+});
+
+await chequear('al confirmar, la jornada queda cerrada y con sus números', async () => {
+  await barra.click('#btnConfirmarCierre');
+  await barra.waitForSelector('#dlgCerrarJornada[open]', { state: 'detached', timeout: 15000 })
+    .catch(() => {});
+
+  let j;
+  for (let i = 0; i < 60; i++) {
+    const q = await db.collection('jornadas').get();
+    if (!q.empty && q.docs[0].data().cierre) { j = q.docs[0].data(); break; }
+    if (i === 59) throw new Error('nunca escribió la jornada');
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  const c = j.cierre;
+  for (const campo of ['ventas', 'entradas', 'gastos', 'caja', 'costo', 'top']) {
+    if (c[campo] === undefined) throw new Error('al cierre le falta ' + campo);
+  }
+  if (c.caja.contado !== 1) throw new Error('no guardó lo contado: ' + c.caja.contado);
+  if (c.caja.diferencia !== c.caja.contado - c.caja.esperado)
+    throw new Error('la diferencia no sale de la resta: ' + JSON.stringify(c.caja));
+  if (!j.cerradaPor) throw new Error('no dice quién cerró');
+  if (j.horaCorte !== 6) throw new Error('no guardó con qué corte se cerró');
+});
+
+// Esto es lo que hace que un cierre sirva: que no se mueva después.
+await chequear('una venta posterior NO mueve los números ya cerrados', async () => {
+  const antes = JSON.stringify((await db.collection('jornadas').get()).docs[0].data().cierre);
+
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Fernet con coca' })
+    .locator('[data-d="1"]').first().click();
+  await barra.click('#btnVentaEfectivo');
+  await barra.waitForSelector('#dlgVenta[open]', { state: 'detached', timeout: 15000 }).catch(() => {});
+  await barra.waitForTimeout(2500);
+
+  const ahora = JSON.stringify((await db.collection('jornadas').get()).docs[0].data().cierre);
+  if (ahora !== antes)
+    throw new Error('el cierre se movió solo después de cerrado');
+});
+
+await chequear('la jornada cerrada se muestra como congelada', async () => {
+  await barra.click('#tabCaja');
+  await barra.waitForFunction(() =>
+    document.querySelector('#cierre')?.textContent.includes('congelados'),
+    null, { timeout: 20000 })
+    .catch(() => { throw new Error('no dice que los números están congelados'); });
+  const t = await barra.textContent('#cierre');
+  if (!t.includes('Cerrada por')) throw new Error('no dice quién la cerró');
+});
+
+await chequear('comparar jornadas no inventa lo que no hay', async () => {
+  await barra.locator('#cierre [data-vista="comparar"]').click();
+  await barra.waitForFunction(() =>
+    document.querySelector('#cierre')?.textContent.includes('Vendido'),
+    null, { timeout: 10000 });
+  const t = await barra.textContent('#cierre');
+  for (const medida of ['Vendido', 'Ganancia', 'Diferencia de caja', 'Asistencia']) {
+    if (!t.includes(medida)) throw new Error('falta la medida ' + medida);
+  }
+  if (!t.includes('Todo junto')) throw new Error('no muestra la tabla con todo');
+  await barra.locator('#cierre [data-vista="una"]').click();
+});
+
 // ---------- la hora a la que corta el día del bar ----------
 // La noche no termina a medianoche. Qué plata es de qué noche depende de
 // este número, así que se mira que se vea, que se pueda mover y —sobre
