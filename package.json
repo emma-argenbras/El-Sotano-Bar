@@ -31,7 +31,8 @@
     "migrar:catalogo": "node scripts/migrar-catalogo.mjs",
     "separar:whiskies": "node scripts/separar-whiskies.mjs",
     "desplegar": "node scripts/desplegar.mjs",
-    "qr:operacion": "node scripts/qr-operacion.mjs"
+    "qr:operacion": "node scripts/qr-operacion.mjs",
+    "publicar": "node scripts/publicar.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

@@ -1,7 +1,7 @@
 # Desplegar a producción
 
-Desde la Mac, con un comando por bloque. No hace falta guardar ninguna clave
-en ningún lado: la sesión de Firebase vive en tu computadora y caduca sola.
+Publica Claude. Acá está cómo, qué candados tiene puestos, y qué hay que
+configurar una sola vez para que pueda.
 
 ---
 
@@ -37,6 +37,81 @@ Qué implica, en la práctica:
   `sotano.web.app` y los otros dos siguen igual, de red de contención.
 
 ---
+
+## Quién publica
+
+**Publica Claude.** Programa, prueba y publica. Vos no abrís la Terminal.
+
+Para eso hacen falta dos cosas, una sola vez, las dos desde el navegador:
+
+### 1. Una llave de Firebase acotada
+
+Una "cuenta de servicio": un usuario que no es una persona, que solo sabe
+hacer dos cosas y nada más.
+
+1. Crearla: **https://console.cloud.google.com/iam-admin/serviceaccounts/create?project=el-sotano-bar**
+   - Nombre: `publicador`
+   - **Continuar**
+2. Darle exactamente **dos** permisos, y ninguno más:
+   - `Administrador de Firebase Hosting`
+   - `Administrador de reglas de Firebase`
+   - **Listo**
+3. Bajar la llave: en la lista, los tres puntitos de `publicador` →
+   **Administrar claves** → **Agregar clave** → **Crear clave nueva** →
+   **JSON** → **Crear**. Se descarga un archivo.
+4. Cargarla en el entorno de Claude, **no en el chat**: menú del entorno (arriba)
+   → **Edit** → **Network secrets** → nombre `FIREBASE_SA_JSON`, valor: el
+   contenido entero del archivo. Después se puede borrar el archivo de la
+   computadora.
+
+**Por qué dos permisos y no "Administrador de Firebase":** con el rol
+completo, esa llave puede leer la base entera —nombres y teléfonos de todos
+los que alguna vez se anotaron—. Con estos dos, lo único que puede hacer es
+publicar la app y las reglas. Si alguna vez se filtra, no hay datos de nadie
+en juego.
+
+Se revoca en un click, en la misma pantalla de claves.
+
+### 2. Dejar ver el sitio publicado
+
+Sin esto, Claude publica pero no puede abrir la página para mirarla: la
+política de red del contenedor devuelve 403 para `*.web.app`. Verifica
+contra la API de Firebase, que dice qué versión quedó arriba, pero no ve la
+pantalla.
+
+Menú del entorno → **Edit** → **Network access** → agregar `*.web.app` en
+**Allowed domains**, dejando tildada la casilla de los gestores de paquetes.
+Pasos: https://code.claude.com/docs/en/cloud-environments#network-access
+
+---
+
+## Cómo publica
+
+```
+npm run publicar
+```
+
+Las cuatro reglas están metidas en el código, no dependen de que alguien se
+acuerde:
+
+1. **Solo con todos los tests en verde.** Los corre ahí mismo —reglas y
+   recorrido completo— y no confía en que alguien los haya corrido antes.
+2. **Nunca entre las 19:00 y las 06:00 de Argentina.** El bar está abierto.
+   Frena con la hora en pantalla y manda a esperar a la mañana.
+3. **Reglas primero, app después.** Si se corta justo en el medio, lo que
+   queda arriba son reglas nuevas con código viejo, que no rompe nada.
+4. **Después verifica contra la API** qué versión quedó publicada en cada uno
+   de los tres sitios, y avisa qué mirar en el celular.
+
+`npm run publicar -- --ensayo` hace todas las comprobaciones y no publica
+nada. `npm run publicar -- --solo-reglas`, solo las reglas.
+
+---
+
+## Si alguna vez tenés que publicar vos
+
+No hace falta en el día a día. Queda escrito por si Claude no está disponible
+y hay que sacar un arreglo urgente.
 
 ## Una sola vez
 
