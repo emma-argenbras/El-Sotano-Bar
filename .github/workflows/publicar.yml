@@ -55,6 +55,11 @@ jobs:
       - name: Instalar
         run: npm ci
 
+      # La máquina de GitHub no la trae. La necesitan los tests (levantan el
+      # emulador) y el despliegue de la app.
+      - name: Instalar la herramienta de Firebase
+        run: npm i -g firebase-tools@15
+
       # Primero la hora: si no se puede publicar, no se gasta nada más.
       #
       # La cuenta va escrita acá y no en un script del repositorio porque esta
@@ -109,7 +114,7 @@ jobs:
         if: ${{ !inputs.solo_reglas }}
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
-        run: npx --yes firebase-tools@15 deploy --only hosting --project el-sotano-bar --non-interactive
+        run: firebase deploy --only hosting --project el-sotano-bar --non-interactive
 
       # Contra la API, no contra la esperanza: que el comando haya terminado
       # sin error no es lo mismo que que el sitio esté sirviendo lo nuevo.
