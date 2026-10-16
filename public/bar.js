@@ -998,7 +998,7 @@ const PANTALLAS = [
   ['pedidos', 'Pedidos', 'El tablero: mover pedidos de estado'],
   ['carta', 'Carta', 'Precios, altas y sacar productos'],
   ['noche', 'Noche', 'Arrancar la noche y armar el turno'],
-  ['caja', 'Caja', 'La plata: ver y cargar gastos'],
+  ['caja', 'Administración', 'Toda la plata: caja, proveedores, costos'],
   ['deposito', 'Depósito', 'Insumos, compras y proveedores'],
   ['calendario', 'Calendario', 'Agendar noches y abrir registros'],
   ['puerta', 'Puerta', 'Escanear pases y marcar el ingreso'],
@@ -1767,6 +1767,7 @@ function aplicarRol() {
   // momento no se sabe qué pantallas tiene apagadas. Lo que ya se dibujó con
   // el dato viejo hay que volver a dibujarlo, o queda mostrando de más.
   pintarDeposito();
+  pintarAdmin();
   pintarCartaBar();
 }
 
@@ -2470,7 +2471,7 @@ function escucharDeposito() {
   onSnapshot(collection(db, 'insumos'), (snap) => {
     estado.insumos = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
-    pintarDeposito(); pintarConteo(); sincronizarCartaConDeposito();
+    pintarDeposito(); pintarAdmin(); pintarConteo(); sincronizarCartaConDeposito();
   }, fallo('#deposito'));
 
 }
@@ -2495,8 +2496,8 @@ function escucharPlataDeposito() {
   onSnapshot(collection(db, 'egresos'), (snap) => {
     estado.egresosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     estado.sinPagos = false;
-    pintarDeposito();
-  }, () => { estado.sinPagos = true; pintarDeposito(); });
+    pintarAdmin();
+  }, () => { estado.sinPagos = true; pintarAdmin(); });
 
   // El alias al que transfieren la entrada. Vive en publico/ porque el
   // invitado lo tiene que poder leer sin cuenta: es lo único que necesita
@@ -2508,12 +2509,12 @@ function escucharPlataDeposito() {
   onSnapshot(collection(db, 'proveedores'), (snap) => {
     estado.proveedores = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
-    pintarDeposito();
+    pintarAdmin();
   }, () => {});
   onSnapshot(collection(db, 'compras'), (snap) => {
     estado.compras = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0));
-    pintarDeposito();
+    pintarAdmin();
   }, () => {});
 }
 
@@ -2573,74 +2574,30 @@ function comoSeLlamaProveedor(c) {
   return p?.nombre || c.proveedor || '';
 }
 
+// El Depósito dice qué hay y nada más. Cuánto costó, a quién se le debe y
+// cuánto deja cada trago viven en Administración: es plata, y la plata va
+// toda al mismo lugar.
 function pintarDeposito() {
   const cont = $('#deposito');
   if (!cont || $('#vistaDeposito').hidden) return;
   const bajos = estado.insumos.filter((i) =>
     Number(i.minimo || 0) > 0 && unidadesDe(i) < Number(i.minimo));
-  // Se listan todos los que tuvieron movimiento, no solo los que deben: al
-  // que está al día también hay que poder abrirle la cuenta y mirarla.
-  const conCuenta = estado.proveedores
-    .map((p) => ({ ...p, saldo: saldoProveedor(p.id),
-                   movs: movimientosProveedor(p.id).length }))
-    .filter((p) => p.movs > 0)
-    .sort((a, b) => b.saldo - a.saldo);
-  const deuda = conCuenta.reduce((a, p) => a + Math.max(0, p.saldo), 0);
 
-  // El celular de la barra mira y nada más: no da de alta mercadería, no
-  // carga compras y no ve la plata. Mostrarle esos botones sería ofrecerle
-  // algo que las reglas le van a negar.
+  // El celular de la barra mira y nada más: no da de alta mercadería y no
+  // ve la plata. Mostrarle esos botones sería ofrecerle algo que las reglas
+  // le van a negar.
   const soloMira = estado.esAparato;
-
-  // Lo que entró al depósito sin decir de quién vino ni cuánto salió: la
-  // mercadería está, pero no hay con qué armar la cuenta del proveedor ni
-  // con qué saber cuánto deja cada trago.
-  // Se mira contra las fichas que existen hoy: un proveedor borrado deja al
-  // insumo apuntando a la nada, y eso también es un producto sin proveedor.
-  // Dos motivos para no mostrar saldos: no tener la pantalla de Caja, o que
-  // las reglas nieguen los gastos. Cualquiera de los dos deja la cuenta coja.
-  const sinPagos = estado.sinPagos || !estado.veCaja;
-
-  const sinDatos = estado.insumos.filter((i) =>
-    !estado.proveedores.some((p) => p.id === i.proveedorId) || !Number(i.costo || 0));
 
   cont.innerHTML = `
     ${soloMira ? '' : `
-    <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem">
-      <button class="btn primario" id="btnNuevaCompra" style="flex:1">+ Ingreso de mercadería</button>
-      <button class="btn" id="btnNuevoInsumo" style="flex:1">+ Insumo</button>
-    </div>`}
-
-    ${!soloMira && sinDatos.length ? `<div class="aviso" style="margin-bottom:.9rem">
-      <span>📋</span><div>
-      <b>${sinDatos.length} producto${sinDatos.length === 1 ? '' : 's'} sin proveedor ni precio.</b>
-      Cargalos de una y cada proveedor arranca su cuenta corriente.
-      <button class="btn primario ancho-full" id="btnAlDia" style="margin-top:.6rem">
-        Poner al día el depósito</button></div></div>` : ''}
+    <button class="btn primario ancho-full" id="btnNuevoInsumo"
+            style="margin-bottom:.9rem">+ Insumo</button>`}
 
     ${soloMira ? `<p style="color:var(--suave);font-size:.86rem;margin:0 0 .9rem">
       Lo que hay guardado, para saber qué se puede hacer. Lo carga la casa.</p>` : ''}
 
     ${bajos.length ? `<div class="aviso mal"><span>⚠</span><div>
       <b>Se está por acabar:</b> ${bajos.map((i) => esc(i.nombre)).join(', ')}.</div></div>` : ''}
-
-    ${conCuenta.length && !soloMira && sinPagos ? `<div class="aviso" style="margin-bottom:.9rem">
-      <span>🔒</span><div>Las cuentas corrientes de proveedores se miran con el
-      permiso de <b>Caja</b>: sin los pagos cargados, el saldo contaría como
-      pendiente plata que ya fue abonada.</div></div>` : ''}
-
-    ${conCuenta.length && !soloMira && !sinPagos ? `<div class="caja-evento" style="margin-bottom:.9rem">
-      <div class="titulo">Cuenta corriente de proveedores</div>
-      <div class="numeros"><div class="plata"><b>${plata(deuda)}</b><span>se debe</span></div></div>
-      <table class="ranking"><tbody>${conCuenta.map((p) => `
-        <tr data-ver-prov="${esc(p.id)}" style="cursor:pointer">
-          <td>${esc(p.nombre)} <small style="color:var(--suave)">ver cuenta ›</small></td>
-          <td class="n">${p.saldo > 0.5 ? plata(p.saldo)
-            : p.saldo < -0.5 ? `a favor ${plata(-p.saldo)}` : 'al día'}</td></tr>`).join('')}
-      </tbody></table>
-      <p style="font-size:.76rem;color:var(--suave);margin:.7rem 0 0">
-        Para bajar una deuda, cargá el pago en <b>Caja → + Cargar gasto</b> eligiendo al proveedor.</p>
-    </div>` : ''}
 
     ${estado.insumos.length ? estado.insumos.map((i) => {
       const bajo = Number(i.minimo || 0) > 0 && unidadesDe(i) < Number(i.minimo);
@@ -2649,9 +2606,7 @@ function pintarDeposito() {
         <div class="cuerpo">
           <div class="nombre">${esc(i.nombre)}</div>
           <div class="desc">${comoSeDice(i)}${
-            Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}${
-            // Lo que costó es plata de la casa: en el celular del mostrador no va.
-            i.costo && !soloMira ? ` · ${plata(i.costo)} c/u` : ''}</div>
+            Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}</div>
         </div>
         ${soloMira ? '' : `
         <button class="btn" data-editar-insumo="${esc(i.id)}"
@@ -2661,274 +2616,158 @@ function pintarDeposito() {
       </div>`;
     }).join('')
       : `<div class="vacio">El depósito está vacío.<br>
-         <small>Cargá los insumos y después, con <b>Ingreso de mercadería</b>, lo que compraste.</small></div>`}
+         <small>Cargá los insumos y después, en <b>Administración → Mercadería</b>,
+         lo que compraste.</small></div>`}`;
 
-    ${estado.compras.length ? `
-      <div class="grupo-personal">Últimos ingresos</div>
-      ${estado.compras.slice(0, 8).map((c) => `
-        <div class="item">
-          <div class="cuerpo">
-            <div class="nombre">${esc(comoSeLlamaProveedor(c) || 'Compra suelta')}</div>
-            <div class="desc">${c.fecha?.toDate?.()?.toLocaleDateString('es-AR') || ''}
-              · ${(c.items || []).length} producto${(c.items || []).length === 1 ? '' : 's'}
-              · ${c.condicion === 'inicial' ? 'carga inicial'
-                 : c.condicion === 'cuenta' ? 'a cuenta' : 'pagada'}${
-                 c.sinStock ? ' · sin sumar stock' : ''}</div>
-          </div>
-          <div class="total">${c.condicion === 'inicial' && !Number(c.total || 0)
-            ? '—' : plata(c.total)}</div>
-          ${soloMira ? '' : `
-          <button class="btn peligro" data-borrar-compra="${esc(c.id)}"
-                  title="Borrar este ingreso" style="padding:.3rem .55rem;font-size:.78rem">✕</button>`}
-        </div>`).join('')}` : ''}`;
-
-  // Para el celular de la barra estos botones no existen: se engancha lo que
-  // haya, no lo que debería haber.
   if ($('#btnNuevoInsumo')) $('#btnNuevoInsumo').onclick = () => abrirInsumo(null);
-  if ($('#btnNuevaCompra')) $('#btnNuevaCompra').onclick = abrirCompra;
-  if ($('#btnAlDia')) $('#btnAlDia').onclick = abrirAlDia;
   cont.querySelectorAll('[data-baja-insumo]').forEach((b) => b.onclick = () =>
     abrirBaja(estado.insumos.find((i) => i.id === b.dataset.bajaInsumo)));
   cont.querySelectorAll('[data-editar-insumo]').forEach((b) => b.onclick = () =>
     abrirInsumo(estado.insumos.find((i) => i.id === b.dataset.editarInsumo)));
-  cont.querySelectorAll('[data-borrar-compra]').forEach((b) => b.onclick = () =>
-    borrarCompra(estado.compras.find((c) => c.id === b.dataset.borrarCompra)));
+}
+
+// ---------- Administración: las cuentas de los proveedores ----------
+function pintarAdmin() {
+  pintarCajaGeneral();
+  pintarAdminProveedores();
+  pintarAdminMercaderia();
+  pintarAdminCostos();
+}
+
+function pintarAdminProveedores() {
+  const cont = $('#admProveedores');
+  if (!cont || $('#vistaCaja').hidden) return;
+
+  // Se listan todos los que tuvieron movimiento, no solo los que deben: al
+  // que está al día también hay que poder abrirle la cuenta y mirarla.
+  const conCuenta = estado.proveedores
+    .map((p) => ({ ...p, saldo: saldoProveedor(p.id),
+                   movs: movimientosProveedor(p.id).length }))
+    .filter((p) => p.movs > 0)
+    .sort((a, b) => b.saldo - a.saldo);
+  const deuda = conCuenta.reduce((a, p) => a + Math.max(0, p.saldo), 0);
+
+  // Dos motivos para no mostrar saldos: no tener la pantalla, o que las
+  // reglas nieguen los gastos. Cualquiera de los dos deja la cuenta coja.
+  if (estado.sinPagos || !estado.veCaja) {
+    cont.innerHTML = `<div class="aviso"><span>🔒</span><div>
+      Las cuentas corrientes se miran con el permiso de <b>Administración</b>:
+      sin los pagos cargados, el saldo contaría como pendiente plata que ya
+      fue abonada.</div></div>`;
+    return;
+  }
+
+  cont.innerHTML = !conCuenta.length
+    ? `<div class="vacio">Todavía no hay cuentas.<br>
+       <small>Se abren solas al cargar un ingreso de mercadería a cuenta.</small></div>`
+    : `<div class="caja-evento">
+      <div class="numeros"><div class="plata"><b>${plata(deuda)}</b><span>se debe</span></div></div>
+      <table class="ranking"><tbody>${conCuenta.map((p) => `
+        <tr data-ver-prov="${esc(p.id)}" style="cursor:pointer">
+          <td>${esc(p.nombre)} <small style="color:var(--suave)">ver cuenta ›</small></td>
+          <td class="n">${p.saldo > 0.5 ? plata(p.saldo)
+            : p.saldo < -0.5 ? `a favor ${plata(-p.saldo)}` : 'al día'}</td></tr>`).join('')}
+      </tbody></table>
+    </div>`;
+
   cont.querySelectorAll('[data-ver-prov]').forEach((f) => f.onclick = () =>
     abrirProveedor(f.dataset.verProv));
 }
 
-// ---------- la cuenta de un proveedor ----------
-let mirandoProveedor = null;
+// ---------- Administración: lo que entró y lo que costó ----------
+function pintarAdminMercaderia() {
+  const cont = $('#admMercaderia');
+  if (!cont || $('#vistaCaja').hidden) return;
 
-function abrirProveedor(id) {
-  const p = estado.proveedores.find((x) => x.id === id);
-  if (!p) return;
-  mirandoProveedor = p;
-  $('#dlgProveedor').showModal();
-  pintarProveedor();
+  // Lo que entró al depósito sin decir de quién vino ni cuánto salió. Se
+  // mira contra las fichas que existen hoy: un proveedor borrado deja al
+  // insumo apuntando a la nada, y eso también es un producto sin proveedor.
+  const sinDatos = estado.insumos.filter((i) =>
+    !estado.proveedores.some((p) => p.id === i.proveedorId) || !Number(i.costo || 0));
+
+  cont.innerHTML = `
+    <button class="btn primario ancho-full" id="btnNuevaCompra"
+            style="margin-bottom:.9rem">+ Ingreso de mercadería</button>
+
+    ${sinDatos.length ? `<div class="aviso" style="margin-bottom:.9rem">
+      <span>📋</span><div>
+      <b>${sinDatos.length} producto${sinDatos.length === 1 ? '' : 's'} sin proveedor ni precio.</b>
+      Cargalos de una y cada proveedor arranca su cuenta corriente.
+      <button class="btn primario ancho-full" id="btnAlDia" style="margin-top:.6rem">
+        Poner al día el depósito</button></div></div>` : ''}
+
+    ${estado.compras.length ? estado.compras.slice(0, 15).map((c) => `
+      <div class="item">
+        <div class="cuerpo">
+          <div class="nombre">${esc(comoSeLlamaProveedor(c) || 'Compra suelta')}</div>
+          <div class="desc">${c.fecha?.toDate?.()?.toLocaleDateString('es-AR') || ''}
+            · ${(c.items || []).length} producto${(c.items || []).length === 1 ? '' : 's'}
+            · ${c.condicion === 'inicial' ? 'carga inicial'
+               : c.condicion === 'cuenta' ? 'a cuenta' : 'pagada'}${
+               c.sinStock ? ' · sin sumar stock' : ''}</div>
+        </div>
+        <div class="total">${c.condicion === 'inicial' && !Number(c.total || 0)
+          ? '—' : plata(c.total)}</div>
+        <button class="btn peligro" data-borrar-compra="${esc(c.id)}"
+                title="Borrar este ingreso" style="padding:.3rem .55rem;font-size:.78rem">✕</button>
+      </div>`).join('')
+      : `<div class="vacio">Todavía no se cargó ningún ingreso.</div>`}`;
+
+  if ($('#btnNuevaCompra')) $('#btnNuevaCompra').onclick = abrirCompra;
+  if ($('#btnAlDia')) $('#btnAlDia').onclick = abrirAlDia;
+  cont.querySelectorAll('[data-borrar-compra]').forEach((b) => b.onclick = () =>
+    borrarCompra(estado.compras.find((c) => c.id === b.dataset.borrarCompra)));
 }
 
-function pintarProveedor() {
-  const p = mirandoProveedor;
-  if (!p || !$('#dlgProveedor')?.open) return;
-  const movs = movimientosProveedor(p.id);
-  const saldo = saldoProveedor(p.id);
+// ---------- Administración: cuánto deja cada trago ----------
+// El precio de venta está en la carta y el costo en el depósito; el margen
+// solo se puede ver si los dos números se miran juntos, y ese es el trabajo
+// de esta pantalla.
+function costoDeReceta(item) {
+  const receta = (item.receta || []).filter((r) => Number(r.medidas) > 0);
+  if (!receta.length) return null;
+  let total = 0;
+  for (const r of receta) {
+    const ins = estado.insumos.find((i) => i.id === r.insumoId);
+    if (!ins || !Number(ins.costo || 0)) return null;
+    const medidas = Math.max(1, Number(ins.medidas || 1));
+    total += Number(ins.costo) / medidas * Number(r.medidas);
+  }
+  return Math.round(total);
+}
 
-  $('#tituloProveedor').textContent = p.nombre;
-  $('#cuerpoProveedor').innerHTML = `
-    <div class="numeros" style="margin-bottom:.8rem">
-      <div class="plata"><b>${saldo > 0.5 ? plata(saldo)
-        : saldo < -0.5 ? plata(-saldo) : plata(0)}</b>
-        <span>${saldo > 0.5 ? 'se le debe' : saldo < -0.5 ? 'quedó a favor' : 'al día'}</span></div>
-    </div>
+function pintarAdminCostos() {
+  const cont = $('#admCostos');
+  if (!cont || $('#vistaCaja').hidden) return;
 
+  const filas = estado.carta
+    .filter((i) => i.enCarta !== false)
+    .map((i) => {
+      const costo = costoDeReceta(i);
+      const precio = Number(i.precio || 0);
+      return { nombre: i.nombre || i.id, precio, costo,
+               deja: costo === null ? null : precio - costo };
+    });
+  const conCuenta = filas.filter((f) => f.deja !== null);
+
+  cont.innerHTML = `
     <table class="ranking"><tbody>
-      ${movs.map((m) => `
+      ${filas.map((f) => `
         <tr>
-          <td><small style="color:var(--suave)">${esc(m.fecha)}</small><br>${esc(m.detalle)}</td>
-          <td class="n" style="color:${m.debe ? 'var(--naranja)' : 'var(--verde)'}">
-            ${m.debe ? '+' : '−'}${plata(m.debe || m.haber)}</td>
-          <td class="n"><small style="color:var(--suave)">${plata(m.saldo)}</small></td>
+          <td>${esc(f.nombre)}<br><small style="color:var(--suave)">
+            ${f.costo === null ? 'sin costo cargado'
+              : `cuesta ${plata(f.costo)} · se vende ${plata(f.precio)}`}</small></td>
+          <td class="n">${f.deja === null ? '—'
+            : `<b style="color:var(--${f.deja > 0 ? 'verde' : 'rojo'})">${plata(f.deja)}</b>
+               <br><small style="color:var(--suave)">${f.precio
+                 ? Math.round(f.deja / f.precio * 100) : 0}%</small>`}</td>
         </tr>`).join('')}
     </tbody></table>
-
-    <p style="font-size:.76rem;color:var(--suave);margin:.8rem 0 0">
-      Lo naranja es mercadería que se llevó a cuenta; lo verde, lo que se le pagó.
-      La última columna es cuánto se le debía después de cada movimiento.</p>
-
-    <label class="campo" style="margin-top:1rem">
-      <span>Nombre <small>(corregilo si quedó mal escrito)</small></span>
-      <input id="inpNombreProv" maxlength="60" autocomplete="off" value="${esc(p.nombre)}">
-    </label>`;
-  $('#btnGuardarProveedor').onclick = guardarNombreProveedor;
-}
-
-// ---------- poner al día el depósito ----------
-// La barra cargó la mercadería para poder vender: sin precios y sin decir de
-// quién vino. Acá se completa todo junto y cada proveedor arranca su cuenta.
-//
-// NO toca el stock. Las botellas ya están contadas en el depósito; volver a
-// sumarlas las contaría dos veces. Lo único que escribe es el papel que
-// faltaba: de quién vino cada cosa, cuánto salió, y si se debe o ya se pagó.
-function abrirAlDia() {
-  // Si el depósito está en cero es porque todavía no se cargó nada: la
-  // pantalla arranca cargando el stock. Si ya hay botellas contadas, no.
-  const hayStock = estado.insumos.some((i) => Number(i.stock || 0) > 0);
-  estado.alDia = { filas: {}, condicion: 'cuenta', stock: hayStock ? 'ya' : 'cargar' };
-  for (const i of estado.insumos) {
-    const medidas = Math.max(1, Number(i.medidas || 1));
-    estado.alDia.filas[i.id] = {
-      proveedor: estado.proveedores.find((p) => p.id === i.proveedorId)?.nombre || '',
-      costo: Number(i.costo || 0) || '',
-      unidades: Math.round(Number(i.stock || 0) / medidas * 100) / 100,
-    };
-  }
-  $('#dlgAlDia').showModal();
-  pintarAlDia();
-}
-
-function filasAlDia() {
-  return estado.insumos
-    .map((i) => ({ ins: i, ...(estado.alDia.filas[i.id] || {}) }))
-    .filter((f) => String(f.proveedor || '').trim().length >= 2
-      && Number(f.costo) > 0 && Number(f.unidades) > 0);
-}
-
-function pintarAlDia() {
-  const listas = filasAlDia();
-  const total = listas.reduce((a, f) => a + Number(f.costo) * Number(f.unidades), 0);
-
-  $('#cuerpoAlDia').innerHTML = `
-    <div class="campo">
-      <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">
-        Esta mercadería…</span>
-      <div style="display:flex;gap:.4rem">
-        ${[['cuenta', 'Se la debemos'], ['inicial', 'Ya está pagada']].map(([k, t]) => `
-          <button type="button" class="btn ${estado.alDia.condicion === k ? 'primario' : ''}"
-                  data-ald-cond="${k}" style="flex:1;font-size:.84rem">${t}</button>`).join('')}
-      </div>
-      <small class="pista">${estado.alDia.condicion === 'cuenta'
-        ? 'Arranca la cuenta corriente de cada proveedor con lo que se le debe.'
-        : 'Queda el precio y el proveedor anotados, sin deuda y sin tocar la caja.'}</small>
-    </div>
-
-    <div class="campo">
-      <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">
-        Y en el depósito…</span>
-      <div style="display:flex;gap:.4rem">
-        ${[['ya', 'Ya está contada'], ['cargar', 'Cargá el stock']].map(([k, t]) => `
-          <button type="button" class="btn ${estado.alDia.stock === k ? 'primario' : ''}"
-                  data-ald-stock="${k}" style="flex:1;font-size:.84rem">${t}</button>`).join('')}
-      </div>
-      <small class="pista">${estado.alDia.stock === 'ya'
-        ? 'No se toca lo guardado: ya está contado y sumarlo de nuevo lo duplica.'
-        : 'Lo guardado de cada producto pasa a ser lo que cargues acá.'}</small>
-    </div>
-
-    <datalist id="listaProvAlDia">
-      ${estado.proveedores.map((p) => `<option value="${esc(p.nombre)}">`).join('')}
-    </datalist>
-
-    ${estado.insumos.map((i) => {
-      const f = estado.alDia.filas[i.id] || {};
-      const medidas = Math.max(1, Number(i.medidas || 1));
-      return `
-      <div class="item"><div class="cuerpo" style="width:100%">
-        <div class="nombre">${esc(i.nombre)}</div>
-        <div class="desc">hay ${Math.round(Number(i.stock || 0) / medidas * 100) / 100}
-          ${esc(i.unidad || 'unidad')}${medidas > 1 ? ` de ${medidas} medidas` : ''}</div>
-        <div style="display:flex;gap:.4rem;margin-top:.45rem;flex-wrap:wrap">
-          <input data-ald-prov="${esc(i.id)}" list="listaProvAlDia" maxlength="60"
-                 autocomplete="off" placeholder="Proveedor"
-                 value="${esc(f.proveedor || '')}" style="flex:2;min-width:9rem">
-          <input data-ald-costo="${esc(i.id)}" type="number" min="0" inputmode="numeric"
-                 placeholder="$ por ${esc(i.unidad || 'unidad')}"
-                 value="${esc(String(f.costo ?? ''))}" style="flex:1;min-width:6rem">
-          <input data-ald-uni="${esc(i.id)}" type="number" min="0" step="0.01" inputmode="decimal"
-                 placeholder="cuántas" value="${esc(String(f.unidades ?? ''))}"
-                 style="flex:1;min-width:5rem">
-        </div>
-      </div></div>`;
-    }).join('')}
-
-    <div class="total-venta"><span>${listas.length} producto${
-      listas.length === 1 ? '' : 's'} listo${listas.length === 1 ? '' : 's'}</span>
-      <b>${plata(total)}</b></div>`;
-
-  $('#cuerpoAlDia').querySelectorAll('[data-ald-cond]').forEach((b) => b.onclick = () => {
-    estado.alDia.condicion = b.dataset.aldCond; pintarAlDia();
-  });
-  $('#cuerpoAlDia').querySelectorAll('[data-ald-stock]').forEach((b) => b.onclick = () => {
-    estado.alDia.stock = b.dataset.aldStock; pintarAlDia();
-  });
-  const anotar = (sel, campo) =>
-    $('#cuerpoAlDia').querySelectorAll(sel).forEach((e) => e.oninput = () => {
-      const id = e.dataset.aldProv || e.dataset.aldCosto || e.dataset.aldUni;
-      estado.alDia.filas[id] = { ...(estado.alDia.filas[id] || {}), [campo]: e.value };
-      // El total de abajo se escribe a mano para no repintar mientras escribe.
-      const l = filasAlDia();
-      const t = l.reduce((a, f) => a + Number(f.costo) * Number(f.unidades), 0);
-      const pie = $('#cuerpoAlDia .total-venta');
-      if (pie) pie.innerHTML = `<span>${l.length} producto${l.length === 1 ? '' : 's'} listo${
-        l.length === 1 ? '' : 's'}</span><b>${plata(t)}</b>`;
-    });
-  anotar('[data-ald-prov]', 'proveedor');
-  anotar('[data-ald-costo]', 'costo');
-  anotar('[data-ald-uni]', 'unidades');
-}
-
-async function guardarAlDia() {
-  const listas = filasAlDia();
-  if (!listas.length) {
-    alert('Completá al menos un producto con proveedor, precio y cantidad.');
-    return;
-  }
-  const condicion = estado.alDia.condicion;
-  const cargaStock = estado.alDia.stock === 'cargar';
-  const btn = $('#btnGuardarAlDia');
-  btn.disabled = true; btn.textContent = 'Guardando…';
-
-  // Una compra por proveedor, con todo lo que le compramos adentro.
-  const porProveedor = new Map();
-  for (const f of listas) {
-    const nombre = String(f.proveedor).trim();
-    const clave = nombre.toLowerCase();
-    if (!porProveedor.has(clave)) porProveedor.set(clave, { nombre, filas: [] });
-    porProveedor.get(clave).filas.push(f);
-  }
-
-  try {
-    for (const { nombre, filas } of porProveedor.values()) {
-      let proveedorId = estado.proveedores.find((p) =>
-        p.nombre.toLowerCase() === nombre.toLowerCase())?.id;
-      if (!proveedorId) {
-        const ref = await addDoc(collection(db, 'proveedores'),
-          { nombre, creadoEn: serverTimestamp() });
-        proveedorId = ref.id;
-      }
-
-      const items = filas.map((f) => ({
-        insumoId: f.ins.id, nombre: f.ins.nombre,
-        unidades: Number(f.unidades), costoUnit: Number(f.costo),
-      }));
-      await addDoc(collection(db, 'compras'), {
-        proveedor: nombre, proveedorId,
-        fecha: Timestamp.fromDate(new Date()),
-        items,
-        total: items.reduce((a, i) => a + i.unidades * i.costoUnit, 0),
-        condicion,
-        // Cuando la mercadería ya estaba contada, este ingreso no la vuelve a
-        // sumar: hacerlo la contaría dos veces.
-        ...(cargaStock ? {} : { sinStock: true }),
-        cargadoPor: estado.usuario || 'casa',
-        creadoEn: serverTimestamp(),
-      });
-
-      // Y cada insumo se queda con su precio y su proveedor, que es lo que
-      // después dice cuánto deja cada trago.
-      await Promise.all(filas.map((f) => {
-        const medidas = Math.max(1, Number(f.ins.medidas || 1));
-        return updateDoc(doc(db, 'insumos', f.ins.id), {
-          costo: Number(f.costo), proveedorId,
-          ...(cargaStock ? { stock: Number(f.unidades) * medidas } : {}),
-        });
-      }));
-    }
-    $('#dlgAlDia').close();
-  } catch (e) {
-    alert('No se pudo: ' + (e.code || e.message));
-  }
-  btn.disabled = false; btn.textContent = 'Guardar';
-}
-
-async function guardarNombreProveedor() {
-  const p = mirandoProveedor;
-  const nombre = ($('#inpNombreProv')?.value || '').trim();
-  if (!p || nombre.length < 2 || nombre === p.nombre) { $('#dlgProveedor').close(); return; }
-  try {
-    await updateDoc(doc(db, 'proveedores', p.id), { nombre });
-    $('#dlgProveedor').close();
-  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+    ${conCuenta.length < filas.length ? `
+      <p style="font-size:.76rem;color:var(--suave);margin:.7rem 0 0">
+        Los que dicen “sin costo cargado” no tienen receta o les falta el precio
+        del insumo. Se arregla en <b>Carta → 🧾</b> y acá arriba en
+        <b>Poner al día</b>.</p>` : ''}`;
 }
 
 // ---------- borrar un ingreso de mercadería ----------
@@ -3583,6 +3422,9 @@ function escucharCarta() {
       .sort((a, b) => (a.categoria || '').localeCompare(b.categoria || '') || (a.orden ?? 999) - (b.orden ?? 999));
     pintarCartaBar();
     pintarTablero();
+    // El margen sale de cruzar el precio de venta con el costo de la receta:
+    // si cambia cualquiera de los dos, hay que volver a hacer la cuenta.
+    pintarAdminCostos();
     // Una receta nueva, o un producto nuevo con receta, también mueve el
     // número: no solo lo mueve el depósito.
     sincronizarCartaConDeposito();
@@ -3720,7 +3562,7 @@ function irA(cual) {
 $('#tabTablero').onclick = () => irA('tablero');
 $('#tabCartaBar').onclick = () => irA('carta');
 $('#tabEvento').onclick = () => irA('evento');
-$('#tabCaja').onclick = () => { irA('caja'); pintarCajaGeneral(); };
+$('#tabCaja').onclick = () => { irA('caja'); pintarAdmin(); };
 $('#tabDeposito').onclick = () => { irA('deposito'); pintarDeposito(); };
 $('#tabCalendario').onclick = () => irA('calendario');
 $('#tabPuerta').onclick = () => irA('puerta');

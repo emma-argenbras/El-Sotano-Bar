@@ -1116,21 +1116,30 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
       throw new Error('el insumo no aparecio. ' + JSON.stringify(diag));
     });
 
-  // Entran 3 botellas a cuenta: suma stock y queda la deuda.
+  // Entran 3 botellas a cuenta: suma stock y queda la deuda. El ingreso se
+  // carga en Administración —es plata—, no en el Depósito.
+  await barra.click('#tabCaja');
+  await barra.waitForSelector('#btnNuevaCompra', { timeout: 10000 });
   await barra.click('#btnNuevaCompra');
   await barra.waitForSelector('#dlgCompra[open]', { timeout: 5000 });
   await barra.fill('#inpCompraProv', 'Distribuidora Prueba');
   await barra.locator('[data-compra-u]').first().fill('3');
   await barra.locator('[data-compra-c]').first().fill('12000');
   await barra.click('#btnGuardarCompra');
+  await barra.click('#tabDeposito');
   await barra.waitForFunction(() =>
     document.querySelector('#deposito')?.textContent.includes('3 botellas'),
     null, { timeout: 10000 }).catch(async () => {
       throw new Error('la compra no sumo stock. Dice: '
         + (await barra.textContent('#deposito')).slice(0, 250));
     });
-  if (!(await barra.textContent('#deposito')).includes('Cuenta corriente de proveedores'))
-    throw new Error('la compra a cuenta no quedó como deuda');
+  await barra.click('#tabCaja');
+  await barra.waitForFunction(() =>
+    (document.querySelector('#admProveedores')?.textContent || '').includes('Distribuidora'),
+    null, { timeout: 10000 }).catch(async () => {
+      throw new Error('la compra a cuenta no quedó como deuda: '
+        + (await barra.textContent('#admProveedores')).slice(0, 250));
+    });
 
   // Un producto de la carta que sale de esa botella: una medida por trago.
   await barra.click('#tabCartaBar');
@@ -1188,7 +1197,7 @@ await chequear('un ingreso en $0 no pasa, y el que se cargó mal se puede borrar
   const oir = async (d) => { dijo = d.message(); await d.accept(); };
   barra.on('dialog', oir);
   try {
-    await barra.click('#tabDeposito');
+    await barra.click('#tabCaja');
     await barra.waitForSelector('#btnNuevaCompra', { timeout: 10000 });
     const cuantas = async () => (await db.collection('compras').get()).size;
     const antes = await cuantas();
@@ -1208,16 +1217,16 @@ await chequear('un ingreso en $0 no pasa, y el que se cargó mal se puede borrar
     await barra.click('[data-condicion="inicial"]');
     await barra.click('#btnGuardarCompra');
     await barra.waitForFunction(() =>
-      document.querySelector('#deposito')?.textContent.includes('carga inicial'),
+      document.querySelector('#admMercaderia')?.textContent.includes('carga inicial'),
       null, { timeout: 10000 });
 
     // Y se puede borrar sin que se caiga el stock que sumó.
     const stockAntes = (await db.collection('insumos')
       .where('nombre', '==', 'Fernet 750').get()).docs[0].data().stock;
-    await barra.locator('#deposito .item', { hasText: 'carga inicial' })
+    await barra.locator('#admMercaderia .item', { hasText: 'carga inicial' })
       .locator('[data-borrar-compra]').click();
     await barra.waitForFunction(() =>
-      !document.querySelector('#deposito')?.textContent.includes('carga inicial'),
+      !document.querySelector('#admMercaderia')?.textContent.includes('carga inicial'),
       null, { timeout: 10000 });
     if (await cuantas() !== antes)
       throw new Error('el ingreso no se borró');
@@ -1235,10 +1244,9 @@ await chequear('la cuenta corriente del proveedor suma, resta y se puede mirar',
   const oir = async (d) => { dijo = d.message(); await d.accept(); };
   barra.on('dialog', oir);
   try {
-    await barra.click('#tabDeposito');
+    await barra.click('#tabCaja');
     await barra.waitForSelector('#btnNuevaCompra', { timeout: 10000 });
-    const deudaDice = async () => (await barra.textContent('#deposito'))
-      .split('Cuenta corriente de proveedores')[1]?.slice(0, 400) || '';
+    const deudaDice = async () => await barra.textContent('#admProveedores');
     if (!(await deudaDice()).includes('36.000'))
       throw new Error('no arranca con la deuda de la compra a cuenta: ' + await deudaDice());
 
@@ -1273,9 +1281,9 @@ await chequear('la cuenta corriente del proveedor suma, resta y se puede mirar',
     await barra.waitForFunction(() =>
       !document.querySelector('#dlgEgreso')?.open, null, { timeout: 10000 });
 
-    await barra.click('#tabDeposito');
+    await barra.click('#tabCaja');
     await barra.waitForFunction(() =>
-      document.querySelector('#deposito')?.textContent.includes('26.000'),
+      document.querySelector('#admProveedores')?.textContent.includes('26.000'),
       null, { timeout: 10000 }).catch(async () => {
         throw new Error('el pago no bajó la deuda: ' + await deudaDice());
       });
@@ -1293,7 +1301,7 @@ await chequear('la cuenta corriente del proveedor suma, resta y se puede mirar',
     await barra.fill('#inpNombreProv', 'Distribuidora Prueba SRL');
     await barra.click('#btnGuardarProveedor');
     await barra.waitForFunction(() =>
-      document.querySelector('#deposito')?.textContent.includes('Distribuidora Prueba SRL'),
+      document.querySelector('#admProveedores')?.textContent.includes('Distribuidora Prueba SRL'),
       null, { timeout: 10000 });
     if (dijo) throw new Error('el panel se quejó: ' + dijo);
   } finally {
@@ -1343,15 +1351,14 @@ await chequear('sin Caja no se muestra ningún saldo de proveedor', async () => 
     await pg.click('#tabDeposito');
     await pg.waitForSelector('#btnNuevoInsumo', { timeout: 15000 });
     await pg.waitForTimeout(1000);
+    // El Depósito dice qué hay y nada más: ni saldos, ni costos, ni ingresos.
     const dice = (await pg.textContent('#deposito')).replace(/\s+/g, ' ');
-    if (!dice.includes('permiso de'))
-      throw new Error('no avisa por qué no hay cuentas: ' + dice.slice(0, 300));
-    // Los ingresos de mercadería sí los ve con su importe: eso es el papel de
-    // la compra, no un saldo. Lo que no puede aparecer es la cuenta corriente.
-    if (dice.includes('Cuenta corriente de proveedores'))
-      throw new Error('le muestra las cuentas sin poder leer los pagos');
-    if (dice.includes('ver cuenta'))
-      throw new Error('le deja abrir la cuenta de un proveedor');
+    if (dice.includes('se debe') || dice.includes('ver cuenta'))
+      throw new Error('el depósito le muestra saldos: ' + dice.slice(0, 300));
+    if (dice.includes('Ingreso de mercadería'))
+      throw new Error('el depósito le deja cargar mercadería');
+    if (/\$\s?\d/.test(dice))
+      throw new Error('el depósito le muestra plata: ' + dice.slice(0, 300));
   } finally {
     await ctx.close();
     // Se lo devuelve como estaba, para no romperle el caso al que sigue.
@@ -1383,6 +1390,7 @@ await chequear('poner al día el depósito le abre la cuenta a cada proveedor', 
       null, { timeout: 10000 });
 
     // El panel avisa que falta y ofrece completarlo.
+    await barra.click('#tabCaja');
     await barra.waitForSelector('#btnAlDia', { timeout: 10000 });
     await barra.click('#btnAlDia');
     await barra.waitForSelector('#dlgAlDia[open]', { timeout: 5000 });
@@ -1397,9 +1405,9 @@ await chequear('poner al día el depósito le abre la cuenta a cada proveedor', 
 
     // La deuda quedó abierta con ese proveedor…
     await barra.waitForFunction(() =>
-      document.querySelector('#deposito')?.textContent.includes('Bebidas del Sur'),
+      document.querySelector('#admProveedores')?.textContent.includes('Bebidas del Sur'),
       null, { timeout: 10000 });
-    const dice = await barra.textContent('#deposito');
+    const dice = await barra.textContent('#vistaCaja');
     if (!dice.includes('18.000')) throw new Error('no abrió la deuda: ' + dice.slice(0, 300));
     if (!dice.includes('sin sumar stock'))
       throw new Error('no avisa que el ingreso no sumó stock');
@@ -1413,7 +1421,7 @@ await chequear('poner al día el depósito le abre la cuenta a cada proveedor', 
     if (!g.data().proveedorId) throw new Error('no le guardó el proveedor al insumo');
 
     // Y la cuenta del proveedor nuevo se puede abrir.
-    await barra.locator('#deposito tr', { hasText: 'Bebidas del Sur' }).click();
+    await barra.locator('#admProveedores tr', { hasText: 'Bebidas del Sur' }).click();
     await barra.waitForSelector('#dlgProveedor[open]', { timeout: 5000 });
     if (!(await barra.textContent('#cuerpoProveedor')).includes('se le debe'))
       throw new Error('la cuenta del proveedor nuevo no muestra el saldo');
@@ -1662,7 +1670,7 @@ await chequear('el celular de la barra ve el depósito, pero solo de mirar', asy
                      '[data-baja-insumo]', '[data-borrar-compra]'])
       if (await cel.locator(q).count()) throw new Error('le muestra ' + q);
     const dice = await cel.textContent('#deposito');
-    if (dice.includes('Deuda con proveedores')) throw new Error('le muestra la deuda');
+    if (dice.includes('se debe')) throw new Error('le muestra la deuda');
     if (/12\.000|\bc\/u\b/.test(dice)) throw new Error('le muestra lo que costó: ' + dice.slice(0, 200));
 
     // Y la caja sigue sin ser suya.

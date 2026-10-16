@@ -66,6 +66,11 @@ before(async () => {
       permisos: { caja: false, deposito: false, carta: false, calendario: false,
                   puerta: false, pedidos: false, noche: false },
     });
+    // Administra la plata y nada más: ve Administración, no el Depósito.
+    await setDoc(doc(db, 'accesosBarra/uid-soloplata'), {
+      usuario: 'contadora', activo: true, rol: 'admin',
+      permisos: { deposito: false },
+    });
     await setDoc(doc(db, 'publico/registro'), { eventoId: 'ev-1', nombre: 'Noche' });
     await setDoc(doc(db, 'registros/ev-1'), {
       eventoId: 'ev-1', nombre: 'Noche', capacidad: 3, registrados: 1, abierto: true,
@@ -113,6 +118,10 @@ const sadmin = () => env.authenticatedContext('uid-sadmin', {
 // frena de verdad y no es solo una pestaña escondida.
 const recortado = () => env.authenticatedContext('uid-recortado', {
   email: 'recortado@barra.local', provider_id: 'password',
+}).firestore();
+
+const soloPlata = () => env.authenticatedContext('uid-soloplata', {
+  email: 'contadora@barra.local', provider_id: 'password',
 }).firestore();
 
 const puerta = () => env.authenticatedContext('uid-puerta', {
@@ -1086,6 +1095,20 @@ describe('las pantallas apagadas frenan de verdad', () => {
       concepto: 'Retiro', categoria: 'retiro', monto: 1000,
       pago: 'efectivo', fecha: new Date(),
     }));
+  });
+
+  // La plata vive en Administración: quien tiene esa pantalla trabaja los
+  // ingresos y los costos aunque no entre al Depósito.
+  it('con Administración alcanza para los ingresos y los costos', async () => {
+    await assertSucceeds(getDocs(collection(soloPlata(), 'compras')));
+    await assertSucceeds(setDoc(doc(soloPlata(), 'compras/desde-admin'), {
+      proveedor: 'Distri', fecha: new Date(), total: 1000, condicion: 'cuenta',
+      items: [{ insumoId: 'fernet-750', nombre: 'Fernet', unidades: 1, costoUnit: 1000 }],
+    }));
+  });
+
+  it('sin ninguna de las dos, las compras siguen cerradas', async () => {
+    await assertFails(getDocs(collection(recortado(), 'compras')));
   });
 
   it('sin depósito no carga mercadería ni ve las compras', async () => {

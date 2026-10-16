@@ -508,7 +508,10 @@ service cloud.firestore {
     match /insumos/{id} {
       allow read: if esBarra();
       allow create: if esAdmin() && puedo('deposito') && insumoValido(request.resource.data);
-      allow update: if (esAdmin() && puedo('deposito') && insumoValido(request.resource.data))
+      // Desde Administración se le carga el costo y el proveedor; desde el
+      // Depósito, el nombre y las medidas. Las dos pantallas lo editan.
+      allow update: if (esAdmin() && (puedo('deposito') || puedo('caja'))
+          && insumoValido(request.resource.data))
         || (esBarra() && soloStockInsumo());
       allow delete: if esAdmin();
     }
@@ -517,9 +520,12 @@ service cloud.firestore {
     // La compra suma stock. Si fue al contado, ademas queda un gasto en la
     // caja; si fue a cuenta, queda como deuda con el proveedor hasta que se
     // le pague. La plata es de la casa: esto no lo carga la barra.
+    // Los ingresos viven en Administración —son plata— y el Depósito los
+    // usa para saber de dónde salió cada cosa: alcanza con cualquiera de las
+    // dos pantallas.
     match /compras/{id} {
-      allow read: if esAdmin() && puedo('deposito');
-      allow create, update: if esAdmin() && puedo('deposito')
+      allow read: if esAdmin() && (puedo('caja') || puedo('deposito'));
+      allow create, update: if esAdmin() && (puedo('caja') || puedo('deposito'))
         && compraValida(request.resource.data);
       allow delete: if esAdmin();
     }

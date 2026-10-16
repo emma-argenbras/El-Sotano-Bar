@@ -108,7 +108,7 @@
       <button role="tab" id="tabTablero" aria-selected="true">Pedidos</button>
       <button role="tab" id="tabCartaBar" aria-selected="false">Carta</button>
       <button role="tab" id="tabEvento" aria-selected="false">Noche</button>
-      <button role="tab" id="tabCaja" aria-selected="false">Caja</button>
+      <button role="tab" id="tabCaja" aria-selected="false">Administración</button>
       <button role="tab" id="tabDeposito" aria-selected="false">Depósito</button>
       <button role="tab" id="tabCalendario" aria-selected="false">Calendario</button>
       <button role="tab" id="tabPuerta" aria-selected="false">Puerta</button>
@@ -131,8 +131,21 @@
       <div id="deposito"><div class="cargando">Abriendo el depósito…</div></div>
     </section>
 
+    <!-- Administración: acá vive toda la plata. La caja de la noche, lo que
+         se le debe a cada proveedor, lo que costó la mercadería y cuánto deja
+         cada trago. El Depósito de al lado solo dice qué hay. -->
     <section id="vistaCaja" hidden>
       <div id="caja"><div class="cargando">Haciendo números…</div></div>
+
+      <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Proveedores</h2>
+      <div id="admProveedores"><div class="cargando">Buscando cuentas…</div></div>
+
+      <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Mercadería</h2>
+      <div id="admMercaderia"><div class="cargando">Buscando ingresos…</div></div>
+
+      <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Costos y márgenes</h2>
+      <div id="admCostos"><div class="cargando">Haciendo cuentas…</div></div>
+
       <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Noche por noche</h2>
       <div id="eventosPasados"><div class="cargando">Buscando…</div></div>
     </section>

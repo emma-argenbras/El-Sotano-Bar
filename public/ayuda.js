@@ -125,9 +125,13 @@
       quien: ['admin'],
       titulo: 'La plata de Sótano',
       cuerpo: `
-        <p>La pestaña <b>Caja</b> junta todo: lo de los eventos y lo de los días
-        comunes, lo que entra y lo que sale. Arriba elegís <b>Hoy</b>,
-        <b>Este mes</b> o <b>Todo</b>.</p>
+        <p>La pestaña <b>Administración</b> es donde vive toda la plata: la
+        caja, las cuentas de los proveedores, lo que costó la mercadería y
+        cuánto deja cada trago. El <b>Depósito</b> de al lado solo dice qué
+        hay guardado.</p>
+        <p>Arriba, la <b>caja</b>: lo de los eventos y lo de los días comunes,
+        lo que entra y lo que sale. Elegís <b>Hoy</b>, <b>Este mes</b> o
+        <b>Todo</b>.</p>
         <p>Lo que entra se parte en <b>efectivo</b> y <b>virtual</b>. Lo que
         salió son los <b>gastos</b> que cargás vos o Guille: proveedor, sueldo,
         insumo, retiro de plata. La barra no los puede cargar ni ver.</p>
@@ -136,6 +140,18 @@
         con lo que hay, falta plata o falta cargar un gasto.</p>
         <p><b>Quién vendió</b> muestra el ranking por barman. Solo sirve si en
         la barra eligieron quién atiende; si no, cae en “sin registrar”.</p>
+        <p><b>Proveedores</b> es la cuenta corriente de cada uno: lo que se le
+        compró a cuenta suma, lo que se le pagó resta, y al lado de cada
+        renglón queda cuánto se le debía en ese momento. Se abre tocando su
+        nombre, y desde ahí también se corrige si quedó mal escrito.</p>
+        <p><b>Mercadería</b> es el ingreso de lo que comprás y el histórico de
+        lo que entró. Es también donde está <b>Poner al día el depósito</b>,
+        para completar de una vez el proveedor y el precio de todo lo que ya
+        está cargado.</p>
+        <p><b>Costos y márgenes</b> cruza el precio de venta de cada producto
+        con lo que cuesta hacerlo, y te dice cuánta plata deja y qué
+        porcentaje es. El que dice “sin costo cargado” es porque le falta la
+        receta o el precio del insumo.</p>
         <p>Abajo, <b>noche por noche</b>: el histórico de eventos cerrados, que
         podés ordenar por fecha o por facturación.</p>`,
     },
@@ -296,15 +312,18 @@
         <p>El <b>costo</b> es lo que te sale a vos, no lo que cobrás. El
         <b>mínimo</b> es el nivel al que querés que te avise: cuando baja de
         ahí, aparece arriba en rojo.</p>
+        <p>El <b>costo</b> y el proveedor de cada insumo se cargan en
+        <b>Administración → Mercadería</b>: es plata, y la plata vive toda en
+        el mismo lugar.</p>
         <p><b>Cargar el stock inicial</b>: la primera vez, entrás por
-        <b>Ingreso de mercadería</b> y elegís <b>Carga inicial</b>. Suma todo
-        lo que ya tenés sin descontar plata de la caja, porque esa plata ya
-        salió hace rato.</p>
+        <b>Administración → Ingreso de mercadería</b> y elegís <b>Carga
+        inicial</b>. Suma todo lo que ya tenés sin descontar plata de la caja,
+        porque esa plata ya salió hace rato.</p>
         <p>De ahí en adelante, cada compra entra por <b>Ingreso de
         mercadería</b> con el proveedor y las unidades. <b>Pagada</b> la
         descuenta de la caja en el momento. <b>A cuenta</b> la deja como deuda
-        con ese proveedor hasta que le pagues: la ves en <b>Deuda con
-        proveedores</b>, y al pagarle queda como gasto.</p>
+        con ese proveedor hasta que le pagues: la ves en
+        <b>Administración → Proveedores</b>, y al pagarle queda como gasto.</p>
         <p><b>La receta</b> es lo que une las dos cosas. En <b>Carta y stock</b>,
         el botón de receta de cada producto dice de qué insumo sale y cuántas
         medidas lleva. Un fernet con coca lleva 1 medida de fernet: al
