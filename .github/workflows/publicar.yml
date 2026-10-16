@@ -52,6 +52,14 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # El emulador de Firestore corre sobre Java, y firebase-tools ya no
+      # acepta menos de 21. La máquina de GitHub trae una más vieja.
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Instalar
         run: npm ci
 
