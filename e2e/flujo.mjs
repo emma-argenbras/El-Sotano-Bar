@@ -1210,6 +1210,7 @@ await chequear('un ingreso en $0 no pasa, y el que se cargó mal se puede borrar
     await barra.waitForFunction(() => true);
     if (!dijo.includes('No pusiste los precios'))
       throw new Error('guardó un ingreso de $0 a cuenta. Dijo: ' + (dijo || '(nada)'));
+    await barra.waitForTimeout(500);
     if (await cuantas() !== antes)
       throw new Error('igual escribió la compra en $0');
 
@@ -1228,8 +1229,13 @@ await chequear('un ingreso en $0 no pasa, y el que se cargó mal se puede borrar
     await barra.waitForFunction(() =>
       !document.querySelector('#admMercaderia')?.textContent.includes('carga inicial'),
       null, { timeout: 10000 });
-    if (await cuantas() !== antes)
-      throw new Error('el ingreso no se borró');
+    // La pantalla se actualiza con el cambio local, antes de que el servidor
+    // confirme el borrado: contar en ese instante cuenta de más.
+    for (let i = 0; i < 40; i++) {
+      if (await cuantas() === antes) break;
+      if (i === 39) throw new Error('el ingreso no se borró');
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
     const stockDespues = (await db.collection('insumos')
       .where('nombre', '==', 'Fernet 750').get()).docs[0].data().stock;
     if (stockDespues !== stockAntes)
