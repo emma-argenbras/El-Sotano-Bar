@@ -1,0 +1,141 @@
+# Publica El Sótano a producción.
+#
+# No se dispara sola: la lanzo yo desde la conversación, eligiendo qué commit
+# publicar. Así los despliegues siguen siendo una decisión, no una
+# consecuencia de haber subido código.
+#
+# La llave de Firebase vive acá, en los secretos del repositorio, y no en el
+# contenedor donde trabajo: una vez guardada no la puede leer nadie, solo
+# usarla esta receta.
+#
+# Las reglas de la casa, en orden:
+#   1. Nunca entre las 19:00 y las 06:00 de Argentina. El bar está abierto.
+#   2. Los tests de reglas se corren acá otra vez, contra el código que se va
+#      a publicar. El recorrido completo (e2e) lo corro antes, en la
+#      conversación, porque necesita un navegador de verdad.
+#   3. Reglas primero, app después. Si se corta en el medio, lo que queda
+#      arriba son reglas nuevas con código viejo, que no rompe nada.
+name: Publicar
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Qué publicar (commit o rama)'
+        required: true
+        type: string
+      solo_reglas:
+        description: 'Publicar solo las reglas de seguridad'
+        required: false
+        default: false
+        type: boolean
+
+# Dos despliegues a la vez dejarían el sitio con una mezcla de los dos.
+concurrency:
+  group: publicar-produccion
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Traer el código
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar
+        run: npm ci
+
+      # Primero la hora: si no se puede publicar, no se gasta nada más.
+      #
+      # La cuenta va escrita acá y no en un script del repositorio porque esta
+      # receta publica commits viejos, que todavía no tenían ese script. Es la
+      # misma regla que scripts/ventana.mjs, que es el que está probado
+      # (tests/ventana.test.mjs). Si una cambia, la otra también.
+      - name: ¿El bar está cerrado?
+        run: |
+          node -e "
+            const h = Number(new Intl.DateTimeFormat('es-AR',
+              { timeZone: 'America/Argentina/Buenos_Aires', hour: 'numeric', hour12: false })
+              .format(new Date())) % 24;
+            const reloj = new Intl.DateTimeFormat('es-AR',
+              { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false })
+              .format(new Date());
+            if (h >= 6 && h < 19) { console.log('Son las ' + reloj + ' en Argentina: se puede publicar.'); process.exit(0); }
+            console.error('Son las ' + reloj + ' en Argentina: el bar está abierto.');
+            console.error('No se publica entre las 19:00 y las 06:00. Esperá a mañana.');
+            process.exit(1);
+          "
+
+      - name: Los tests de reglas
+        run: npm test
+
+      - name: Dejar la llave a mano
+        id: llave
+        env:
+          SA: ${{ secrets.FIREBASE_SA_JSON }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "Falta el secreto FIREBASE_SA_JSON en el repositorio." >&2
+            exit 1
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          chmod 600 "$RUNNER_TEMP/sa.json"
+          node -e "const c=require(process.env.RUNNER_TEMP+'/sa.json');
+            if(c.project_id!=='el-sotano-bar'){console.error('La llave es de otro proyecto: '+c.project_id);process.exit(1)}
+            console.log('Cuenta: '+c.client_email)"
+
+      # Las reglas van con el script propio y no con la CLI: la CLI hace un
+      # chequeo previo de permisos que una cuenta de servicio no pasa.
+      - name: Publicar las reglas
+        env:
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SA_JSON }}
+        run: node scripts/desplegar-reglas.mjs --aplicar
+
+      - name: Construir la app
+        if: ${{ !inputs.solo_reglas }}
+        run: npm run build
+
+      - name: Publicar la app
+        if: ${{ !inputs.solo_reglas }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: npx --yes firebase-tools@15 deploy --only hosting --project el-sotano-bar --non-interactive
+
+      # Contra la API, no contra la esperanza: que el comando haya terminado
+      # sin error no es lo mismo que que el sitio esté sirviendo lo nuevo.
+      - name: Verificar qué quedó publicado
+        if: ${{ !inputs.solo_reglas }}
+        env:
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SA_JSON }}
+        run: |
+          node -e "
+            const { initializeApp, cert } = require('firebase-admin/app');
+            const app = initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SA_JSON)) });
+            (async () => {
+              const { access_token } = await app.options.credential.getAccessToken();
+              let mal = 0;
+              for (const s of ['sotano', 'sotano-club', 'el-sotano-bar']) {
+                const r = await fetch('https://firebasehosting.googleapis.com/v1beta1/sites/' + s + '/releases?pageSize=1',
+                  { headers: { Authorization: 'Bearer ' + access_token } });
+                const rel = (await r.json().catch(() => ({}))).releases?.[0];
+                if (!rel) { mal++; console.log('  x ' + s + ': no pude leer la ultima version'); continue; }
+                console.log('  ok ' + s.padEnd(16) + (rel.version?.status || '?') + '  ·  ' +
+                  new Date(rel.releaseTime).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }));
+              }
+              process.exit(mal ? 1 : 0);
+            })();
+          "
+
+      - name: Borrar la llave
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"
