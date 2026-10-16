@@ -14,7 +14,7 @@ import {
   where,
 } from '/vendor/firebase.js';
 import { $, esc, estado, plata } from './base.js';
-import { moverInsumos } from './stock.js';
+import { costoDeReceta, moverInsumos } from './stock.js';
 import { EVENTOS, app, db, fallo } from './conexion.js';
 import { comoSeDice } from './deposito.js';
 import { noches } from './eventos.js';
@@ -549,19 +549,6 @@ export function pintarAdminMercaderia() {
 // El precio de venta está en la carta y el costo en el depósito; el margen
 // solo se puede ver si los dos números se miran juntos, y ese es el trabajo
 // de esta pantalla.
-export function costoDeReceta(item) {
-  const receta = (item.receta || []).filter((r) => Number(r.medidas) > 0);
-  if (!receta.length) return null;
-  let total = 0;
-  for (const r of receta) {
-    const ins = estado.insumos.find((i) => i.id === r.insumoId);
-    if (!ins || !Number(ins.costo || 0)) return null;
-    const medidas = Math.max(1, Number(ins.medidas || 1));
-    total += Number(ins.costo) / medidas * Number(r.medidas);
-  }
-  return Math.round(total);
-}
-
 export function pintarAdminCostos() {
   const cont = $('#admCostos');
   if (!cont || $('#vistaCaja').hidden) return;

@@ -2885,6 +2885,143 @@ await chequear('cambiarlo mueve la ventana de la caja sin recargar', async () =>
     document.querySelector('#inpCorte')?.value === '6', null, { timeout: 10000 });
 });
 
+// ---------- el costo de la mercadería, congelado ----------
+// Antes el costo salía siempre de los precios de HOY: entraba una compra con
+// el fernet más caro y la ganancia de las noches pasadas se movía sola, sin
+// que nadie hubiera tocado nada. Un número cerrado que cambia solo no sirve
+// para cerrar nada.
+console.log('\nEL COSTO SE CONGELA EN LA VENTA');
+
+await chequear('al entregar queda escrito lo que costó la mercadería', async () => {
+  // Una botella de 10 medidas a $6.000: cada medida sale $600. El trago lleva
+  // 2 medidas, así que cuesta $1.200 y se vende a $5.000.
+  await db.collection('insumos').doc('ins-costo').set({
+    nombre: 'Botella Costo', unidad: 'botella', medidas: 10,
+    stock: 100, costo: 6000, minimo: 0,
+  });
+  await db.collection('carta').doc('trago-costo').set({
+    nombre: 'Trago Costo', categoria: 'Tragos', precio: 5000, orden: 90,
+    disponible: true, receta: [{ insumoId: 'ins-costo', medidas: 2 }],
+  });
+
+  await barra.click('#tabTablero');
+  await barra.waitForFunction(() =>
+    document.querySelector('#cartaBar, #vistaTablero') !== null, null, { timeout: 10000 });
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.waitForFunction(() =>
+    document.querySelector('#cuerpoVenta')?.textContent.includes('Trago Costo'),
+    null, { timeout: 15000 });
+
+  const fila = barra.locator('#cuerpoVenta .item', { hasText: 'Trago Costo' });
+  await fila.locator('[data-venta][data-d="1"]').click();
+  await fila.locator('[data-venta][data-d="1"]').click();
+  await barra.click('#btnVentaEfectivo');
+  await barra.waitForSelector('#dlgVenta[open]', { state: 'detached', timeout: 15000 }).catch(() => {});
+
+  for (let i = 0; i < 60; i++) {
+    const q = await db.collection('pedidos').where('cajaId', '!=', null).get();
+    const p = q.docs.map((d) => d.data())
+      .find((d) => (d.items || []).some((x) => x.id === 'trago-costo'));
+    if (p?.costoMercaderia !== undefined && p.costoMercaderia !== null) {
+      // 2 tragos × 2 medidas × $600 = $2.400. Vendidos a $5.000 cada uno.
+      if (p.costoMercaderia !== 2400)
+        throw new Error('costó mal: ' + p.costoMercaderia + ' (debería ser 2400)');
+      if (p.costoDe !== 10000)
+        throw new Error('la cobertura quedó mal: ' + p.costoDe + ' (debería ser 10000)');
+      return;
+    }
+    if (i === 59) throw new Error('nunca escribió el costo');
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
+await chequear('una compra más cara NO mueve el costo de lo ya vendido', async () => {
+  // Es el bug entero en un caso: la botella pasa a costar el doble y lo que
+  // se vendió anoche tiene que seguir costando lo que costó.
+  const antes = await db.collection('pedidos').get()
+    .then((q) => q.docs.find((d) => (d.data().items || []).some((x) => x.id === 'trago-costo')));
+  if (!antes) throw new Error('no encuentro la venta del caso anterior');
+
+  await db.collection('insumos').doc('ins-costo').update({ costo: 12000 });
+  await barra.waitForTimeout(2500);
+
+  const ahora = (await antes.ref.get()).data();
+  if (ahora.costoMercaderia !== 2400)
+    throw new Error('el costo de una venta vieja se movió solo: '
+      + ahora.costoMercaderia + ' (tenía que quedar en 2400)');
+
+  // Y una venta nueva sí toma el precio nuevo: 2 medidas × $1.200 = $2.400 por
+  // trago. Lo que se congela es lo viejo, no el cálculo.
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Trago Costo' })
+    .locator('[data-venta][data-d="1"]').click();
+  await barra.click('#btnVentaEfectivo');
+  await barra.waitForSelector('#dlgVenta[open]', { state: 'detached', timeout: 15000 }).catch(() => {});
+
+  for (let i = 0; i < 60; i++) {
+    const nuevas = (await db.collection('pedidos').get()).docs
+      .filter((d) => d.id !== antes.id
+        && (d.data().items || []).some((x) => x.id === 'trago-costo'));
+    const nueva = nuevas.find((d) => d.data().costoMercaderia != null);
+    if (nueva) {
+      if (nueva.data().costoMercaderia !== 2400)
+        throw new Error('la venta nueva no tomó el costo nuevo: '
+          + nueva.data().costoMercaderia + ' (debería ser 2400)');
+      return;
+    }
+    if (i === 59) throw new Error('la venta nueva nunca guardó costo');
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
+await chequear('un producto sin costo cargado no inventa un número', async () => {
+  // Media cuenta es peor que ninguna: si falta el costo de una botella, ese
+  // producto no suma al costo NI a lo que se cuenta como cubierto.
+  await db.collection('insumos').doc('ins-sin-costo').set({
+    nombre: 'Botella Sin Costo', unidad: 'botella', medidas: 10,
+    stock: 100, costo: 0, minimo: 0,
+  });
+  await db.collection('carta').doc('trago-sin-costo').set({
+    nombre: 'Trago Sin Costo', categoria: 'Tragos', precio: 7000, orden: 91,
+    disponible: true, receta: [{ insumoId: 'ins-sin-costo', medidas: 1 }],
+  });
+
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.waitForFunction(() =>
+    document.querySelector('#cuerpoVenta')?.textContent.includes('Trago Sin Costo'),
+    null, { timeout: 15000 });
+  // Uno con costo y uno sin: el pedido tiene que contar solo el que se sabe.
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Trago Sin Costo' })
+    .locator('[data-venta][data-d="1"]').click();
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Trago Costo' })
+    .locator('[data-venta][data-d="1"]').click();
+  await barra.click('#btnVentaEfectivo');
+  await barra.waitForSelector('#dlgVenta[open]', { state: 'detached', timeout: 15000 }).catch(() => {});
+
+  for (let i = 0; i < 60; i++) {
+    const d = (await db.collection('pedidos').get()).docs
+      .find((x) => (x.data().items || []).some((y) => y.id === 'trago-sin-costo'));
+    if (d?.data().costoMercaderia != null) {
+      const p = d.data();
+      // Solo el trago con costo: $2.400. El otro no suma nada.
+      if (p.costoMercaderia !== 2400)
+        throw new Error('inventó un costo: ' + p.costoMercaderia);
+      // Y la cobertura dice $5.000 de $12.000 vendidos, no $12.000.
+      if (p.costoDe !== 5000)
+        throw new Error('la cobertura miente: ' + p.costoDe + ' (debería ser 5000)');
+      if (p.total !== 12000) throw new Error('el total quedó mal: ' + p.total);
+      return;
+    }
+    if (i === 59) throw new Error('nunca escribió el costo');
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
 // ---------- la plata de la puerta ----------
 // Antes la entrada era un precio guardado en el evento y nada más: nadie
 // escribía nunca que alguien la había pagado. Toda la recaudación de la

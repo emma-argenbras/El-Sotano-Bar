@@ -545,6 +545,79 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
   });
 
+  // El costo de la mercadería, congelado al entregar. Es lo que hace que la
+  // ganancia de una noche no se mueva sola cuando entra una compra más cara.
+  describe('el costo congelado de un pedido', () => {
+    let n = 0;
+    const unPedido = async () => {
+      const id = `pedido-costo-${++n}`;
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'pedidos/' + id), {
+          clienteId: 'ana', estado: 'entregado', pago: 'efectivo',
+          items: [{ id: 'fernet', nombre: 'Fernet con coca', precio: 4500, cantidad: 2 }],
+          total: 9000, creadoEn: new Date(),
+        });
+      });
+      return id;
+    };
+
+    // Se prueba con el celular de la barra, no con el dueño: al dueño la
+    // regla lo deja pasar sin validar nada (esElDueno() || ...), así que con
+    // él estos candados no se verían ni aunque no existieran.
+    it('el celular de la barra lo escribe al entregar', async () => {
+      await assertSucceeds(updateDoc(doc(aparato(), 'pedidos/' + await unPedido()),
+        { costoMercaderia: 1800, costoDe: 9000 }));
+    });
+
+    it('deshacer el entregado lo borra', async () => {
+      const id = await unPedido();
+      await assertSucceeds(updateDoc(doc(aparato(), 'pedidos/' + id),
+        { costoMercaderia: 1800, costoDe: 9000 }));
+      await assertSucceeds(updateDoc(doc(aparato(), 'pedidos/' + id),
+        { costoMercaderia: null, costoDe: null }));
+    });
+
+    it('cero es un costo válido, no un faltante', async () => {
+      await assertSucceeds(updateDoc(doc(aparato(), 'pedidos/' + await unPedido()),
+        { costoMercaderia: 0, costoDe: 0 }));
+    });
+
+    it('un costo que no es entero NO', async () => {
+      await assertFails(updateDoc(doc(aparato(), 'pedidos/' + await unPedido()),
+        { costoMercaderia: '1800', costoDe: 9000 }));
+      await assertFails(updateDoc(doc(aparato(), 'pedidos/' + await unPedido()),
+        { costoMercaderia: 1800.5, costoDe: 9000 }));
+    });
+
+    it('un costo negativo NO', async () => {
+      await assertFails(updateDoc(doc(aparato(), 'pedidos/' + await unPedido()),
+        { costoMercaderia: -1800, costoDe: 9000 }));
+    });
+
+    // El total y los items de un pedido hecho no se reescriben, y el costo no
+    // es la puerta de atrás para hacerlo.
+    it('colar otro cambio con el costo NO', async () => {
+      await assertFails(updateDoc(doc(aparato(), 'pedidos/' + await unPedido()),
+        { costoMercaderia: 1800, total: 1 }));
+      await assertFails(updateDoc(doc(aparato(), 'pedidos/' + await unPedido()),
+        { costoMercaderia: 1800, items: [] }));
+    });
+
+    // Para calcularlo hay que leer insumos, y eso es solo de la barra: el
+    // cliente no podría ni aunque las reglas lo dejaran.
+    it('el cliente no escribe el costo de su propio pedido', async () => {
+      const id = await unPedido();
+      await assertFails(updateDoc(doc(anon(), 'pedidos/' + id),
+        { costoMercaderia: 0, costoDe: 0 }));
+      await assertFails(getDocs(collection(anon(), 'insumos')));
+    });
+
+    it('la puerta tampoco', async () => {
+      await assertFails(updateDoc(doc(puerta(), 'pedidos/' + await unPedido()),
+        { costoMercaderia: 1800, costoDe: 9000 }));
+    });
+  });
+
   // La plata de la puerta. Antes no existía en ningún lado: la entrada era
   // un precio guardado en el evento y nadie escribía nunca que alguien la
   // había pagado. Ahora se anota en el mismo acto que el ingreso.

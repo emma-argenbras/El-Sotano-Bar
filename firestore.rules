@@ -213,6 +213,27 @@ service cloud.firestore {
         .hasOnly(['estado', 'pago', 'vendidoPor', 'cobradoEn']);
     }
 
+    // El costo de la mercadería, congelado al entregar. Lo escribe el mismo
+    // lote que mueve el stock, porque es el momento en que la mercadería sale
+    // de verdad. Antes el costo se recalculaba siempre con los precios de hoy
+    // y la ganancia de una noche vieja se movía sola al entrar una compra.
+    //
+    // El cliente no puede escribirlo aunque quisiera: para calcularlo hay que
+    // leer insumos, y eso es solo de la barra.
+    function soloCosto() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['costoMercaderia', 'costoDe'])
+        && costoValido('costoMercaderia') && costoValido('costoDe');
+    }
+
+    // Un entero en pesos, o null cuando se deshace el entregado: lo que no
+    // salió no costó nada.
+    function costoValido(campo) {
+      return request.resource.data.get(campo, null) == null
+        || (request.resource.data[campo] is int
+            && request.resource.data[campo] >= 0);
+    }
+
     // Una venta cargada desde la barra: sale cobrada y entregada, con quién la
     // hizo. El cliente del mostrador no usa la app, así que la carga la barra.
     function ventaDeBarra(d) {
@@ -327,7 +348,7 @@ service cloud.firestore {
         && request.resource.data.estado in estadosValidos()
         && request.resource.data.clienteId == resource.data.clienteId
         && request.resource.data.creadoEn == resource.data.creadoEn
-        && (esElDueno() || soloCobro());
+        && (esElDueno() || soloCobro() || soloCosto());
 
       // Borrar es del dueño y de nadie más.
       allow delete: if esElDueno();

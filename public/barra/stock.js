@@ -69,6 +69,47 @@ export function apuntarDisponibilidad(lote, movimientos, quedan) {
   return tocados.length;
 }
 
+// Lo que le cuesta a la casa una unidad de un producto, según su receta y lo
+// que valen hoy los insumos. null = no se sabe: falta el costo de al menos
+// una botella, y media cuenta es peor que ninguna.
+export function costoDeReceta(item) {
+  const receta = (item.receta || []).filter((r) => Number(r.medidas) > 0);
+  if (!receta.length) return null;
+  let total = 0;
+  for (const r of receta) {
+    const ins = estado.insumos.find((i) => i.id === r.insumoId);
+    if (!ins || !Number(ins.costo || 0)) return null;
+    const medidas = Math.max(1, Number(ins.medidas || 1));
+    total += Number(ins.costo) / medidas * Number(r.medidas);
+  }
+  return Math.round(total);
+}
+
+// Lo que costó la mercadería de una venta, con los precios de HOY.
+//
+// Se calcula una sola vez, cuando el pedido se entrega, y queda escrito en el
+// pedido. Antes el costo salía siempre de los insumos actuales: entraba una
+// compra con el fernet más caro y la ganancia de las noches pasadas se movía
+// sola, sin que nadie hubiera tocado nada. Un número cerrado que cambia solo
+// no es un número.
+//
+// Devuelve también 'de': cuánto de lo vendido tiene costo conocido. Sin eso,
+// una ganancia calculada sobre la mitad de la carta se muestra como si fuera
+// la ganancia entera.
+export function costoDeItems(items) {
+  let mercaderia = 0;
+  let de = 0;
+  for (const i of (items || [])) {
+    const c = estado.carta.find((x) => x.id === i.id);
+    const unitario = c ? costoDeReceta(c) : null;
+    if (unitario === null) continue;
+    const cuantos = Number(i.cantidad || 0);
+    mercaderia += unitario * cuantos;
+    de += Number(i.precio || 0) * cuantos;
+  }
+  return { mercaderia: Math.round(mercaderia), de: Math.round(de) };
+}
+
 // Mueve el stock de varios insumos y deja la carta al día, en un solo lote.
 //
 //   moverInsumos([{ insumoId, delta: -2 }])     resta dos medidas
@@ -77,10 +118,10 @@ export function apuntarDisponibilidad(lote, movimientos, quedan) {
 // La resta la hace el servidor con increment: dos celulares vendiendo a la vez
 // no se pisan, y sin señal el lote queda encolado y sale al volver. Una
 // transacción haría lo primero pero no lo segundo, y el bar está abajo.
-export async function moverInsumos(movimientos, extras) {
+export async function moverInsumos(movimientos, extras, apuntes) {
   const reales = movimientos.filter((m) =>
     estado.insumos.some((i) => i.id === m.insumoId));
-  if (!reales.length && !(extras || []).length) return;
+  if (!reales.length && !(extras || []).length && !(apuntes || []).length) return;
 
   const lote = writeBatch(db);
   for (const m of reales) {
@@ -95,6 +136,12 @@ export async function moverInsumos(movimientos, extras) {
       stock: increment(Number(e.delta || 0)),
       ...(e.disponible === undefined ? {} : { disponible: e.disponible }),
     });
+  }
+  // Lo que hay que dejar anotado en el mismo lote que el movimiento. Hoy es
+  // el costo de la mercadería de un pedido entregado: si se escribiera aparte
+  // y fallara, quedaría stock descontado sin costo, o al revés.
+  for (const a of (apuntes || [])) {
+    lote.update(doc(db, a.coleccion, a.id), a.datos);
   }
   apuntarDisponibilidad(lote, reales);
   await lote.commit();

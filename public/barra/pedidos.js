@@ -11,7 +11,7 @@ import {
   where,
 } from '/vendor/firebase.js';
 import { $, COLUMNAS, DEMORA_MS, esc, estado, plata } from './base.js';
-import { moverInsumos } from './stock.js';
+import { costoDeItems, moverInsumos } from './stock.js';
 import { app, auth, db, pintarConexion } from './conexion.js';
 import { cajaDeHoy } from './jornada.js';
 import { desdeCuando, pintarEvento, resumirCaja } from './eventos.js';
@@ -261,7 +261,7 @@ export async function cobrarVenta(pago) {
   const btn = $(pago === 'efectivo' ? '#btnVentaEfectivo' : '#btnVentaVirtual');
   if (btn) { btn.disabled = true; btn.textContent = 'Cobrando…'; }
   try {
-    await addDoc(collection(db, 'pedidos'), {
+    const ref = await addDoc(collection(db, 'pedidos'), {
       clienteId: auth.currentUser.uid,
       estado: 'entregado', origen: 'barra',
       items, total: totalVenta(), pago,
@@ -270,7 +270,9 @@ export async function cobrarVenta(pago) {
       nombreCliente: 'Mostrador',
       creadoEn: serverTimestamp(),
     });
-    await moverStock({ items }, -1);
+    // Con el id: si no, la venta de mostrador sería la única sin costo
+    // anotado, y es la más común de todas.
+    await moverStock({ id: ref.id, items }, -1);
     if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
     estado.venta = {};
     $('#dlgVenta').close();
@@ -324,9 +326,21 @@ export async function moverStock(pedido, signo) {
     };
   });
 
+  // El costo de la mercadería se congela acá, en el mismo lote que el
+  // movimiento de stock: es el momento en que la mercadería sale de verdad.
+  // Deshacer un entregado lo borra, porque lo que no salió no costó nada.
+  const apuntes = pedido?.id ? [{
+    coleccion: 'pedidos',
+    id: pedido.id,
+    datos: signo === -1
+      ? (({ mercaderia, de }) => ({ costoMercaderia: mercaderia, costoDe: de }))(costoDeItems(pedido.items))
+      : { costoMercaderia: null, costoDe: null },
+  }] : [];
+
   await moverInsumos(
     [...porInsumo].map(([insumoId, medidas]) => ({ insumoId, delta: signo * medidas })),
     extras,
+    apuntes,
   ).catch(() => {});
 }
 
