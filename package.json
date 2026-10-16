@@ -28,7 +28,8 @@
     "exportar:deposito": "node scripts/exportar-deposito.mjs",
     "resetear": "node scripts/resetear.mjs",
     "respaldo": "node scripts/respaldo-completo.mjs",
-    "migrar:catalogo": "node scripts/migrar-catalogo.mjs"
+    "migrar:catalogo": "node scripts/migrar-catalogo.mjs",
+    "separar:whiskies": "node scripts/separar-whiskies.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
