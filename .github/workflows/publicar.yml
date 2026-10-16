@@ -29,6 +29,11 @@ on:
         required: false
         default: false
         type: boolean
+      motivo_fuera_de_hora:
+        description: 'Publicar con el bar abierto: por qué (lo pide el dueño)'
+        required: false
+        default: ''
+        type: string
 
 # Dos despliegues a la vez dejarían el sitio con una mezcla de los dos.
 concurrency:
@@ -74,7 +79,14 @@ jobs:
       # receta publica commits viejos, que todavía no tenían ese script. Es la
       # misma regla que scripts/ventana.mjs, que es el que está probado
       # (tests/ventana.test.mjs). Si una cambia, la otra también.
+      #
+      # El permiso para publicar con el bar abierto es un motivo escrito, no
+      # una regla menos. Queda en el registro de la corrida: quién la lanzó,
+      # a qué hora y por qué. Vacío —que es lo normal— y la puerta se cierra
+      # igual que siempre.
       - name: ¿El bar está cerrado?
+        env:
+          MOTIVO: ${{ inputs.motivo_fuera_de_hora }}
         run: |
           node -e "
             const h = Number(new Intl.DateTimeFormat('es-AR',
@@ -84,8 +96,15 @@ jobs:
               { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false })
               .format(new Date());
             if (h >= 6 && h < 19) { console.log('Son las ' + reloj + ' en Argentina: se puede publicar.'); process.exit(0); }
+            const motivo = String(process.env.MOTIVO || '').trim();
+            if (motivo) {
+              console.log('Son las ' + reloj + ' en Argentina: el bar está abierto.');
+              console.log('Se publica igual, con permiso del dueño: ' + motivo);
+              process.exit(0);
+            }
             console.error('Son las ' + reloj + ' en Argentina: el bar está abierto.');
             console.error('No se publica entre las 19:00 y las 06:00. Esperá a mañana.');
+            console.error('Si el dueño lo pide igual, hay que escribir el motivo al lanzarla.');
             process.exit(1);
           "
 
