@@ -42,6 +42,12 @@ const SELLADOS = [
   'public/app.js', 'public/bar.js', 'public/actualizar.js', 'public/estilos.css',
   'public/registro.js', 'public/pase.js', 'public/ayuda.js', 'public/tel.js',
   'public/instalar.js',
+  // Los módulos del panel: si cambia uno solo, la versión tiene que cambiar,
+  // o el navegador se queda con una mezcla de viejo y nuevo.
+  'public/barra/base.js', 'public/barra/conexion.js', 'public/barra/login.js',
+  'public/barra/eventos.js', 'public/barra/usuarios.js', 'public/barra/invitados.js',
+  'public/barra/pedidos.js', 'public/barra/carta.js', 'public/barra/deposito.js',
+  'public/barra/administracion.js',
   'public/manifest.webmanifest', 'public/manifest-barra.webmanifest',
   'public/manifest-club.webmanifest',
   'public/iconos/icono.svg', 'public/iconos/icono-barra.svg',
