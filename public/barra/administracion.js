@@ -12,6 +12,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from '/vendor/firebase.js';
 import { $, esc, estado, plata } from './base.js';
 import { costoDeReceta, moverInsumos } from './stock.js';
@@ -444,10 +445,11 @@ export function pintarAdminEntradas() {
               e.fecha?.toDate?.().toLocaleDateString('es-AR') || ''}</small></td>
           <td class="n" style="width:7rem">
             <input data-entrada="${esc(e.id)}" type="number" min="0" inputmode="numeric"
-                   value="${Number(e.entrada || 0) || ''}" placeholder="gratis"
+                   value="${Number(e.entrada || 0)}"
                    aria-label="Entrada de ${esc(e.nombre || 'la noche')}"
                    style="width:100%;text-align:right">
-            <small style="color:var(--suave)">entrada</small></td>
+            <small style="color:var(--suave)">${
+              Number(e.entrada || 0) ? 'entrada' : 'gratis'}</small></td>
         </tr>`).join('')}
     </tbody></table>`;
 
@@ -455,9 +457,23 @@ export function pintarAdminEntradas() {
     const ev = noches.find((x) => x.id === el.dataset.entrada);
     const nuevo = Math.max(0, Math.round(Number(el.value) || 0));
     if (!ev || nuevo === Number(ev.entrada || 0)) return;
-    try { await updateDoc(doc(EVENTOS(), ev.id), { entrada: nuevo }); }
+
+    // El precio vive en DOS lugares: la ficha del evento y el registro de esa
+    // noche. La puerta lee el del registro. Escribir solo la ficha —que era
+    // lo que hacía esto— dejaba el precio cargado y la puerta sin cobrar:
+    // no aparecía el cartel, no se preguntaba la forma de pago, y la plata
+    // de la entrada no quedaba anotada en ningún lado.
+    //
+    // Van juntos en un lote: si se escribiera uno y fallara el otro, quedaría
+    // exactamente el problema que esto viene a arreglar.
+    const lote = writeBatch(db);
+    lote.update(doc(EVENTOS(), ev.id), { entrada: nuevo });
+    if (estado.registros[ev.id]) {
+      lote.update(doc(db, 'registros', ev.id), { entrada: nuevo });
+    }
+    try { await lote.commit(); }
     catch (err) {
-      el.value = Number(ev.entrada || 0) || '';
+      el.value = Number(ev.entrada || 0);
       alert('No se pudo: ' + (err.code || err.message));
     }
   });

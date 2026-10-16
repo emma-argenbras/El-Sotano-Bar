@@ -545,6 +545,44 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
   });
 
+  // El precio de la entrada vive en dos lugares: la ficha del evento y el
+  // registro de esa noche. La PUERTA lee el del registro. Escribir uno solo
+  // dejaba el precio cargado y la puerta sin cobrar.
+  describe('el precio de la entrada llega a la puerta', () => {
+    it('quien administra la plata lo toca en los dos lados', async () => {
+      await assertSucceeds(updateDoc(doc(soloPlata(), 'barra/eventos/items/ev-1'),
+        { entrada: 7000 }));
+      await assertSucceeds(updateDoc(doc(soloPlata(), 'registros/ev-1'),
+        { entrada: 7000 }));
+    });
+
+    // Y solo el precio: desde Administración no se cambia el cupo de una
+    // noche ni se reabre un registro cerrado.
+    it('pero NADA más que el precio', async () => {
+      await assertFails(updateDoc(doc(soloPlata(), 'registros/ev-1'),
+        { entrada: 7000, capacidad: 999 }));
+      // Ojo con el valor en los dos de abajo: affectedKeys() solo trae lo
+      // que CAMBIA, y un conjunto vacío pasa cualquier hasOnly(). Escribir
+      // el mismo valor que ya está no es una escritura que las reglas
+      // puedan frenar —ni haría falta, porque no cambia nada—, así que acá
+      // van valores distintos a los que tiene.
+      await assertFails(updateDoc(doc(soloPlata(), 'registros/ev-1'),
+        { nombre: 'Noche robada' }));
+      await assertFails(updateDoc(doc(soloPlata(), 'registros/ev-1'),
+        { registrados: 99 }));
+    });
+
+    it('cero es un precio: la noche es gratis', async () => {
+      await assertSucceeds(updateDoc(doc(soloPlata(), 'registros/ev-1'), { entrada: 0 }));
+    });
+
+    it('la barra no le pone precio a la noche', async () => {
+      await assertFails(updateDoc(doc(turnoOk(), 'registros/ev-1'), { entrada: 1 }));
+      await assertFails(updateDoc(doc(aparato(), 'registros/ev-1'), { entrada: 1 }));
+      await assertFails(updateDoc(doc(anon(), 'registros/ev-1'), { entrada: 1 }));
+    });
+  });
+
   // La jornada cerrada: los números de una noche, congelados.
   describe('el cierre de una jornada', () => {
     const cierre = () => ({

@@ -431,8 +431,13 @@ service cloud.firestore {
       allow get: if true;
       allow list: if esBarra() || esPuerta();
       allow create, delete: if esAdmin() && puedo('calendario');
+      // El precio de la entrada es plata, así que también se toca desde
+      // Administración —pero solo eso—. Tiene que escribirse acá además de
+      // en la ficha del evento: la puerta lee el precio de ESTE documento,
+      // y escribir uno solo de los dos deja a la puerta sin cobrar.
       // El que se anota suma uno, y nada más, y solo si queda lugar.
       allow update: if (esAdmin() && puedo('calendario'))
+        || (esAdmin() && puedo('caja') && soloEntrada())
         || (hayLugarEn(ev)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['registrados'])
             && request.resource.data.registrados == resource.data.registrados + 1);
