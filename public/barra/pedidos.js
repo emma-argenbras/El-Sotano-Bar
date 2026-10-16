@@ -3,7 +3,6 @@ import {
   addDoc,
   collection,
   doc,
-  increment,
   onSnapshot,
   orderBy,
   query,
@@ -12,6 +11,7 @@ import {
   where,
 } from '/vendor/firebase.js';
 import { $, COLUMNAS, DEMORA_MS, esc, estado, plata } from './base.js';
+import { moverInsumos } from './stock.js';
 import { app, auth, db, pintarConexion } from './conexion.js';
 import { desdeCuando, pintarEvento, resumirCaja } from './eventos.js';
 
@@ -290,24 +290,15 @@ export async function cobrarVenta(pago) {
 // stock. Solo se tocan los productos que llevan cuenta; los que están en ∞ no
 // se controlan y se dejan como están.
 //
+// La misma operación que mueve el depósito deja escrito qué queda disponible
+// en la carta, en un solo lote. Ver barra/stock.js.
+//
 // signo = -1 descuenta (se entregó), +1 devuelve (se corrigió un entregado).
-//
-// El movimiento lo hace increment, que suma del lado del servidor. Antes se
-// leía el stock de la copia en memoria y se escribía "lo que yo vi más el
-// delta": con dos celulares entregando en el mismo segundo, el segundo pisaba
-// al primero y una venta desaparecía del depósito.
-//
-// Una transacción también lo arreglaría, pero falla sin señal en vez de
-// encolarse, y acá abajo la señal se corta. increment se encola.
-//
-// Como lo suma el servidor, el stock puede quedar negativo. Eso no es un
-// error: es que se vendió más de lo que había cargado, y taparlo con un
-// máximo contra cero era justamente lo que obligaba a leer antes de escribir.
 export async function moverStock(pedido, signo) {
   // Lo que hay que mover del depósito: se junta todo primero, porque dos
   // tragos distintos pueden salir de la misma botella.
   const porInsumo = new Map();
-  const sueltos = [];
+  const sueltos = new Map();
 
   for (const i of (pedido?.items || [])) {
     const c = estado.carta.find((x) => x.id === i.id);
@@ -320,22 +311,27 @@ export async function moverStock(pedido, signo) {
           (porInsumo.get(r.insumoId) || 0) + Number(r.medidas || 0) * cuantos);
       }
     } else if (typeof c.stock === 'number') {
-      // Sin receta: sigue descontando su propio stock, como antes. Así lo que
-      // ya estaba cargado no se rompe mientras se arma el depósito.
-      sueltos.push({ id: i.id, stock: c.stock, cuantos });
+      // Sin receta: lleva su propio número, como antes. Así lo que todavía no
+      // está atado al depósito no se rompe mientras se arma.
+      sueltos.set(i.id, (sueltos.get(i.id) || 0) + cuantos);
     }
   }
 
-  await Promise.all([
-    ...sueltos.map((x) => updateDoc(doc(db, 'carta', x.id),
-      { stock: increment(signo * x.cuantos) }).catch(() => {})),
-    ...[...porInsumo].map(([id, medidas]) => {
-      // Si el insumo ya no está, no hay nada que mover.
-      if (!estado.insumos.some((x) => x.id === id)) return null;
-      return updateDoc(doc(db, 'insumos', id),
-        { stock: increment(signo * medidas) }).catch(() => {});
-    }),
-  ]);
+  const extras = [...sueltos].map(([id, cuantos]) => {
+    const c = estado.carta.find((x) => x.id === id);
+    const queda = Number(c?.stock || 0) + signo * cuantos;
+    return {
+      id,
+      delta: signo * cuantos,
+      // Apagado a mano gana: el depósito no lo vuelve a encender.
+      disponible: c?.apagadoAMano === true ? false : queda > 0,
+    };
+  });
+
+  await moverInsumos(
+    [...porInsumo].map(([insumoId, medidas]) => ({ insumoId, delta: signo * medidas })),
+    extras,
+  ).catch(() => {});
 }
 
 // ---------- cobrar ----------

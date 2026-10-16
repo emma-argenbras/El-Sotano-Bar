@@ -57,16 +57,28 @@ export function rindeDeposito(item) {
 // Converge sola aunque haya varios celulares abiertos: el valor es una cuenta
 // del depósito, no un incremento, así que el segundo que llega ve que ya está
 // bien y no escribe. Sin bucle posible.
+// Quien mueve el stock deja la carta al día en el mismo lote (ver stock.js).
+// Esto es el corrector: corre cuando llega un cambio del depósito y arregla
+// lo que haya quedado torcido —una receta nueva, un movimiento hecho desde
+// otro lado, dos ventas en el mismo segundo—. No es un latido: reacciona a
+// un cambio real, no al reloj.
 export async function sincronizarCartaConDeposito() {
   if (!estado.carta.length || !estado.insumos.length) return;
   const cambios = estado.carta
     .filter((i) => (i.receta || []).length)
-    .map((i) => ({ id: i.id, rinde: rindeDeposito(i), tenia: i.stock }))
-    .filter((x) => x.rinde !== x.tenia);
+    .map((i) => {
+      const rinde = rindeDeposito(i);
+      // Apagado a mano gana: el depósito no lo vuelve a encender.
+      const disponible = i.apagadoAMano === true ? false : rinde > 0;
+      return { id: i.id, rinde, disponible,
+               igual: rinde === i.stock && disponible === i.disponible };
+    })
+    .filter((x) => !x.igual);
   // Quien no puede escribir la carta —la puerta, un barman fuera de turno—
   // simplemente no sincroniza: no es su trabajo y las reglas lo frenan igual.
   await Promise.all(cambios.map((x) =>
-    updateDoc(doc(db, 'carta', x.id), { stock: x.rinde }).catch(() => {})));
+    updateDoc(doc(db, 'carta', x.id),
+      { stock: x.rinde, disponible: x.disponible }).catch(() => {})));
 }
 
 export function escucharDeposito() {

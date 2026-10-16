@@ -917,6 +917,25 @@ describe('tres niveles: dueño, administrador y barman', () => {
     await assertSucceeds(updateDoc(doc(turnoOk(), 'carta/fernet'), { disponible: false, stock: 0 }));
   });
 
+  // El que ve la botella rota es el que atiende, no el que mira la pantalla
+  // desde la oficina. Por eso la marca a mano la puede poner la barra.
+  it('la barra puede apagar un producto a mano', async () => {
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'carta/fernet'),
+      { apagadoAMano: true, disponible: false }));
+    await assertSucceeds(updateDoc(doc(aparato(), 'carta/fernet'),
+      { apagadoAMano: false, disponible: true, stock: 4 }));
+  });
+
+  it('pero no puede cambiarle el precio de paso', async () => {
+    await assertFails(updateDoc(doc(turnoOk(), 'carta/fernet'),
+      { apagadoAMano: true, precio: 1 }));
+  });
+
+  it('ni la puerta ni un barman fuera de turno lo apagan', async () => {
+    await assertFails(updateDoc(doc(puerta(), 'carta/fernet'), { apagadoAMano: true }));
+    await assertFails(updateDoc(doc(franco(), 'carta/fernet'), { apagadoAMano: true }));
+  });
+
   it('la barra NO puede cambiar un precio', async () => {
     await assertFails(updateDoc(doc(turnoOk(), 'carta/fernet'), { precio: 1 }));
   });

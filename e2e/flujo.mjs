@@ -1579,6 +1579,93 @@ await chequear('poner al día el depósito le abre la cuenta a cada proveedor', 
   }
 });
 
+await chequear('la venta deja la carta al día en la misma operación', async () => {
+  // Lo que importa no es solo que el número baje: es que `disponible` quede
+  // escrito por la misma operación que movió el stock, sin que nadie tenga
+  // que tener una pantalla abierta mirando.
+  const fernet = (await db.collection('carta').where('nombre', '==', 'Fernet con coca').get()).docs[0];
+  const insumo = (await db.collection('insumos').where('nombre', '==', 'Fernet 750').get()).docs[0];
+  if (!fernet || !insumo) throw new Error('falta el producto con receta o su insumo');
+
+  // Una sola medida en el depósito: alcanza para un trago y nada más.
+  await insumo.ref.update({ stock: 1 });
+  for (let i = 0; i < 60; i++) {
+    const d = await fernet.ref.get();
+    if (Number(d.data().stock) === 1 && d.data().disponible !== false) break;
+    if (i === 59) throw new Error('no quedó en 1 disponible: ' + JSON.stringify((await fernet.ref.get()).data()));
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+
+  // Se vende el último: el depósito queda en cero y el producto se apaga
+  // solo, en la misma operación.
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Fernet con coca' })
+    .locator('[data-venta][data-d="1"]').click();
+  await barra.click('#btnVentaEfectivo');
+
+  for (let i = 0; i < 60; i++) {
+    const d = (await fernet.ref.get()).data();
+    if (Number(d.stock) === 0 && d.disponible === false) break;
+    if (i === 59) {
+      throw new Error('no se apagó solo: ' + JSON.stringify({ stock: d.stock, disponible: d.disponible }));
+    }
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+
+  // Y el cliente lo ve agotado, sin que nadie lo marque.
+  await cliente.waitForFunction(() => {
+    const f = [...document.querySelectorAll('#carta .item')]
+      .find((x) => x.textContent.includes('Fernet con coca'));
+    return f && f.className.includes('agotado');
+  }, null, { timeout: 15000 });
+});
+
+await chequear('apagado a mano le gana al depósito', async () => {
+  // Se rompió la botella: el depósito dice que hay, pero no hay. La marca
+  // tiene que aguantar aunque entre mercadería después.
+  const fernet = (await db.collection('carta').where('nombre', '==', 'Fernet con coca').get()).docs[0];
+  const insumo = (await db.collection('insumos').where('nombre', '==', 'Fernet 750').get()).docs[0];
+
+  await barra.click('#tabCartaBar');
+  const fila = barra.locator('#cartaBar .item', { hasText: 'Fernet con coca' });
+  await barra.waitForFunction(() =>
+    [...document.querySelectorAll('#cartaBar .item')]
+      .some((x) => x.textContent.includes('Fernet con coca')), null, { timeout: 10000 });
+
+  // Con el depósito en cero el botón ofrece reactivar; se carga stock para
+  // que ofrezca apagarlo a mano.
+  await insumo.ref.update({ stock: 50 });
+  await barra.waitForFunction(() =>
+    (document.querySelector('#cartaBar')?.textContent || '').includes('Agotar a mano'),
+    null, { timeout: 15000 });
+
+  await fila.locator('[data-toggle]').click();
+  for (let i = 0; i < 40; i++) {
+    const d = (await fernet.ref.get()).data();
+    if (d.apagadoAMano === true && d.disponible === false) break;
+    if (i === 39) throw new Error('no quedó apagado a mano: ' + JSON.stringify(d));
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+
+  // Entra mercadería: el cálculo NO lo puede encender.
+  await insumo.ref.update({ stock: 80 });
+  await barra.waitForTimeout(2500);
+  const d = (await fernet.ref.get()).data();
+  if (d.disponible !== false) throw new Error('el depósito le ganó a la marca a mano');
+  if (d.apagadoAMano !== true) throw new Error('se borró la marca sola');
+
+  // Y se suelta desde el mismo botón.
+  await fila.locator('[data-toggle]').click();
+  for (let i = 0; i < 40; i++) {
+    const x = (await fernet.ref.get()).data();
+    if (x.apagadoAMano === false && x.disponible === true) break;
+    if (i === 39) throw new Error('no se soltó: ' + JSON.stringify(x));
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
 await chequear('la carta se queda sin stock sola cuando el depósito se vacía', async () => {
   // Lo que el cliente ve no puede depender de que alguien se acuerde de tocar
   // "Agotar": si no hay fernet en el depósito, el fernet con coca no se puede

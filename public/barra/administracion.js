@@ -13,6 +13,7 @@ import {
   where,
 } from '/vendor/firebase.js';
 import { $, esc, estado, plata } from './base.js';
+import { moverInsumos } from './stock.js';
 import { EVENTOS, app, db, fallo } from './conexion.js';
 import { comoSeDice } from './deposito.js';
 import { noches } from './eventos.js';
@@ -756,14 +757,18 @@ export async function guardarAlDia() {
       });
 
       // Y cada insumo se queda con su precio y su proveedor, que es lo que
-      // después dice cuánto deja cada trago.
-      await Promise.all(filas.map((f) => {
-        const medidas = Math.max(1, Number(f.ins.medidas || 1));
-        return updateDoc(doc(db, 'insumos', f.ins.id), {
-          costo: Number(f.costo), proveedorId,
-          ...(cargaStock ? { stock: Number(f.unidades) * medidas } : {}),
-        });
-      }));
+      // después dice cuánto deja cada trago. El precio y el proveedor no
+      // mueven stock, así que van por su lado.
+      await Promise.all(filas.map((f) =>
+        updateDoc(doc(db, 'insumos', f.ins.id), { costo: Number(f.costo), proveedorId })));
+
+      // El stock sí: va con la disponibilidad de la carta, en un lote.
+      if (cargaStock) {
+        await moverInsumos(filas.map((f) => ({
+          insumoId: f.ins.id,
+          valor: Number(f.unidades) * Math.max(1, Number(f.ins.medidas || 1)),
+        })));
+      }
     }
     $('#dlgAlDia').close();
   } catch (e) {
@@ -957,14 +962,13 @@ export async function guardarCompra() {
       creadoEn: serverTimestamp(),
     });
 
-    // Suma el stock, en medidas.
-    await Promise.all(items.map((i) => {
+    // Suma el stock, en medidas, y deja la carta al día en el mismo lote.
+    await moverInsumos(items.map((i) => {
       const ins = estado.insumos.find((x) => x.id === i.insumoId);
       if (!ins) return null;
-      const medidas = Math.max(1, Number(ins.medidas || 1));
-      return updateDoc(doc(db, 'insumos', i.insumoId),
-        { stock: Number(ins.stock || 0) + i.unidades * medidas });
-    }));
+      return { insumoId: i.insumoId,
+               delta: i.unidades * Math.max(1, Number(ins.medidas || 1)) };
+    }).filter(Boolean));
 
     // Pagada en el acto: además es plata que salió de la caja.
     if (c.condicion === 'contado' && total > 0) {

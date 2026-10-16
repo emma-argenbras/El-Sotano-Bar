@@ -146,9 +146,12 @@ service cloud.firestore {
 
     // Lo que la barra puede tocar de un producto: si se acabó y cuánto queda.
     // Los precios, el nombre y la categoría son del gerente para arriba.
+    // apagadoAMano es del que está en la barra: se rompió la botella y el
+    // depósito todavía dice que hay. Por eso entra acá y no en lo que solo
+    // toca un administrador —el que ve el problema es el que atiende—.
     function soloStock() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['stock', 'disponible']);
+        .hasOnly(['stock', 'disponible', 'apagadoAMano']);
     }
 
     function esDueno(uid) {

@@ -294,13 +294,14 @@ export function pintarCartaBar() {
     const delDeposito = (i.receta || []).length > 0;
     const rinde = delDeposito ? rindeDeposito(i) : null;
     return `
-    <div class="item ${fuera || i.disponible === false || rinde === 0 ? 'agotado' : ''}">
+    <div class="item ${fuera || i.disponible === false || i.apagadoAMano || rinde === 0 ? 'agotado' : ''}">
       <div class="cuerpo">
         <div class="nombre">${esc(i.nombre || i.id)}${fuera ? ' — <small>fuera de carta</small>' : ''}</div>
         <div class="desc">${esc(i.categoria || '')} · ${plata(i.precio)} · ${
           delDeposito
             ? (rinde === 0 ? 'sin material en el depósito' : 'sale del depósito')
-            : '<b style="color:var(--naranja)">no sale del depósito</b>'}</div>
+            : '<b style="color:var(--naranja)">no sale del depósito</b>'}${
+          i.apagadoAMano ? ' · <b style="color:var(--rojo)">agotado a mano</b>' : ''}</div>
       </div>
       ${delDeposito ? `
       <div class="cant" title="Lo que el depósito alcanza a dar. Para que suba, cargá mercadería.">
@@ -311,8 +312,14 @@ export function pintarCartaBar() {
         <span class="n">${typeof i.stock === 'number' ? i.stock : '∞'}</span>
         <button data-stock="${i.id}" data-d="1" aria-label="Sumar stock" ${fuera ? 'disabled' : ''}>+</button>
       </div>`}
-      <button class="btn" data-toggle="${i.id}" style="padding:.4rem .7rem;font-size:.82rem" ${fuera ? 'disabled' : ''}>
-        ${i.disponible === false ? 'Activar' : 'Agotar'}
+      <button class="btn ${i.apagadoAMano ? 'peligro' : ''}" data-toggle="${i.id}"
+              style="padding:.4rem .7rem;font-size:.82rem" ${fuera ? 'disabled' : ''}
+              title="${delDeposito
+                ? 'Apagarlo a mano: el depósito no lo vuelve a encender'
+                : 'Marcarlo agotado'}">
+        ${i.apagadoAMano ? 'Reactivar'
+          : delDeposito ? 'Agotar a mano'
+          : i.disponible === false ? 'Activar' : 'Agotar'}
       </button>
       <button class="btn solo-gerente-inline" data-receta-de="${i.id}"
               style="padding:.4rem .7rem;font-size:.82rem"
@@ -331,9 +338,19 @@ export function pintarCartaBar() {
     try { await updateDoc(doc(db, 'carta', i.id), { stock: n, disponible: n > 0 }); }
     catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
   });
+  // Agotar a mano. En un producto que sale del depósito no alcanza con
+  // apagar `disponible`: el próximo movimiento de stock lo vuelve a encender.
+  // Se rompió la botella, se volcó el hielo: queda la marca, y el cálculo
+  // mira y no toca hasta que alguien la saque.
   cont.querySelectorAll('[data-toggle]').forEach((b) => b.onclick = async () => {
     const i = estado.carta.find((x) => x.id === b.dataset.toggle);
-    try { await updateDoc(doc(db, 'carta', i.id), { disponible: i.disponible === false }); }
+    const sale = (i.receta || []).length > 0;
+    const datos = sale
+      ? (i.apagadoAMano
+        ? { apagadoAMano: false, disponible: rindeDeposito(i) > 0 }
+        : { apagadoAMano: true, disponible: false })
+      : { disponible: i.disponible === false };
+    try { await updateDoc(doc(db, 'carta', i.id), datos); }
     catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
   });
   // Sacar de la carta / volver a ponerlo. Nada se borra: el item queda guardado.
