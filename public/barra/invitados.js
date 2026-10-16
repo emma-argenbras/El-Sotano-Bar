@@ -214,6 +214,14 @@ $('#btnGuardarInvitado').onclick = async () => {
     if (!confirm(`Con ese teléfono ya está anotado ${repetido.nombre}.\n\n¿Anotarlo igual?`)) return;
     sufijo = String(Date.now());
   }
+  // El de último momento es, casi siempre, el que paga en la puerta: se le
+  // pregunta antes de anotarlo, así entra y paga en la misma escritura.
+  let cobro = null;
+  if (entra && precioEntrada()) {
+    cobro = await pedirFormaDeEntrada(nombre, precioEntrada());
+    if (!cobro) return;
+  }
+
   btn.disabled = true; btn.textContent = 'Anotando…';
 
   const id = tokenInvitado();
@@ -227,6 +235,12 @@ $('#btnGuardarInvitado').onclick = async () => {
       nombre, telefono,
       creadoEn: serverTimestamp(),
       ...(entra ? { ingresadoEn: serverTimestamp(), ingresadoPor: estado.usuario || 'casa' } : {}),
+      ...(cobro ? {
+        entradaEn: serverTimestamp(),
+        entradaPor: quienAtiende() || estado.usuario || 'casa',
+        entradaPago: cobro.pago,
+        entradaMonto: cobro.monto,
+      } : {}),
     });
     // El contador también, para que el cupo siga cuadrando.
     if (estado.registros[evento]) {
@@ -272,14 +286,107 @@ export async function mostrarPaseNuevo(id, nombre) {
   };
 }
 
-export async function marcarIngreso(id, entra) {
+// Lo que sale la entrada de esta noche. Cero es noche libre.
+export const precioEntrada = () =>
+  Number(estado.registros[eventoDePuerta()]?.entrada || 0);
+
+// Cómo paga cada uno. "cortesía" es una entrada regalada: entra igual y no
+// deja plata, pero queda anotada —el cierre las cuenta aparte, porque una
+// noche con veinte cortesías no es una noche floja, es otra cosa.
+export const FORMAS_ENTRADA = [
+  ['efectivo', '💵', 'Efectivo', 'Va al cajón.'],
+  ['virtual', '📲', 'Transferencia', 'No va al cajón.'],
+  ['cortesia', '🎟', 'Cortesía', 'Entra sin pagar.'],
+];
+
+// Marca que entró y, si la noche cobra entrada, con qué pagó.
+//
+// Las dos cosas en la misma escritura. Separarlas dejaba el hueco de siempre:
+// alguien entra, el cobro se escribe después y en el medio se corta la señal
+// —y el cierre termina con una persona adentro que no pagó nada.
+//
+// Esto es lo que hace que el cierre pueda comparar el cajón contra algo. Sin
+// esto, la plata de la puerta no existía en ninguna parte: la entrada era un
+// precio guardado en el evento y nada más.
+export async function marcarIngreso(id, entra, cobro) {
   try {
     await updateDoc(doc(db, 'invitados', id), {
       ingresadoEn: entra ? serverTimestamp() : null,
       ingresadoPor: entra ? (estado.usuario || 'casa') : null,
+      // Deshacer limpia el cobro también: si no entró, no pagó entrada.
+      entradaEn: entra && cobro ? serverTimestamp() : null,
+      entradaPor: entra && cobro ? (quienAtiende() || estado.usuario || 'casa') : null,
+      entradaPago: entra && cobro ? cobro.pago : null,
+      entradaMonto: entra && cobro ? Number(cobro.monto || 0) : null,
     });
     if (navigator.vibrate) navigator.vibrate(entra ? [60, 50, 60] : 30);
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+// El paso de la puerta: entra, y antes se dice cómo paga.
+//
+// No pregunta cuando no hay nada que preguntar —noche sin entrada, o el que
+// ya transfirió y la casa se lo confirmó—; en la puerta hay fila, y un
+// diálogo de más por persona es un diálogo de más cien veces por noche.
+//
+// Devuelve { pago, monto }, o null si la puerta se arrepintió: ahí no entra
+// nadie y no se escribe nada.
+export function pedirFormaDeEntrada(nombre, precio) {
+  return new Promise((listo) => {
+    const dlg = $('#dlgEntrada');
+    let resuelto = false;
+    const terminar = (r) => {
+      if (resuelto) return;
+      resuelto = true;
+      dlg.oncancel = null; dlg.onclose = null;
+      dlg.close();
+      listo(r);
+    };
+
+    $('#cuerpoEntrada').innerHTML = `
+      <p style="margin:.2rem 0 1rem">
+        <b style="font-size:1.1rem">${esc(nombre)}</b><br>
+        <span style="color:var(--suave)">Entrada ${plata(precio)}</span></p>
+      ${FORMAS_ENTRADA.map(([clave, icono, titulo, pie]) => `
+        <button class="btn ancho-full" data-forma="${clave}"
+                style="margin-bottom:.5rem;text-align:left;padding:.8rem .9rem">
+          <b>${icono} ${titulo}</b>
+          <span style="display:block;font-weight:400;font-size:.8rem;color:var(--suave)">
+            ${clave === 'cortesia' ? pie : plata(precio) + ' · ' + pie}</span>
+        </button>`).join('')}`;
+
+    $('#cuerpoEntrada').querySelectorAll('[data-forma]').forEach((b) => b.onclick = () => {
+      const pago = b.dataset.forma;
+      if (pago === 'cortesia'
+        && !confirm(`¿${nombre} entra de cortesía?\n\nNo paga entrada y queda anotado así.`)) return;
+      terminar({ pago, monto: pago === 'cortesia' ? 0 : precio });
+    });
+
+    // Volver, Escape o cerrar el diálogo de cualquier otra forma: no entra.
+    // Que se cierre solo y la persona quede adentro sin pagar es justo el
+    // agujero que esto viene a tapar.
+    dlg.oncancel = () => terminar(null);
+    dlg.onclose = () => terminar(null);
+    dlg.showModal();
+  });
+}
+
+// Cobra y marca el ingreso. Devuelve true si entró.
+export async function cobrarYEntrar(inv) {
+  const precio = precioEntrada();
+  if (!precio) { await marcarIngreso(inv.id, true); return true; }
+
+  // Ya pagó por transferencia y alguien de la barra lo confirmó: no se le
+  // cobra de nuevo, pero la entrada queda contada como virtual.
+  if (inv.pago === 'virtual' && inv.pagadoEn) {
+    await marcarIngreso(inv.id, true, { pago: 'virtual', monto: precio });
+    return true;
+  }
+
+  const cobro = await pedirFormaDeEntrada(inv.nombre, precio);
+  if (!cobro) return false;
+  await marcarIngreso(inv.id, true, cobro);
+  return true;
 }
 
 // ---------- lector de QR con la cámara ----------
@@ -343,13 +450,26 @@ export function resolverEscaneo(texto) {
       <b>${esc(inv.nombre)} ya entró a las ${hora(inv.ingresadoEn)}.</b><br>
       Este pase se usó. Si fue un error, buscalo en la lista y tocá Deshacer.</div></div>`;
   } else {
-    marcarIngreso(inv.id, true);
-    // El teléfono que dejó al anotarse: sirve para chequear que el que muestra
-    // el QR es el que se registró, pidiéndole los últimos números.
-    caja.innerHTML = `<div class="aviso ok"><span>✓</span><div>
-      <b>Adelante, ${esc(inv.nombre)}.</b><br>
-      Se anotó con el <b>${esc(inv.telefono || 'sin teléfono')}</b>.</div></div>`;
+    // "Adelante" recién después de cobrar: si la puerta se arrepiente a mitad
+    // de camino, el cartel no puede estar diciendo que ya pasó.
+    cobrarYEntrar(inv).then((entro) => {
+      caja.innerHTML = entro
+        // El teléfono que dejó al anotarse: sirve para chequear que el que
+        // muestra el QR es el que se registró, pidiéndole los últimos números.
+        ? `<div class="aviso ok"><span>✓</span><div>
+            <b>Adelante, ${esc(inv.nombre)}.</b><br>
+            Se anotó con el <b>${esc(inv.telefono || 'sin teléfono')}</b>.</div></div>`
+        : `<div class="aviso"><span>↩</span><div>
+            <b>${esc(inv.nombre)} no entró.</b><br>
+            No se cobró la entrada. Escaneá de nuevo cuando esté.</div></div>`;
+      seguirEscaneando(caja);
+    });
+    return;
   }
+  seguirEscaneando(caja);
+}
+
+function seguirEscaneando(caja) {
   caja.innerHTML += '<button class="btn primario ancho-full" id="btnSeguir" style="margin-top:.7rem">Escanear el siguiente</button>';
   $('#btnSeguir').onclick = () => { $('#escaneo').innerHTML = ''; abrirCamara(); };
 }
@@ -359,6 +479,15 @@ export function resolverEscaneo(texto) {
 // scrollea para siempre. Van en grupos que se abren y se cierran, y cada uno
 // muestra los primeros y el resto a pedido.
 export const TOPE_LISTA = 20;
+
+// Con qué pagó la entrada, para que se vea en la lista. La cortesía se
+// marca distinto a propósito: es la única que entra sin dejar plata, y al
+// cierre hay que poder contarlas de un vistazo.
+export function comoEntro(i) {
+  if (!i.entradaPago) return '';
+  if (i.entradaPago === 'cortesia') return ' · <b style="color:var(--oro)">🎟 cortesía</b>';
+  return ` · ${i.entradaPago === 'efectivo' ? '💵' : '📲'} entrada ${plata(i.entradaMonto || 0)}`;
+}
 
 export function renglonInvitado(i, conBoton) {
   const gastó = consumoDe(i.id);
@@ -372,6 +501,7 @@ export function renglonInvitado(i, conBoton) {
     <div class="cuerpo">
       <div class="nombre">${esc(i.nombre)}</div>
       <div class="desc">${esc(i.telefono)}${i.ingresadoEn ? ' · entró ' + hora(i.ingresadoEn) : ''}${
+        comoEntro(i)}${
         gastó ? ' · consumió ' + plata(gastó) : ''}${
         // Quien dijo que transfiere no tiene QR hasta que alguien confirme que
         // la plata llegó. Hasta entonces ocupa un lugar sin haber pagado.
@@ -548,7 +678,8 @@ export function pintarPuerta() {
     marcarCobrado(b.dataset.cobrado, b));
   cont.querySelectorAll('[data-ingreso]').forEach((b) => b.onclick = () => {
     const i = estado.invitados.find((x) => x.id === b.dataset.ingreso);
-    marcarIngreso(i.id, !i.ingresadoEn);
+    // Entrar puede costar plata; deshacer nunca.
+    if (i.ingresadoEn) marcarIngreso(i.id, false); else cobrarYEntrar(i);
   });
   engancharPliegues(cont);
 }

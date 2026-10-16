@@ -2885,6 +2885,123 @@ await chequear('cambiarlo mueve la ventana de la caja sin recargar', async () =>
     document.querySelector('#inpCorte')?.value === '6', null, { timeout: 10000 });
 });
 
+// ---------- la plata de la puerta ----------
+// Antes la entrada era un precio guardado en el evento y nada más: nadie
+// escribía nunca que alguien la había pagado. Toda la recaudación de la
+// puerta no existía en la base.
+console.log('\nLA ENTRADA SE COBRA EN LA PUERTA');
+
+// Contra la noche que la puerta está mirando, sea cual sea a esta altura:
+// se saca de alguien que ya está en la lista, no se adivina.
+const nocheDeLaPuerta = async () => {
+  await barra.click('#tabPuerta');
+  await barra.waitForSelector('#puerta .invitado', { timeout: 15000 });
+  const nombre = await barra.locator('#puerta .invitado .nombre').first().textContent();
+  const q = await db.collection('invitados').where('nombre', '==', nombre.trim()).get();
+  return q.docs[0].data().eventoId;
+};
+let nQuienEntra = 0;
+const quienEntra = async (evento) => {
+  const nombre = `Entra ${++nQuienEntra} Prueba`;
+  await db.collection('invitados').doc(`token-cobro-${nQuienEntra}-xxxxxxxxxx`).set({
+    eventoId: evento, nombre, telefono: '', creadoEn: new Date(),
+  });
+  await barra.waitForFunction((n) =>
+    document.querySelector('#puerta')?.textContent.includes(n), nombre, { timeout: 15000 });
+  return { id: `token-cobro-${nQuienEntra}-xxxxxxxxxx`, nombre };
+};
+const esperarCobro = async (id, comoDebeQuedar) => {
+  for (let i = 0; i < 40; i++) {
+    const d = (await db.collection('invitados').doc(id).get()).data();
+    if (comoDebeQuedar(d)) return d;
+    if (i === 39) throw new Error('quedó así: ' + JSON.stringify({
+      ingresadoEn: !!d.ingresadoEn, entradaPago: d.entradaPago, entradaMonto: d.entradaMonto }));
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+};
+
+const laNoche = await nocheDeLaPuerta();
+await db.doc(`registros/${laNoche}`).set({ entrada: 5000 }, { merge: true });
+
+await chequear('la puerta pregunta cómo paga antes de dejar entrar', async () => {
+  const quien = await quienEntra(laNoche);
+  await barra.locator('.invitado', { hasText: quien.nombre }).locator('[data-ingreso]').click();
+  await barra.waitForSelector('#dlgEntrada[open]', { timeout: 10000 });
+  const t = await barra.textContent('#cuerpoEntrada');
+  if (!t.includes(quien.nombre)) throw new Error('no dice a quién le cobra: ' + t);
+  if (!t.includes('5.000')) throw new Error('no dice cuánto: ' + t);
+  for (const forma of ['efectivo', 'virtual', 'cortesia']) {
+    if (!(await barra.locator(`[data-forma="${forma}"]`).count()))
+      throw new Error('le falta la forma de pago: ' + forma);
+  }
+
+  await barra.click('[data-forma="efectivo"]');
+  await barra.waitForSelector('#dlgEntrada[open]', { state: 'detached', timeout: 10000 }).catch(() => {});
+  await esperarCobro(quien.id, (d) =>
+    d.ingresadoEn && d.entradaPago === 'efectivo' && d.entradaMonto === 5000);
+});
+
+await chequear('lo cobrado se ve en la lista, al lado del nombre', async () => {
+  await barra.waitForFunction(() => {
+    const f = [...document.querySelectorAll('.invitado')].find((x) => x.textContent.includes('Entra 1 Prueba'));
+    return f?.textContent.includes('entrada');
+  }, null, { timeout: 10000 }).catch(() => { throw new Error('la fila no muestra el cobro'); });
+});
+
+await chequear('si la puerta se arrepiente, no entra ni se cobra', async () => {
+  // El agujero que esto viene a tapar: que el diálogo se cierre solo y la
+  // persona quede adentro sin haber pagado.
+  const quien = await quienEntra(laNoche);
+  await barra.locator('.invitado', { hasText: quien.nombre }).locator('[data-ingreso]').click();
+  await barra.waitForSelector('#dlgEntrada[open]', { timeout: 10000 });
+  await barra.click('#btnCancelarEntrada');
+  await barra.waitForSelector('#dlgEntrada[open]', { state: 'detached', timeout: 10000 }).catch(() => {});
+
+  await new Promise((ok) => setTimeout(ok, 1500));
+  const d = (await db.collection('invitados').doc(quien.id).get()).data();
+  if (d.ingresadoEn) throw new Error('lo dejó entrar igual');
+  if (d.entradaPago) throw new Error('le cobró igual: ' + d.entradaPago);
+});
+
+await chequear('la cortesía entra en cero y queda marcada como tal', async () => {
+  const quien = await quienEntra(laNoche);
+  const oir = (d) => d.accept();
+  barra.on('dialog', oir);
+  try {
+    await barra.locator('.invitado', { hasText: quien.nombre }).locator('[data-ingreso]').click();
+    await barra.waitForSelector('#dlgEntrada[open]', { timeout: 10000 });
+    await barra.click('[data-forma="cortesia"]');
+    await esperarCobro(quien.id, (d) =>
+      d.ingresadoEn && d.entradaPago === 'cortesia' && d.entradaMonto === 0);
+  } finally {
+    barra.removeListener('dialog', oir);
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+  }
+});
+
+await chequear('deshacer la entrada se lleva el cobro', async () => {
+  const fila = barra.locator('.invitado', { hasText: 'Entra 1 Prueba' });
+  await fila.locator('[data-ingreso]').click();
+  await esperarCobro('token-cobro-1-xxxxxxxxxx', (d) =>
+    !d.ingresadoEn && !d.entradaPago && !d.entradaMonto);
+});
+
+await chequear('en una noche sin entrada no pregunta nada', async () => {
+  await db.doc(`registros/${laNoche}`).set({ entrada: 0 }, { merge: true });
+  await barra.waitForFunction(() =>
+    !document.querySelector('#puerta')?.textContent.includes('Entrada $'),
+    null, { timeout: 10000 }).catch(() => {});
+
+  const quien = await quienEntra(laNoche);
+  await barra.locator('.invitado', { hasText: quien.nombre }).locator('[data-ingreso]').click();
+  await esperarCobro(quien.id, (d) => d.ingresadoEn);
+  if (await barra.locator('#dlgEntrada[open]').count())
+    throw new Error('abrió el diálogo igual, sin entrada que cobrar');
+  const d = (await db.collection('invitados').doc(quien.id).get()).data();
+  if (d.entradaPago) throw new Error('inventó un cobro: ' + d.entradaPago);
+});
+
 await navegador.close();
 
 const ruido = errores.filter((e) => !/favicon|sw\.js|manifest|Failed to load resource/i.test(e));

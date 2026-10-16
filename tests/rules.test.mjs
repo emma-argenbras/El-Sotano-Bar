@@ -545,6 +545,138 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
   });
 
+  // La plata de la puerta. Antes no existía en ningún lado: la entrada era
+  // un precio guardado en el evento y nadie escribía nunca que alguien la
+  // había pagado. Ahora se anota en el mismo acto que el ingreso.
+  describe('el cobro de la entrada', () => {
+    const cobro = (extra = {}) => ({
+      ingresadoEn: serverTimestamp(), ingresadoPor: 'puerta',
+      entradaEn: serverTimestamp(), entradaPor: 'puerta',
+      entradaPago: 'efectivo', entradaMonto: 5000, ...extra,
+    });
+
+    // Cada caso estrena su invitado: marcar el ingreso es irreversible de a
+    // uno (un pase, una entrada) y un caso no puede depender del anterior.
+    let n = 0;
+    const unInvitado = async () => {
+      const token = `token-entrada-${++n}-xxxxxxxxxx`;
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'invitados/' + token), {
+          eventoId: 'ev-1', nombre: 'Beto', telefono: '1155551111', creadoEn: new Date(),
+        });
+      });
+      return token;
+    };
+
+    it('la puerta cobra en efectivo al marcar que entró', async () => {
+      await assertSucceeds(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()), cobro()));
+    });
+
+    it('y por transferencia también', async () => {
+      await assertSucceeds(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ entradaPago: 'virtual' })));
+    });
+
+    it('la cortesía entra en cero', async () => {
+      await assertSucceeds(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ entradaPago: 'cortesia', entradaMonto: 0 })));
+    });
+
+    it('una noche sin entrada sigue entrando sin cobro', async () => {
+      await assertSucceeds(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()), {
+        ingresadoEn: serverTimestamp(), ingresadoPor: 'puerta',
+        entradaEn: null, entradaPor: null, entradaPago: null, entradaMonto: null,
+      }));
+    });
+
+    // Un cobro en cero con forma de pago esconde la diferencia de caja: el
+    // que pagó queda anotado como si no hubiera pagado.
+    it('cobrar cero sin decir que es cortesía NO', async () => {
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ entradaMonto: 0 })));
+    });
+
+    it('una cortesía con monto NO', async () => {
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ entradaPago: 'cortesia', entradaMonto: 5000 })));
+    });
+
+    it('una forma de pago inventada NO', async () => {
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ entradaPago: 'fiado' })));
+    });
+
+    it('un monto que no es un número entero NO', async () => {
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ entradaMonto: '5000' })));
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ entradaMonto: -5000 })));
+    });
+
+    it('una fecha puesta a mano NO', async () => {
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ entradaEn: new Date(2020, 0, 1) })));
+    });
+
+    // Sin entrar no hay entrada cobrada: si no pasó, no pagó.
+    it('cobrar sin marcar que entró NO', async () => {
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()), {
+        entradaEn: serverTimestamp(), entradaPor: 'puerta',
+        entradaPago: 'efectivo', entradaMonto: 5000,
+      }));
+    });
+
+    it('deshacer el ingreso limpia el cobro', async () => {
+      const token = await unInvitado();
+      await assertSucceeds(updateDoc(doc(puerta(), 'invitados/' + token), cobro()));
+      await assertSucceeds(updateDoc(doc(puerta(), 'invitados/' + token), {
+        ingresadoEn: null, ingresadoPor: null,
+        entradaEn: null, entradaPor: null, entradaPago: null, entradaMonto: null,
+      }));
+    });
+
+    it('deshacer el ingreso dejando el cobro puesto NO', async () => {
+      const token = await unInvitado();
+      await assertSucceeds(updateDoc(doc(puerta(), 'invitados/' + token), cobro()));
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + token),
+        { ingresadoEn: null, ingresadoPor: null }));
+    });
+
+    it('colar otro cambio con el cobro NO', async () => {
+      await assertFails(updateDoc(doc(puerta(), 'invitados/' + await unInvitado()),
+        cobro({ nombre: 'Otro' })));
+    });
+
+    it('el invitado no se cobra su propia entrada', async () => {
+      await assertFails(updateDoc(doc(anon(), 'invitados/' + await unInvitado()), cobro()));
+      await assertFails(updateDoc(doc(sinLoguear(), 'invitados/' + await unInvitado()), cobro()));
+    });
+
+    // El de último momento es el que paga en la puerta: entra y paga en la
+    // misma escritura, sin pasar por un update que podría no llegar nunca.
+    it('el invitado de último momento entra y paga de una', async () => {
+      await assertSucceeds(setDoc(doc(gerente(), 'invitados/token-alta-con-entrada-1'), {
+        eventoId: 'ev-1', nombre: 'Colado', telefono: '', creadoEn: serverTimestamp(),
+        ingresadoEn: serverTimestamp(), ingresadoPor: 'guille',
+        entradaEn: serverTimestamp(), entradaPor: 'guille',
+        entradaPago: 'efectivo', entradaMonto: 5000,
+      }));
+    });
+
+    it('y en el alta tampoco se cobra sin entrar', async () => {
+      await assertFails(setDoc(doc(gerente(), 'invitados/token-alta-con-entrada-2'), {
+        eventoId: 'ev-1', nombre: 'Colado', telefono: '', creadoEn: serverTimestamp(),
+        entradaEn: serverTimestamp(), entradaPor: 'guille',
+        entradaPago: 'efectivo', entradaMonto: 5000,
+      }));
+    });
+
+    it('el que se registra solo no se regala una cortesía', async () => {
+      await assertFails(setDoc(doc(anon(), 'invitados/token-auto-cortesia-xxx'),
+        invitadoNuevo({ entradaPago: 'cortesia', entradaMonto: 0 })));
+    });
+  });
+
   // La hora a la que corta el día del bar. La lee el cliente sin cuenta
   // —si no, su pedido de las 3 AM caería en otra caja que el de la barra— y
   // la escribe solo quien administra la plata.

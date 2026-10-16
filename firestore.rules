@@ -468,8 +468,43 @@ service cloud.firestore {
     // La casa anota a alguien de último momento aunque esté lleno y aunque el
     // registro esté cerrado: es su decisión. Y puede darlo por entrado en el
     // mismo acto, que es lo que pasa cuando alguien aparece en la puerta.
+    // Con qué pagó la entrada. Se escribe en el mismo acto que el ingreso:
+    // quien entró y lo que dejó en la puerta son el mismo hecho, y separarlos
+    // deja el hueco de siempre —alguien adentro sin ninguna plata anotada—
+    // cuando se corta la señal en el medio.
+    //
+    // Es la única plata de la noche que antes no existía en ningún lado: la
+    // entrada era un precio guardado en el evento y nada más. De esto depende
+    // que el cierre pueda comparar el cajón contra algo.
+    function cobroEntradaValido() {
+      return request.resource.data.get('entradaPago', null) == null
+        ? (request.resource.data.get('entradaMonto', null) == null
+            && request.resource.data.get('entradaEn', null) == null
+            && request.resource.data.get('entradaPor', null) == null)
+        : (request.resource.data.entradaPago in ['efectivo', 'virtual', 'cortesia']
+            && request.resource.data.entradaMonto is int
+            && request.resource.data.entradaMonto >= 0
+            && request.resource.data.entradaMonto <= 10000000
+            // La cortesía es la única que entra sin dejar plata. Si cobra,
+            // cobra: un monto en cero con forma de pago esconde la diferencia.
+            && (request.resource.data.entradaPago == 'cortesia'
+                ? request.resource.data.entradaMonto == 0
+                : request.resource.data.entradaMonto > 0)
+            && request.resource.data.entradaEn == request.time
+            && request.resource.data.entradaPor is string
+            && request.resource.data.entradaPor.size() <= 60);
+    }
+
+    // Sin entrar no hay entrada cobrada. Deshacer limpia las dos cosas.
+    function entradaCoherente() {
+      return cobroEntradaValido()
+        && (request.resource.data.get('ingresadoEn', null) != null
+            || request.resource.data.get('entradaPago', null) == null);
+    }
+
     function invitadoDeLaCasa(d) {
-      return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor'])
+      return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor',
+                               'entradaEn', 'entradaPor', 'entradaPago', 'entradaMonto'])
         && d.keys().hasAll(['eventoId', 'nombre', 'telefono', 'creadoEn'])
         && d.eventoId is string
         && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60
@@ -490,7 +525,8 @@ service cloud.firestore {
       allow create: if (token.size() >= 16
           && invitadoValido(request.resource.data)
           && hayLugarEn(request.resource.data.eventoId))
-        || (esAdmin() && token.size() >= 16 && invitadoDeLaCasa(request.resource.data));
+        || (esAdmin() && token.size() >= 16 && invitadoDeLaCasa(request.resource.data)
+            && entradaCoherente());
 
       // Marcar el ingreso: puerta o casa. Nadie se marca su propia entrada.
       //
@@ -500,9 +536,11 @@ service cloud.firestore {
       // el error de la puerta, y vuelve a dejarlo entrar una vez.
       allow update: if (esPuerta() || esBarra()) && puedo('puerta')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['ingresadoEn', 'ingresadoPor'])
+             .hasOnly(['ingresadoEn', 'ingresadoPor',
+                       'entradaEn', 'entradaPor', 'entradaPago', 'entradaMonto'])
         && (resource.data.get('ingresadoEn', null) == null
-            || request.resource.data.get('ingresadoEn', null) == null);
+            || request.resource.data.get('ingresadoEn', null) == null)
+        && entradaCoherente();
 
       // Confirmar que la transferencia llegó. Es plata, así que lo hace la
       // barra o la casa, nunca la puerta ni el invitado: el que mira el banco

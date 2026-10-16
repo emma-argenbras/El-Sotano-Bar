@@ -57,6 +57,7 @@ $('#btnEfectivo').onclick = () => cerrarCobro('efectivo');
 $('#btnVirtual').onclick = () => cerrarCobro('virtual');
 $('#btnCancelarCobro').onclick = cancelarCobro;
 $('#btnCancelarVenta').onclick = () => $('#dlgVenta').close();
+$('#btnCancelarEntrada').onclick = () => $('#dlgEntrada').close();
 $('#btnCancelarEgreso').onclick = () => $('#dlgEgreso').close();
 $('#btnCancelarAlDia').onclick = () => $('#dlgAlDia').close();
 $('#btnGuardarAlDia').onclick = guardarAlDia;
