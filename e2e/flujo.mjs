@@ -584,7 +584,11 @@ await chequear('el conteo cerrado ofrece aplicarse, y muestra qué cambiaría', 
   await barra.waitForSelector('#inpMotivoConteo', { timeout: 10000 });
   const t = await barra.textContent('#cuerpoConteo');
   for (const debe of ['Dice la app', 'Contaste', 'Queda en', 'cambia el stock']) {
-    if (!t.includes(debe)) throw new Error('la confirmación no dice "' + debe + '": ' + t.slice(0, 200));
+    if (!t.includes(debe)) {
+      await barra.evaluate(() =>
+        document.querySelectorAll('dialog[open]').forEach((d) => d.close())).catch(() => {});
+      throw new Error('la confirmación no dice "' + debe + '": ' + t.slice(0, 200));
+    }
   }
 });
 
@@ -608,63 +612,77 @@ await chequear('sin motivo no ajusta nada', async () => {
 });
 
 await chequear('aplicarlo deja el stock en lo contado y anota la merma', async () => {
+  // Este caso abre un diálogo modal. Si se va por una excepción sin cerrarlo,
+  // todos los clicks que siguen en la suite pegan contra el diálogo y fallan
+  // por timeout: un caso roto se lleva puestos veinte. Por eso el finally.
   const conteo = (await db.collection('conteos').get()).docs[0].data();
   const cerro = conteo.cierre || {};
-  const claves = Object.keys(cerro).filter((k) => k.startsWith('ins:'));
-  if (!claves.length) throw new Error('el conteo no dejó ningún insumo contado');
+  const claves = Object.keys(cerro);
+  if (!claves.length) throw new Error('el conteo no dejó nada contado');
 
-  // Para devolver todo como estaba: los casos que siguen cuentan con estos
-  // números.
+  // Lo contado puede ser un insumo del depósito o un producto de la carta que
+  // lleva su propio stock: acá todavía no hay insumos cargados, se crean más
+  // adelante en la suite.
+  const donde = (clave) => clave.startsWith('ins:')
+    ? { col: 'insumos', id: clave.slice('ins:'.length) }
+    : { col: 'carta', id: clave.slice('item:'.length) };
+
   const comoEstaba = new Map();
   for (const k of claves) {
-    const id = k.slice('ins:'.length);
-    comoEstaba.set(id, Number((await db.collection('insumos').doc(id).get()).data().stock || 0));
+    const { col, id } = donde(k);
+    comoEstaba.set(k, Number((await db.collection(col).doc(id).get()).data()?.stock || 0));
   }
 
   const MOTIVO = 'se rompieron dos botellas en la barra';
-  await barra.fill('#inpMotivoConteo', MOTIVO);
-  await barra.click('#btnConfirmarConteo');
-  await barra.waitForFunction(() =>
-    document.querySelector('#cuerpoConteo')?.textContent.includes('quedó anotada'),
-    null, { timeout: 15000 })
-    .catch(() => { throw new Error('no confirmó el ajuste'); });
+  let mermas = { docs: [] };
+  try {
+    await barra.fill('#inpMotivoConteo', MOTIVO);
+    await barra.click('#btnConfirmarConteo');
+    await barra.waitForFunction(() =>
+      document.querySelector('#cuerpoConteo')?.textContent.includes('quedó anotada'),
+      null, { timeout: 15000 })
+      .catch(async () => {
+        throw new Error('no confirmó el ajuste: '
+          + (await barra.textContent('#cuerpoConteo')).slice(0, 200));
+      });
 
-  // El stock queda EXACTAMENTE en lo contado, no en una resta aproximada.
-  for (const k of claves) {
-    const id = k.slice('ins:'.length);
-    const esperado = Number(cerro[k]);
-    for (let i = 0; i < 40; i++) {
-      const hay = Number((await db.collection('insumos').doc(id).get()).data().stock || 0);
-      if (hay === esperado) break;
-      if (i === 39) throw new Error(`${id} quedó en ${hay} y se contó ${esperado}`);
-      await new Promise((ok) => setTimeout(ok, 250));
+    // El stock queda EXACTAMENTE en lo contado, no en una resta aproximada.
+    for (const k of claves) {
+      const { col, id } = donde(k);
+      const esperado = Number(cerro[k]);
+      for (let i = 0; i < 40; i++) {
+        const hay = Number((await db.collection(col).doc(id).get()).data()?.stock || 0);
+        if (hay === esperado) break;
+        if (i === 39) throw new Error(`${col}/${id} quedó en ${hay} y se contó ${esperado}`);
+        await new Promise((ok) => setTimeout(ok, 250));
+      }
     }
-  }
 
-  // Y la merma explica por qué: sin esto el stock se movió porque sí.
-  const mermas = await db.collection('mermas').get();
-  if (mermas.empty) throw new Error('no anotó ninguna merma');
-  for (const d of mermas.docs) {
-    const m = d.data();
-    if (m.motivo !== MOTIVO) throw new Error('el motivo no es el que se escribió: ' + m.motivo);
-    if (m.diferencia !== m.contado - m.enApp)
-      throw new Error('la cuenta de la merma no cierra: ' + JSON.stringify(m));
-    if (m.diferencia === 0) throw new Error('anotó una merma de cero');
-    if (!m.quien) throw new Error('no dice quién lo aplicó');
+    // Y la merma explica por qué: sin esto el stock se movió porque sí.
+    mermas = await db.collection('mermas').get();
+    if (mermas.empty) throw new Error('no anotó ninguna merma');
+    for (const d of mermas.docs) {
+      const m = d.data();
+      if (m.motivo !== MOTIVO) throw new Error('el motivo no es el que se escribió: ' + m.motivo);
+      if (m.diferencia !== m.contado - m.enApp)
+        throw new Error('la cuenta de la merma no cierra: ' + JSON.stringify(m));
+      if (m.diferencia === 0) throw new Error('anotó una merma de cero');
+      if (!m.quien) throw new Error('no dice quién lo aplicó');
+    }
+  } finally {
+    // Cerrar el diálogo pase lo que pase, y devolver todo como estaba: los
+    // casos que siguen cuentan con esos números.
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close())).catch(() => {});
+    for (const [k, stock] of comoEstaba) {
+      const { col, id } = donde(k);
+      await db.collection(col).doc(id).update({ stock }).catch(() => {});
+    }
+    await db.collection('mermas').get()
+      .then((q) => Promise.all(q.docs.map((d) => d.ref.delete()))).catch(() => {});
+    await db.collection('conteos').get()
+      .then((q) => Promise.all(q.docs.map((d) => d.ref.delete()))).catch(() => {});
   }
-
-  await barra.click('#btnCerrarConteo').catch(() => {});
-  await barra.evaluate(() =>
-    document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
-
-  // Devolver el depósito como estaba, y limpiar las mermas de prueba: los
-  // casos que siguen cuentan con esos números.
-  for (const [id, stock] of comoEstaba) {
-    await db.collection('insumos').doc(id).update({ stock });
-  }
-  for (const d of mermas.docs) await d.ref.delete();
-  await db.collection('conteos').get()
-    .then((q) => Promise.all(q.docs.map((d) => d.ref.delete())));
 });
 
 await chequear('la barra puede agotar un item y el cliente lo ve', async () => {
