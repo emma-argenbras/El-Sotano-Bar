@@ -4,6 +4,12 @@
 // este recorre la base entera: cada colección de la raíz y, dentro de cada
 // documento, sus subcolecciones, hasta donde haya.
 //
+// Ojo con los documentos fantasma. En Firestore, barra/eventos no existe como
+// documento: es solo la percha de la que cuelga barra/eventos/items. Una
+// consulta normal no lo devuelve, y si se recorre así, los eventos se pierden
+// sin que nadie se entere. Por eso se listan los documentos (listDocuments),
+// que sí los incluye, en vez de consultarlos.
+//
 //   node scripts/respaldo-completo.mjs                       (muestra qué hay)
 //   node scripts/respaldo-completo.mjs respaldo.json         (lo escribe)
 //
@@ -47,14 +53,19 @@ let colecciones = 0;
 
 // Baja por el árbol: cada documento puede tener sus propias subcolecciones.
 async function copiarColeccion(ref, sangria = '') {
-  const snap = await ref.get();
+  const refs = await ref.listDocuments();
   const subs = [];
   const docs = {};
+  let reales = 0;
+  let fantasmas = 0;
 
-  for (const d of snap.docs) {
-    documentos += 1;
-    const hijas = await d.ref.listCollections();
-    const entrada = { datos: plano(d.data()) };
+  for (const r of refs) {
+    const d = await r.get();
+    const hijas = await r.listCollections();
+    // Un documento fantasma no tiene datos: existe solo porque algo cuelga de
+    // él. Se copia igual, para no perder lo que tiene adentro.
+    const entrada = d.exists ? { datos: plano(d.data()) } : { fantasma: true };
+    if (d.exists) { reales += 1; documentos += 1; } else { fantasmas += 1; }
     if (hijas.length) {
       entrada.subcolecciones = {};
       for (const h of hijas) {
@@ -62,12 +73,13 @@ async function copiarColeccion(ref, sangria = '') {
         entrada.subcolecciones[h.id] = await copiarColeccion(h, sangria + '    ');
       }
     }
-    docs[d.id] = entrada;
+    docs[r.id] = entrada;
   }
 
   colecciones += 1;
-  console.log(`${sangria}· ${ref.id}: ${snap.size} documento${snap.size === 1 ? '' : 's'}`
-    + (subs.length ? ` (+ ${[...new Set(subs)].join(', ')})` : ''));
+  console.log(`${sangria}· ${ref.id}: ${reales} documento${reales === 1 ? '' : 's'}`
+    + (fantasmas ? ` (+${fantasmas} sin datos, solo percha)` : '')
+    + (subs.length ? ` → ${[...new Set(subs)].join(', ')}` : ''));
   return docs;
 }
 
@@ -79,8 +91,14 @@ const copia = {
   colecciones: {},
 };
 
-for (const c of await db.listCollections()) {
-  copia.colecciones[c.id] = await copiarColeccion(c);
+// listCollections() de la raíz puede dejar afuera una colección cuyos únicos
+// documentos son perchas. Las conocidas se agregan a mano para que nunca
+// falten, aunque hoy estén vacías.
+const SIEMPRE = ['barra'];
+const raiz = new Set([...(await db.listCollections()).map((c) => c.id), ...SIEMPRE]);
+
+for (const id of [...raiz].sort()) {
+  copia.colecciones[id] = await copiarColeccion(db.collection(id));
 }
 
 console.log(`\n${documentos} documentos en ${colecciones} colecciones.`);
