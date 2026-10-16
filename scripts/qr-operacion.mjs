@@ -1,21 +1,20 @@
-// Los QR que el bar realmente usa, en un PDF listo para imprimir.
+// El QR fijo del bar, en una hoja lista para imprimir.
 //
 //   npm run qr:operacion
 //
-// Son dos, y ninguno vence:
+// Es uno solo, y no vence:
 //
-//   1. CARTA Y PEDIDOS   sotano.web.app
-//      El que se pega en la barra o se deja en la mesa. Abre la carta y deja
-//      pedir desde el celular. No lleva número de mesa: en Sótano no hay.
+//   CARTA Y PEDIDOS   sotano.web.app
+//   El que se pega en la barra. Abre la carta y deja pedir desde el celular.
+//   No lleva número de mesa: en Sótano no hay mesas numeradas.
 //
-//   2. INSCRIPCIÓN        sotano.web.app/registro.html
-//      El de las noches con lista. A propósito SIN el id del evento adentro:
-//      registro.html sin ?ev= mira publico/registro y manda a la noche que
-//      esté abierta. Así el mismo papel sirve para todas las noches, y no hay
-//      que reimprimir nada cada vez que se agenda una.
+// Acá NO va el QR para anotarse a una noche. Ese es por evento: lo genera el
+// panel con el id de esa noche adentro (Calendario → invitar), y vence cuando
+// la noche se cierra. Un QR de inscripción impreso y fijo serviría para la
+// noche equivocada, que es justo lo que no se quiere.
 //
 // Negro sobre blanco, grande y con el logo chico: el sótano tiene poca luz y
-// un QR con poco contraste no se lee. Un QR por hoja A4.
+// un QR con poco contraste no se lee.
 //
 // Sale a qr-imprimible/, que no se publica ni va al repo.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -34,13 +33,6 @@ const QRS = [
     titulo: 'LA CARTA',
     bajada: 'Escaneá y pedí desde tu celular',
     pie: 'Te avisamos acá mismo cuando esté listo',
-  },
-  {
-    archivo: 'qr-inscripcion.png',
-    url: `${BASE}/registro.html`,
-    titulo: 'ANOTATE',
-    bajada: 'Escaneá para entrar a la lista de la noche',
-    pie: 'Te llega tu pase al celular',
   },
 ];
 
@@ -121,4 +113,4 @@ await pg.setContent(html, { waitUntil: 'load' });
 await pg.pdf({ path: `${SALIDA}/QR-Sotano.pdf`, format: 'A4', printBackground: true });
 await nav.close();
 
-console.log(`\n✓ ${SALIDA}/QR-Sotano.pdf  —  ${QRS.length} hojas A4, una por QR\n`);
+console.log(`\n✓ ${SALIDA}/QR-Sotano.pdf  —  ${QRS.length} hoja A4\n`);
