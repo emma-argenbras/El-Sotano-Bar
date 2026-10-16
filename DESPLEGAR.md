@@ -97,7 +97,11 @@ acuerde:
 1. **Solo con todos los tests en verde.** Los corre ahí mismo —reglas y
    recorrido completo— y no confía en que alguien los haya corrido antes.
 2. **Nunca entre las 19:00 y las 06:00 de Argentina.** El bar está abierto.
-   Frena con la hora en pantalla y manda a esperar a la mañana.
+   Frena con la hora en pantalla y manda a esperar a la mañana. La única
+   forma de pasar es que el dueño lo pida y se escriba el motivo en la
+   casilla *"Publicar con el bar abierto"* al lanzarla: el motivo queda
+   guardado en el registro de esa corrida, con la hora y quién la lanzó.
+   Vacía —que es lo normal— la puerta se cierra igual que siempre.
 3. **Reglas primero, app después.** Si se corta justo en el medio, lo que
    queda arriba son reglas nuevas con código viejo, que no rompe nada.
 4. **Después verifica contra la API** qué versión quedó publicada en cada uno
