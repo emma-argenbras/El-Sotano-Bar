@@ -12,6 +12,7 @@ import { $, esc, estado, plata } from './base.js';
 import { pintarConteo } from './carta.js';
 import { db, fallo } from './conexion.js';
 import { quienAtiende } from './pedidos.js';
+import { opcionesDe, rindeCon, rindeOpcion } from './stock.js';
 
 // ---------- el depósito ----------
 //
@@ -37,17 +38,12 @@ export function comoSeDice(ins) {
 // porque un fernet con coca sin coca no es un fernet con coca.
 //
 // Infinity = no tiene receta, lleva su propio número (o ∞) como siempre.
+// El stock de hoy, tal como lo tiene el panel en memoria.
+const loQueHay = () =>
+  new Map(estado.insumos.map((i) => [i.id, Number(i.stock || 0)]));
+
 export function rindeDeposito(item) {
-  const receta = (item.receta || []).filter((r) => Number(r.medidas) > 0);
-  if (!receta.length) return Infinity;
-  let menor = Infinity;
-  for (const r of receta) {
-    const ins = estado.insumos.find((i) => i.id === r.insumoId);
-    // Un insumo borrado del depósito deja al producto sin de dónde salir.
-    if (!ins) return 0;
-    menor = Math.min(menor, Math.floor(Number(ins.stock || 0) / Number(r.medidas)));
-  }
-  return Math.max(0, menor);
+  return rindeCon(item, loQueHay());
 }
 
 // El cliente no puede leer el depósito —ni debe: ahí están los costos y lo que
@@ -64,21 +60,32 @@ export function rindeDeposito(item) {
 // un cambio real, no al reloj.
 export async function sincronizarCartaConDeposito() {
   if (!estado.carta.length || !estado.insumos.length) return;
+  const hay = loQueHay();
   const cambios = estado.carta
-    .filter((i) => (i.receta || []).length)
+    // Un producto con marcas puede no tener receta propia: lo único que lleva
+    // está en la marca. Dejarlo afuera era no corregirlo nunca.
+    .filter((i) => (i.receta || []).length || opcionesDe(i).length)
     .map((i) => {
-      const rinde = rindeDeposito(i);
+      const rinde = rindeCon(i, hay);
       // Apagado a mano gana: el depósito no lo vuelve a encender.
       const disponible = i.apagadoAMano === true ? false : rinde > 0;
-      return { id: i.id, rinde, disponible,
-               igual: rinde === i.stock && disponible === i.disponible };
+      const marcas = opcionesDe(i);
+      const porMarca = marcas.length
+        ? Object.fromEntries(marcas.map((o) => [o.id, rindeOpcion(i, o.id, hay)]))
+        : null;
+      const marcasIguales = !porMarca
+        || marcas.every((o) => Number(i.opcionesStock?.[o.id]) === porMarca[o.id]);
+      return { id: i.id, rinde, disponible, porMarca,
+               igual: rinde === i.stock && disponible === i.disponible && marcasIguales };
     })
     .filter((x) => !x.igual);
   // Quien no puede escribir la carta —la puerta, un barman fuera de turno—
   // simplemente no sincroniza: no es su trabajo y las reglas lo frenan igual.
   await Promise.all(cambios.map((x) =>
-    updateDoc(doc(db, 'carta', x.id),
-      { stock: x.rinde, disponible: x.disponible }).catch(() => {})));
+    updateDoc(doc(db, 'carta', x.id), {
+      stock: x.rinde, disponible: x.disponible,
+      ...(x.porMarca ? { opcionesStock: x.porMarca } : {}),
+    }).catch(() => {})));
 }
 
 export function escucharDeposito() {

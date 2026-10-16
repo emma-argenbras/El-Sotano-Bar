@@ -3039,8 +3039,11 @@ await chequear('el cliente no puede agregar sin elegir la marca', async () => {
     if (!t.includes(marca)) throw new Error('no ofrece ' + marca);
   }
   // Nada preseleccionado: el botón arranca apagado.
-  if (!(await cliente.locator('#btnAgregarOpcion').isDisabled()))
+  if (!(await cliente.locator('#btnAgregarOpcion').isDisabled())) {
+    await cliente.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close())).catch(() => {});
     throw new Error('deja agregar sin haber elegido nada');
+  }
 });
 
 await chequear('elegida la marca, el pedido la lleva adentro', async () => {
@@ -3086,13 +3089,15 @@ await chequear('al entregarlo baja la caja de ESA marca y no la de la otra', asy
   if (!(await ticket.textContent()).includes('Brahma'))
     throw new Error('el ticket no dice la marca');
 
-  for (let i = 0; i < 4; i++) {
-    const btn = ticket.locator('button', { hasText: /Preparar|Listo|Entregado/ }).first();
-    if (!(await btn.count())) break;
-    await btn.click();
-    await barra.waitForTimeout(600);
+  // El tablero mueve el pedido con [data-avanzar]: columna por columna hasta
+  // entregado, que es cuando baja el stock.
+  for (let i = 0; i < 5; i++) {
     const d = await db.collection('pedidos').where('nombreCliente', '==', 'Probador Marca').get();
     if (d.docs[0].data().estado === 'entregado') break;
+    const btn = barra.locator('.ticket', { hasText: 'Probador Marca' }).locator('[data-avanzar]');
+    if (!(await btn.count())) throw new Error('el ticket no tiene botón para avanzar');
+    await btn.first().click();
+    await barra.waitForTimeout(700);
   }
 
   for (let i = 0; i < 60; i++) {
@@ -3120,13 +3125,19 @@ await chequear('se acaba una marca y la otra se sigue vendiendo', async () => {
 
   await cliente.locator('.item', { hasText: 'Cerveza en lata' }).locator('[data-elegir]').click();
   await cliente.waitForSelector('#dlgOpcion[open]', { timeout: 10000 });
-  await cliente.waitForFunction(() =>
-    document.querySelector('[data-opcion="ins-quilmes"]')?.disabled === true,
-    null, { timeout: 15000 })
-    .catch(() => { throw new Error('ofrece una marca que se acabó'); });
-  if (await cliente.locator('[data-opcion="ins-brahma"]').isDisabled())
-    throw new Error('apagó la marca que sí hay');
-  await cliente.click('#btnCancelarOpcion');
+  try {
+    await cliente.waitForFunction(() =>
+      document.querySelector('[data-opcion="ins-quilmes"]')?.disabled === true,
+      null, { timeout: 20000 })
+      .catch(() => { throw new Error('ofrece una marca que se acabó'); });
+    if (await cliente.locator('[data-opcion="ins-brahma"]').isDisabled())
+      throw new Error('apagó la marca que sí hay');
+  } finally {
+    // Si esto se va por una excepción con el diálogo abierto, cada click que
+    // sigue en la suite pega contra el diálogo y muere por timeout.
+    await cliente.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close())).catch(() => {});
+  }
 });
 
 await chequear('la barra vende una marca puntual desde el mostrador', async () => {
@@ -3140,8 +3151,11 @@ await chequear('la barra vende una marca puntual desde el mostrador', async () =
 
   // La que se acabó se muestra agotada y no deja sumarla.
   const quilmes = barra.locator('#cuerpoVenta .item', { hasText: 'Cerveza en lata · Quilmes' });
-  if (!(await quilmes.locator('[data-d="1"]').isDisabled()))
+  if (!(await quilmes.locator('[data-d="1"]').isDisabled())) {
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close())).catch(() => {});
     throw new Error('deja vender una marca que se acabó');
+  }
 
   const antesB = Number((await db.collection('insumos').doc('ins-brahma').get()).data().stock);
   await barra.locator('#cuerpoVenta .item', { hasText: 'Cerveza en lata · Brahma' })
