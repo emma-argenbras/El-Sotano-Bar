@@ -54,7 +54,7 @@ Un comando. Hace todo solo y frena si algo falla.
 npm run desplegar A
 ```
 
-Y después `B`, y después `C`. **De a uno**, verificando en el medio.
+Y después `B`, `C` y `D`. **De a uno**, verificando en el medio.
 
 El comando se encarga de:
 
@@ -95,6 +95,13 @@ Nada de esto vende, carga ni mueve stock: es todo mirar.
   **Cortesía**.
 - Tocá **"Volver"**: no entra nadie y no se cobra nada. Eso es justamente lo
   que hay que comprobar.
+
+**Bloque D · Los QR apuntan a la dirección oficial**
+- Abrí `/qr.html` y escaneá cualquier QR con la cámara del celular: tiene que
+  abrir **sotano.web.app**.
+- **Los QR pegados en las mesas son los viejos y hay que reimprimirlos.** Un
+  QR impreso no se arregla con un despliegue. Para la hoja lista para
+  imprimir: `npm run qr:imprimir`.
 
 ---
 

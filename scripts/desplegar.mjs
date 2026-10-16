@@ -52,6 +52,18 @@ const BLOQUES = {
       'Tocá "Volver": no entra nadie y no se cobra nada. Eso es lo que hay que ver.',
     ],
   },
+  D: {
+    commit: '4c3d79f',
+    nombre: 'Los QR apuntan a la dirección oficial',
+    que: 'Los QR de las mesas se habían generado contra otra dirección, dos días '
+       + 'antes de que eligiéramos sotano.web.app. Ahora apuntan a la que va.',
+    mirar: [
+      'Abrí /qr.html y mirá cualquier QR con la cámara del celular.',
+      'Tiene que abrir sotano.web.app, no otra dirección.',
+      'OJO: los QR pegados en las mesas son los viejos. Hay que reimprimirlos.',
+      'Para la hoja lista para imprimir:  npm run qr:imprimir',
+    ],
+  },
 };
 
 const SITIO = 'https://sotano.web.app';
