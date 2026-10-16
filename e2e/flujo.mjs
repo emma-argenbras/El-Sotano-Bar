@@ -571,6 +571,102 @@ await chequear('el conteo de la noche compara y marca lo que falta', async () =>
   await barra.click('#btnCerrarConteo');
 });
 
+// ---------- aplicar el conteo al depósito ----------
+// El conteo por sí solo es control: no mueve nada. Esto es el paso aparte,
+// a mano, que dice "lo que hay es lo que conté" — y deja anotado por qué.
+await chequear('el conteo cerrado ofrece aplicarse, y muestra qué cambiaría', async () => {
+  await barra.click('#tabCartaBar');
+  await barra.click('#btnConteo');
+  await barra.waitForSelector('#dlgConteo[open]', { timeout: 10000 });
+  await barra.waitForSelector('#btnAplicarConteo', { timeout: 10000 });
+
+  await barra.click('#btnAplicarConteo');
+  await barra.waitForSelector('#inpMotivoConteo', { timeout: 10000 });
+  const t = await barra.textContent('#cuerpoConteo');
+  for (const debe of ['Dice la app', 'Contaste', 'Queda en', 'cambia el stock']) {
+    if (!t.includes(debe)) throw new Error('la confirmación no dice "' + debe + '": ' + t.slice(0, 200));
+  }
+});
+
+await chequear('sin motivo no ajusta nada', async () => {
+  // El motivo es lo único que queda después del ajuste: sin eso, el stock se
+  // movería sin ninguna explicación.
+  const antes = (await db.collection('insumos').get()).docs
+    .map((d) => `${d.id}:${d.data().stock}`).sort().join(',');
+
+  await barra.click('#btnConfirmarConteo');
+  await barra.waitForFunction(() =>
+    !document.querySelector('#errorConteo')?.classList.contains('oculto'),
+    null, { timeout: 10000 })
+    .catch(() => { throw new Error('no avisó que falta el motivo'); });
+
+  await barra.waitForTimeout(800);
+  const ahora = (await db.collection('insumos').get()).docs
+    .map((d) => `${d.id}:${d.data().stock}`).sort().join(',');
+  if (ahora !== antes) throw new Error('movió el stock igual, sin motivo');
+  if (!(await db.collection('mermas').get()).empty) throw new Error('anotó una merma sin motivo');
+});
+
+await chequear('aplicarlo deja el stock en lo contado y anota la merma', async () => {
+  const conteo = (await db.collection('conteos').get()).docs[0].data();
+  const cerro = conteo.cierre || {};
+  const claves = Object.keys(cerro).filter((k) => k.startsWith('ins:'));
+  if (!claves.length) throw new Error('el conteo no dejó ningún insumo contado');
+
+  // Para devolver todo como estaba: los casos que siguen cuentan con estos
+  // números.
+  const comoEstaba = new Map();
+  for (const k of claves) {
+    const id = k.slice('ins:'.length);
+    comoEstaba.set(id, Number((await db.collection('insumos').doc(id).get()).data().stock || 0));
+  }
+
+  const MOTIVO = 'se rompieron dos botellas en la barra';
+  await barra.fill('#inpMotivoConteo', MOTIVO);
+  await barra.click('#btnConfirmarConteo');
+  await barra.waitForFunction(() =>
+    document.querySelector('#cuerpoConteo')?.textContent.includes('quedó anotada'),
+    null, { timeout: 15000 })
+    .catch(() => { throw new Error('no confirmó el ajuste'); });
+
+  // El stock queda EXACTAMENTE en lo contado, no en una resta aproximada.
+  for (const k of claves) {
+    const id = k.slice('ins:'.length);
+    const esperado = Number(cerro[k]);
+    for (let i = 0; i < 40; i++) {
+      const hay = Number((await db.collection('insumos').doc(id).get()).data().stock || 0);
+      if (hay === esperado) break;
+      if (i === 39) throw new Error(`${id} quedó en ${hay} y se contó ${esperado}`);
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+  }
+
+  // Y la merma explica por qué: sin esto el stock se movió porque sí.
+  const mermas = await db.collection('mermas').get();
+  if (mermas.empty) throw new Error('no anotó ninguna merma');
+  for (const d of mermas.docs) {
+    const m = d.data();
+    if (m.motivo !== MOTIVO) throw new Error('el motivo no es el que se escribió: ' + m.motivo);
+    if (m.diferencia !== m.contado - m.enApp)
+      throw new Error('la cuenta de la merma no cierra: ' + JSON.stringify(m));
+    if (m.diferencia === 0) throw new Error('anotó una merma de cero');
+    if (!m.quien) throw new Error('no dice quién lo aplicó');
+  }
+
+  await barra.click('#btnCerrarConteo').catch(() => {});
+  await barra.evaluate(() =>
+    document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+
+  // Devolver el depósito como estaba, y limpiar las mermas de prueba: los
+  // casos que siguen cuentan con esos números.
+  for (const [id, stock] of comoEstaba) {
+    await db.collection('insumos').doc(id).update({ stock });
+  }
+  for (const d of mermas.docs) await d.ref.delete();
+  await db.collection('conteos').get()
+    .then((q) => Promise.all(q.docs.map((d) => d.ref.delete())));
+});
+
 await chequear('la barra puede agotar un item y el cliente lo ve', async () => {
   await barra.click('#tabCartaBar');
   await barra.locator('.item', { hasText: 'Fernet con coca' }).locator('[data-toggle]').click();
