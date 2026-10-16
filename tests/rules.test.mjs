@@ -545,6 +545,82 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
   });
 
+  // La jornada cerrada: los números de una noche, congelados.
+  describe('el cierre de una jornada', () => {
+    const cierre = () => ({
+      ventas: { efectivo: 50000, virtual: 20000, sinForma: 0, total: 70000, cantidad: 12 },
+      entradas: { personas: 13, cortesias: 1, efectivo: 60000, virtual: 0, total: 60000 },
+      gastos: { efectivo: 5000, virtual: 0, total: 5000 },
+      caja: { esperado: 105000, contado: 103000, diferencia: -2000 },
+      costo: { mercaderia: 21000, cobertura: 88 },
+      resultado: 109000,
+      asistencia: { inscriptos: 13, entraron: 11, cupo: 30 },
+      top: [{ nombre: 'Fernet', cantidad: 9, importe: 40500 }],
+    });
+    const jornada = (extra = {}) => ({
+      fecha: '2026-11-20', horaCorte: 6, nombre: 'Noche de prueba',
+      cerradaEn: serverTimestamp(), cerradaPor: 'guille',
+      vecesReabierta: 0, cierre: cierre(), ...extra,
+    });
+
+    it('la casa cierra la noche', async () => {
+      await assertSucceeds(setDoc(doc(gerente(), 'jornadas/2026-11-20'), jornada()));
+    });
+
+    it('el nombre del documento tiene que ser su fecha', async () => {
+      await assertFails(setDoc(doc(gerente(), 'jornadas/2026-11-21'), jornada()));
+    });
+
+    it('no se crea una jornada sin cierre: para eso no existe el documento', async () => {
+      await assertFails(setDoc(doc(gerente(), 'jornadas/2026-11-26'),
+        { fecha: '2026-11-26', nombre: 'Vacía', vecesReabierta: 0 }));
+    });
+
+    // El candado central: una jornada cerrada tiene números congelados. Si se
+    // pudieran pisar, "congelado" no querría decir nada.
+    it('una jornada cerrada no se vuelve a cerrar encima', async () => {
+      await assertFails(updateDoc(doc(gerente(), 'jornadas/2026-11-20'),
+        { fecha: '2026-11-20', vecesReabierta: 0,
+          cierre: { ...cierre(), resultado: 999999 } }));
+    });
+
+    it('reabrirla es del dueño, y queda anotado', async () => {
+      await assertSucceeds(updateDoc(doc(barra(), 'jornadas/2026-11-20'), {
+        fecha: '2026-11-20', cierre: null, vecesReabierta: 1,
+        reabiertaEn: serverTimestamp(), reabiertaPor: 'emma',
+      }));
+    });
+
+    it('reabierta, la casa la puede volver a cerrar', async () => {
+      await assertSucceeds(updateDoc(doc(gerente(), 'jornadas/2026-11-20'),
+        { fecha: '2026-11-20', vecesReabierta: 1, cierre: cierre() }));
+    });
+
+    it('la barra no cierra ni lee jornadas', async () => {
+      await assertFails(setDoc(doc(turnoOk(), 'jornadas/2026-11-27'),
+        jornada({ fecha: '2026-11-27' })));
+      await assertFails(setDoc(doc(aparato(), 'jornadas/2026-11-27'),
+        jornada({ fecha: '2026-11-27' })));
+      await assertFails(getDocs(collection(aparato(), 'jornadas')));
+    });
+
+    it('un admin con la Caja apagada tampoco', async () => {
+      await assertFails(setDoc(doc(recortado(), 'jornadas/2026-11-28'),
+        jornada({ fecha: '2026-11-28' })));
+      await assertFails(getDocs(collection(recortado(), 'jornadas')));
+    });
+
+    it('el cliente no ve la plata de la casa', async () => {
+      await assertFails(getDoc(doc(anon(), 'jornadas/2026-11-20')));
+      await assertFails(getDoc(doc(sinLoguear(), 'jornadas/2026-11-20')));
+    });
+
+    it('y solo el dueño la borra', async () => {
+      await assertFails(deleteDoc(doc(gerente(), 'jornadas/2026-11-20')));
+      await assertSucceeds(deleteDoc(doc(barra(), 'jornadas/2026-11-20')));
+    });
+  });
+
   // La carta de una fecha: qué se vende esa noche y a cuánto.
   describe('la carta de una fecha', () => {
     const carta = (extra = {}) => ({

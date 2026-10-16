@@ -584,3 +584,47 @@ body:not(.es-sadmin) .solo-sadmin { display: none !important; }
 .punto.cerrado  { background: var(--suave); }
 .leyenda { display: flex; gap: .9rem; flex-wrap: wrap; margin-top: .7rem; font-size: .76rem; color: var(--suave); }
 .leyenda span { display: inline-flex; align-items: center; gap: .3rem; }
+
+/* ---------- el tablero de cierre ---------- */
+/* Se mira parado, con poca luz y el celular en la mano: números grandes,
+   tabulares para que no bailen al actualizarse, y contraste alto. */
+.cierre { --graf-oro: #B88D0A; --graf-verde: #2DAD78; --graf-azul: #5B98D7;
+          --graf-rojo: #E7645E; --apagado: #8A8578; }
+.cierre .numeron { font-size: clamp(2.2rem, 9vw, 3.4rem); font-weight: 700;
+                   line-height: 1.05; letter-spacing: -.02em;
+                   font-variant-numeric: tabular-nums; color: var(--oro); }
+.cierre .numeron.neutro { color: var(--texto); }
+.cierre .numeron.malo { color: var(--graf-rojo); }
+.cierre .numeron.bueno { color: var(--graf-verde); }
+.cierre .numeron.parcial { color: var(--apagado); }
+.cierre .rotulo { font-size: .76rem; font-weight: 600; text-transform: uppercase;
+                  letter-spacing: .09em; color: var(--suave); }
+.cierre .tarjeta { background: var(--panel); border: 1px solid var(--borde);
+                   border-radius: var(--radio); padding: 1rem; margin-bottom: .7rem; }
+.cierre .pie-chico { font-size: .8rem; color: var(--suave); margin: .4rem 0 0; }
+
+/* Barras: finas, con las puntas redondeadas y 2px de aire entre tramos para
+   que se distingan sin depender del color. */
+.cierre .barra { display: flex; height: 14px; gap: 2px; margin: .7rem 0 .3rem; }
+.cierre .barra > span { border-radius: 4px; min-width: 4px; }
+.cierre .leyenda { display: flex; flex-wrap: wrap; gap: .3rem 1rem;
+                   font-size: .82rem; color: var(--texto); }
+.cierre .leyenda i { display: inline-block; width: 10px; height: 10px;
+                     border-radius: 3px; margin-right: .35rem; vertical-align: -1px; }
+
+/* El ranking y la comparación: una barra por fila, con el valor al final. */
+.cierre .fila-barra { display: grid; grid-template-columns: 1fr auto;
+                      gap: .2rem .8rem; align-items: center; margin-bottom: .55rem; }
+.cierre .fila-barra .via { grid-column: 1 / -1; height: 12px; background: var(--panel-alto);
+                           border-radius: 4px; overflow: hidden; }
+.cierre .fila-barra .via > span { display: block; height: 100%; border-radius: 4px; }
+.cierre .fila-barra .que { font-size: .92rem; }
+.cierre .fila-barra .cuanto { font-size: .92rem; font-weight: 650;
+                              font-variant-numeric: tabular-nums; }
+.cierre table.comparar { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.cierre table.comparar th { text-align: right; font-size: .72rem; text-transform: uppercase;
+                            letter-spacing: .06em; color: var(--suave); padding: .4rem .3rem; }
+.cierre table.comparar th:first-child { text-align: left; }
+.cierre table.comparar td { padding: .45rem .3rem; border-top: 1px solid var(--borde);
+                            text-align: right; font-variant-numeric: tabular-nums; }
+.cierre table.comparar td:first-child { text-align: left; }

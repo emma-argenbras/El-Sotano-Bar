@@ -136,6 +136,12 @@
          se le debe a cada proveedor, lo que costó la mercadería y cuánto deja
          cada trago. El Depósito de al lado solo dice qué hay. -->
     <section id="vistaCaja" hidden>
+      <!-- El cierre arriba de todo: es el número con el que se termina la
+           noche, y lo primero que alguien quiere ver al abrir Caja. -->
+      <h2 style="font-size:1rem;margin:0 0 .6rem">Cierre de la noche</h2>
+      <div class="cierre" id="cierre"><div class="cargando">Haciendo números…</div></div>
+
+      <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">La caja</h2>
       <div id="caja"><div class="cargando">Haciendo números…</div></div>
 
       <h2 style="font-size:1rem;margin:1.6rem 0 .6rem">Proveedores</h2>
@@ -306,6 +312,12 @@
 </dialog>
 
 <!-- De qué insumo sale un producto de la carta. -->
+<dialog id="dlgCerrarJornada">
+  <h2 style="margin-top:0">Cerrar la jornada</h2>
+  <div id="cuerpoCerrarJornada"></div>
+  <button class="btn ancho-full" id="btnCancelarCierre" style="margin-top:.9rem">Volver</button>
+</dialog>
+
 <dialog id="dlgCartaFecha">
   <h2 style="margin-top:0" id="tituloCartaFecha">Carta de una fecha</h2>
   <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 1rem">

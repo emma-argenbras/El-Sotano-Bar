@@ -20,6 +20,7 @@ import { comoSeDice } from './deposito.js';
 import { noches } from './eventos.js';
 import { cajaActual } from './pedidos.js';
 import { CORTE, alCambiarElCorte, arranqueDeHoy, corteValido, horaCorte } from './jornada.js';
+import { pintarCierre } from './cierre.js';
 
 // ---------- la caja de Sótano ----------
 //
@@ -50,6 +51,7 @@ export function escucharCaja() {
   const cortarPedidos = onSnapshot(q, (snap) => {
     estado.pedidosCaja = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     pintarCajaGeneral();
+    pintarCierre();
   }, fallo('#caja'));
 
   const cortarEgresos = onSnapshot(
@@ -58,6 +60,7 @@ export function escucharCaja() {
       estado.egresos = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0));
       pintarCajaGeneral();
+      pintarCierre();
     }, () => {});
 
   estado.cortarCaja = () => { cortarPedidos(); cortarEgresos(); };

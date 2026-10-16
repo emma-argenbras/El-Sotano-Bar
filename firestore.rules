@@ -658,6 +658,46 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ---------- las jornadas y su cierre ----------
+    //
+    // Una jornada es una ventana de tiempo, de un corte al siguiente. El
+    // documento se escribe recién al cerrar: la de hoy el panel la calcula
+    // en vivo, y así no quedan jornadas vacías de los días sin abrir.
+    //
+    // Cerrar CONGELA. El bloque `cierre` guarda los números, no la forma de
+    // calcularlos: si después cambia un precio o entra una compra atrasada,
+    // el cierre de esa noche no se mueve. Por eso una jornada cerrada solo
+    // la reabre el dueño, y reabrirla deja marca.
+    function jornadaValida() {
+      return request.resource.data.keys().hasOnly(
+          ['fecha', 'desde', 'hasta', 'horaCorte', 'nombre', 'eventoId',
+           'cerradaEn', 'cerradaPor', 'vecesReabierta', 'cierre',
+           'reabiertaEn', 'reabiertaPor'])
+        && request.resource.data.fecha is string
+        && request.resource.data.fecha.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.get('vecesReabierta', 0) is int
+        && request.resource.data.get('vecesReabierta', 0) >= 0;
+    }
+
+    match /jornadas/{fecha} {
+      allow read: if esAdmin() && puedo('caja');
+
+      allow create: if esAdmin() && puedo('caja')
+        && fecha == request.resource.data.fecha
+        && jornadaValida()
+        && request.resource.data.cierre != null;
+
+      // Cerrar una jornada que ya estaba cerrada seria pisar los numeros
+      // congelados sin dejar rastro. Para eso hay que reabrirla primero, y
+      // eso es del dueño.
+      allow update: if esAdmin() && puedo('caja')
+        && jornadaValida()
+        && request.resource.data.fecha == resource.data.fecha
+        && (resource.data.get('cierre', null) == null || esElDueno());
+
+      allow delete: if esElDueno();
+    }
+
     // ---------- el catálogo y la carta de cada fecha ----------
     //
     // El catálogo es el maestro: todo lo que el bar sabe vender, con su
