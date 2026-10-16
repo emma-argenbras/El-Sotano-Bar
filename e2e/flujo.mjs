@@ -3096,7 +3096,30 @@ await chequear('al entregarlo baja la caja de ESA marca y no la de la otra', asy
     if (d.docs[0].data().estado === 'entregado') break;
     const btn = barra.locator('.ticket', { hasText: 'Probador Marca' }).locator('[data-avanzar]');
     if (!(await btn.count())) throw new Error('el ticket no tiene botón para avanzar');
-    await btn.first().click();
+    try {
+      await btn.first().click({ timeout: 8000 });
+    } catch (e) {
+      // Adivinar por qué no se puede hacer click cuesta una corrida entera.
+      const diag = await barra.evaluate(() => {
+        const t = [...document.querySelectorAll('.ticket')]
+          .find((x) => x.textContent.includes('Probador Marca'));
+        const abiertos = [...document.querySelectorAll('dialog[open]')].map((x) => x.id);
+        if (!t) return { ticket: 'no está en el DOM', abiertos };
+        const b = t.querySelector('[data-avanzar]');
+        const caja = b?.getBoundingClientRect();
+        return {
+          abiertos,
+          estado: t.className,
+          visible: !!caja && caja.width > 0 && caja.height > 0,
+          caja: caja && { x: Math.round(caja.x), y: Math.round(caja.y) },
+          tapadoPor: caja
+            ? document.elementFromPoint(caja.x + caja.width / 2, caja.y + caja.height / 2)
+                ?.outerHTML.slice(0, 120)
+            : null,
+        };
+      });
+      throw new Error(e.message.split('\n')[0] + ' — ' + JSON.stringify(diag));
+    }
     await barra.waitForTimeout(700);
   }
 
