@@ -19,5 +19,9 @@ export {
   persistentLocalCache, persistentSingleTabManager,
   collection, doc, query, where, orderBy, limit, onSnapshot,
   addDoc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch,
+  // increment lo suma el servidor, no el cliente: dos celulares vendiendo a
+  // la vez no se pisan, y sin señal queda encolado y sale al volver. Una
+  // transacción haría lo primero pero no lo segundo, y el bar está abajo.
+  increment,
   serverTimestamp, Timestamp,
 } from 'firebase/firestore';

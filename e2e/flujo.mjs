@@ -449,6 +449,85 @@ await chequear('el stock baja solo al entregar, no al pedir', async () => {
   if (ahora !== antes) throw new Error('no bajó el stock al cobrar la venta');
 });
 
+await chequear('una venta no pisa el stock que se movió por otro lado', async () => {
+  // El bug: el descuento se calculaba leyendo el stock de la copia en memoria
+  // del celular y escribiendo "lo que yo vi menos lo vendido". Dos celulares
+  // entregando en el mismo segundo y una venta desaparecía del depósito.
+  //
+  // Se reproduce sin pelear con los tiempos: se le cambia el stock por detrás
+  // a la pantalla, que queda con el número viejo en memoria, y después se
+  // vende. Si descuenta sobre lo que tenía guardado, el cambio se pierde.
+  const ref = db.collection('carta').doc('papas');
+  const antes = Number((await ref.get()).data().stock);
+
+  await barra.click('#tabCartaBar');
+  await barra.waitForFunction((n) =>
+    (document.querySelector('#cartaBar')?.textContent || '').includes(String(n)),
+    antes, { timeout: 10000 }).catch(() => {});
+
+  // Por detrás: alguien cargó mercadería desde otro lado.
+  await ref.update({ stock: antes + 10 });
+  await barra.waitForTimeout(300);
+
+  // Y ahora se vende uno desde esta pantalla, con el número viejo en memoria.
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Papas bravas' })
+    .locator('[data-venta][data-d="1"]').click();
+  await barra.click('#btnVentaEfectivo');
+
+  for (let i = 0; i < 40; i++) {
+    const n = Number((await ref.get()).data().stock);
+    if (n === antes + 9) break;
+    if (i === 39) {
+      throw new Error(`la venta pisó el stock: quedó en ${n} y tenía que quedar en ${antes + 9}`
+        + ` (había ${antes + 10} y se vendió 1)`);
+    }
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  // Se deja como estaba para no correrle el número a los casos que siguen.
+  await ref.update({ stock: antes - 1 });
+});
+
+await chequear('editar un insumo no le devuelve el stock a lo que era', async () => {
+  // El otro bug de la misma familia: al guardar el nombre de un insumo se
+  // mandaba también el stock que tenía la pantalla cuando se abrió el
+  // diálogo. Si entre medio la barra vendía, esas ventas volvían atrás.
+  await barra.click('#tabDeposito');
+  await barra.waitForSelector('#btnNuevoInsumo', { timeout: 10000 });
+
+  const q = await db.collection('insumos').where('nombre', '==', 'Fernet 750').get();
+  if (q.empty) throw new Error('no está el insumo de prueba');
+  const ref = q.docs[0].ref;
+  await ref.update({ stock: 33 });
+  await barra.waitForTimeout(500);
+
+  // Se abre el diálogo con 33 en pantalla…
+  await barra.locator('#deposito .item', { hasText: 'Fernet 750' })
+    .locator('[data-editar-insumo]').click();
+  await barra.waitForSelector('#dlgInsumo[open]', { timeout: 5000 });
+
+  // … y mientras está abierto, la barra vende: el stock real baja a 28.
+  await ref.update({ stock: 28 });
+  await barra.waitForTimeout(300);
+
+  // Se guarda solo un cambio de nombre.
+  await barra.fill('#inpInsNombre', 'Fernet 750 ml');
+  await barra.click('#btnGuardarInsumo');
+  await barra.waitForFunction(() =>
+    !document.querySelector('#dlgInsumo')?.open, null, { timeout: 10000 });
+
+  await barra.waitForTimeout(1000);
+  const d = (await ref.get()).data();
+  if (d.nombre !== 'Fernet 750 ml') throw new Error('no guardó el nombre nuevo');
+  if (Number(d.stock) !== 28) {
+    throw new Error(`la edición pisó el stock: quedó en ${d.stock} y tenía que quedar en 28`);
+  }
+  // Se deja con el nombre de siempre para los casos que siguen.
+  await ref.update({ nombre: 'Fernet 750' });
+});
+
 await chequear('el conteo de la noche compara y marca lo que falta', async () => {
   await barra.click('#tabCartaBar');
   await barra.click('#btnConteo');

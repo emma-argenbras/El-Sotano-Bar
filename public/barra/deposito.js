@@ -232,7 +232,10 @@ export async function guardarInsumo() {
     nombre,
     unidad: $('#inpInsUnidad').value.trim() || 'unidad',
     medidas,
-    stock: Number(editandoInsumo?.stock || 0),
+    // El stock NO se manda al editar. Mandarlo escribía el número que tenía
+    // la pantalla cuando se abrió el diálogo: si mientras tanto la barra
+    // vendió, esas ventas volvían atrás al guardar el nombre.
+    ...(editandoInsumo ? {} : { stock: 0 }),
     costo: Math.max(0, Number($('#inpInsCosto').value) || 0),
     minimo: Math.max(0, Number($('#inpInsMinimo').value) || 0),
     // El proveedor no se toca desde acá: si no se reenvía, se borra.

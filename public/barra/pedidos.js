@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  increment,
   onSnapshot,
   orderBy,
   query,
@@ -290,6 +291,18 @@ export async function cobrarVenta(pago) {
 // se controlan y se dejan como están.
 //
 // signo = -1 descuenta (se entregó), +1 devuelve (se corrigió un entregado).
+//
+// El movimiento lo hace increment, que suma del lado del servidor. Antes se
+// leía el stock de la copia en memoria y se escribía "lo que yo vi más el
+// delta": con dos celulares entregando en el mismo segundo, el segundo pisaba
+// al primero y una venta desaparecía del depósito.
+//
+// Una transacción también lo arreglaría, pero falla sin señal en vez de
+// encolarse, y acá abajo la señal se corta. increment se encola.
+//
+// Como lo suma el servidor, el stock puede quedar negativo. Eso no es un
+// error: es que se vendió más de lo que había cargado, y taparlo con un
+// máximo contra cero era justamente lo que obligaba a leer antes de escribir.
 export async function moverStock(pedido, signo) {
   // Lo que hay que mover del depósito: se junta todo primero, porque dos
   // tragos distintos pueden salir de la misma botella.
@@ -315,14 +328,12 @@ export async function moverStock(pedido, signo) {
 
   await Promise.all([
     ...sueltos.map((x) => updateDoc(doc(db, 'carta', x.id),
-      // No baja de cero: un stock en negativo no significa nada y asusta al
-      // que lo mira. Si falta, lo muestra el conteo de la noche.
-      { stock: Math.max(0, x.stock + signo * x.cuantos) }).catch(() => {})),
+      { stock: increment(signo * x.cuantos) }).catch(() => {})),
     ...[...porInsumo].map(([id, medidas]) => {
-      const ins = estado.insumos.find((x) => x.id === id);
-      if (!ins) return null;
+      // Si el insumo ya no está, no hay nada que mover.
+      if (!estado.insumos.some((x) => x.id === id)) return null;
       return updateDoc(doc(db, 'insumos', id),
-        { stock: Math.max(0, Number(ins.stock || 0) + signo * medidas) }).catch(() => {});
+        { stock: increment(signo * medidas) }).catch(() => {});
     }),
   ]);
 }
