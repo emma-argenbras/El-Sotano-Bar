@@ -2999,6 +2999,164 @@ await chequear('cambiarlo mueve la ventana de la caja sin recargar', async () =>
     document.querySelector('#inpCorte')?.value === '6', null, { timeout: 10000 });
 });
 
+// ---------- la marca la elige el cliente ----------
+// Una cerveza en lata son cuatro latas al mismo precio, cada una de su
+// propia caja. El cliente dice cuál, y esa caja es la que baja.
+console.log('\nLA MARCA LA ELIGE EL CLIENTE');
+
+await chequear('el cliente no puede agregar sin elegir la marca', async () => {
+  await db.collection('insumos').doc('ins-quilmes').set({
+    nombre: 'Quilmes lata', unidad: 'lata', medidas: 1, stock: 10, costo: 1200, minimo: 0,
+  });
+  await db.collection('insumos').doc('ins-brahma').set({
+    nombre: 'Brahma lata', unidad: 'lata', medidas: 1, stock: 10, costo: 1100, minimo: 0,
+  });
+  await db.collection('carta').doc('lata').set({
+    nombre: 'Cerveza en lata', categoria: 'Cervezas', precio: 4000, orden: 80,
+    disponible: true, stock: 20,
+    opciones: [
+      { id: 'ins-quilmes', nombre: 'Quilmes lata', insumoId: 'ins-quilmes', medidas: 1 },
+      { id: 'ins-brahma', nombre: 'Brahma lata', insumoId: 'ins-brahma', medidas: 1 },
+    ],
+  });
+
+  await cliente.click('#tabCarta');
+  await cliente.waitForFunction(() =>
+    document.querySelector('#carta')?.textContent.includes('Cerveza en lata'),
+    null, { timeout: 15000 });
+
+  const fila = cliente.locator('.item', { hasText: 'Cerveza en lata' });
+  // Con marcas no hay +/-: hay un botón que abre la pregunta.
+  if (await fila.locator('[data-mas]').count())
+    throw new Error('deja sumarla sin elegir marca');
+  if (!(await fila.locator('[data-elegir]').count()))
+    throw new Error('no ofrece elegir');
+
+  await fila.locator('[data-elegir]').click();
+  await cliente.waitForSelector('#dlgOpcion[open]', { timeout: 10000 });
+  const t = await cliente.textContent('#cuerpoOpcion');
+  for (const marca of ['Quilmes', 'Brahma']) {
+    if (!t.includes(marca)) throw new Error('no ofrece ' + marca);
+  }
+  // Nada preseleccionado: el botón arranca apagado.
+  if (!(await cliente.locator('#btnAgregarOpcion').isDisabled()))
+    throw new Error('deja agregar sin haber elegido nada');
+});
+
+await chequear('elegida la marca, el pedido la lleva adentro', async () => {
+  await cliente.click('[data-opcion="ins-brahma"]');
+  if (await cliente.locator('#btnAgregarOpcion').isDisabled())
+    throw new Error('eligió la marca y el botón sigue apagado');
+  await cliente.click('#btnAgregarOpcion');
+  await cliente.waitForSelector('#dlgOpcion[open]', { state: 'detached', timeout: 10000 }).catch(() => {});
+
+  await cliente.click('#btnConfirmar');
+  await cliente.waitForSelector('dialog[open]', { timeout: 10000 });
+  const resumen = await cliente.textContent('#resumenPedido');
+  if (!resumen.includes('Brahma')) throw new Error('el resumen no dice qué marca: ' + resumen);
+  await cliente.fill('#inpNombre', 'Probador Marca');
+  await cliente.click('#btnEnviar');
+  await cliente.waitForSelector('dialog[open]', { state: 'detached', timeout: 15000 });
+
+  for (let i = 0; i < 40; i++) {
+    const q = await db.collection('pedidos').where('nombreCliente', '==', 'Probador Marca').get();
+    if (!q.empty) {
+      const it = (q.docs[0].data().items || [])[0];
+      if (it.opcionId !== 'ins-brahma')
+        throw new Error('el pedido no guardó la marca: ' + JSON.stringify(it));
+      if (it.opcionNombre !== 'Brahma lata')
+        throw new Error('no guardó el nombre de la marca: ' + JSON.stringify(it));
+      return;
+    }
+    if (i === 39) throw new Error('el pedido nunca llegó');
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
+await chequear('al entregarlo baja la caja de ESA marca y no la de la otra', async () => {
+  const antes = {
+    q: Number((await db.collection('insumos').doc('ins-quilmes').get()).data().stock),
+    b: Number((await db.collection('insumos').doc('ins-brahma').get()).data().stock),
+  };
+
+  await barra.click('#tabTablero');
+  const ticket = barra.locator('.ticket', { hasText: 'Probador Marca' });
+  await ticket.waitFor({ timeout: 15000 });
+  // El ticket tiene que decir qué marca: el que prepara saca la lata mirando esto.
+  if (!(await ticket.textContent()).includes('Brahma'))
+    throw new Error('el ticket no dice la marca');
+
+  for (let i = 0; i < 4; i++) {
+    const btn = ticket.locator('button', { hasText: /Preparar|Listo|Entregado/ }).first();
+    if (!(await btn.count())) break;
+    await btn.click();
+    await barra.waitForTimeout(600);
+    const d = await db.collection('pedidos').where('nombreCliente', '==', 'Probador Marca').get();
+    if (d.docs[0].data().estado === 'entregado') break;
+  }
+
+  for (let i = 0; i < 60; i++) {
+    const q = Number((await db.collection('insumos').doc('ins-quilmes').get()).data().stock);
+    const b = Number((await db.collection('insumos').doc('ins-brahma').get()).data().stock);
+    if (b === antes.b - 1) {
+      if (q !== antes.q) throw new Error('también descontó Quilmes, que nadie pidió');
+      return;
+    }
+    if (i === 59) throw new Error(`Brahma quedó en ${b} (era ${antes.b}) y Quilmes en ${q}`);
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
+await chequear('se acaba una marca y la otra se sigue vendiendo', async () => {
+  // Es toda la gracia: que se acabe Quilmes no agota la cerveza.
+  await db.collection('insumos').doc('ins-quilmes').update({ stock: 0 });
+
+  await cliente.click('#tabCarta');
+  await cliente.waitForFunction(() => {
+    const f = [...document.querySelectorAll('.item')].find((x) => x.textContent.includes('Cerveza en lata'));
+    return f && !f.className.includes('agotado');
+  }, null, { timeout: 20000 })
+    .catch(() => { throw new Error('agotó el producto entero por una sola marca'); });
+
+  await cliente.locator('.item', { hasText: 'Cerveza en lata' }).locator('[data-elegir]').click();
+  await cliente.waitForSelector('#dlgOpcion[open]', { timeout: 10000 });
+  await cliente.waitForFunction(() =>
+    document.querySelector('[data-opcion="ins-quilmes"]')?.disabled === true,
+    null, { timeout: 15000 })
+    .catch(() => { throw new Error('ofrece una marca que se acabó'); });
+  if (await cliente.locator('[data-opcion="ins-brahma"]').isDisabled())
+    throw new Error('apagó la marca que sí hay');
+  await cliente.click('#btnCancelarOpcion');
+});
+
+await chequear('la barra vende una marca puntual desde el mostrador', async () => {
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  await barra.waitForFunction(() =>
+    document.querySelector('#cuerpoVenta')?.textContent.includes('Cerveza en lata · Brahma'),
+    null, { timeout: 15000 })
+    .catch(() => { throw new Error('no desarma el producto en una fila por marca'); });
+
+  // La que se acabó se muestra agotada y no deja sumarla.
+  const quilmes = barra.locator('#cuerpoVenta .item', { hasText: 'Cerveza en lata · Quilmes' });
+  if (!(await quilmes.locator('[data-d="1"]').isDisabled()))
+    throw new Error('deja vender una marca que se acabó');
+
+  const antesB = Number((await db.collection('insumos').doc('ins-brahma').get()).data().stock);
+  await barra.locator('#cuerpoVenta .item', { hasText: 'Cerveza en lata · Brahma' })
+    .locator('[data-d="1"]').click();
+  await barra.click('#btnVentaEfectivo');
+  await barra.waitForSelector('#dlgVenta[open]', { state: 'detached', timeout: 15000 }).catch(() => {});
+
+  for (let i = 0; i < 60; i++) {
+    const b = Number((await db.collection('insumos').doc('ins-brahma').get()).data().stock);
+    if (b === antesB - 1) return;
+    if (i === 59) throw new Error(`Brahma quedó en ${b}, era ${antesB}`);
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
 // ---------- el costo de la mercadería, congelado ----------
 // Antes el costo salía siempre de los precios de HOY: entraba una compra con
 // el fernet más caro y la ganancia de las noches pasadas se movía sola, sin
