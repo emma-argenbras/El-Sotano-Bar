@@ -311,8 +311,8 @@ reglas. Ver hallazgo C-2: esto tiene consecuencias de fondo.
 |---|---|---|---|
 | **Carta** (qué productos se ofrecen) | Global: una colección `carta`, sin `eventoId` | Por evento | No se puede armar una carta temática. Sacar un producto para una noche lo saca de todas. |
 | **Precios** | Global: `carta.precio` | Por evento | Un precio especial para una fecha cambia el precio de todas las noches siguientes. |
-| **Stock de productos** | Derivado del depósito global | Asignado por evento | No se puede reservar mercadería para la fecha del sábado: el stock es uno solo y se lo come la noche del jueves. |
-| **Depósito (insumos)** | Global | Global ✓ + asignación por evento | El depósito físico está bien que sea único; lo que falta es poder apartar una parte para una noche. |
+| **Stock de productos** | Derivado del depósito global | Global ✓ (decisión del dueño, 16/10) | Sin cambios. Lo que falta es el cierre que muestre lo vendido por fecha y lo que quedó. |
+| **Depósito (insumos)** | Global | Global ✓ | Correcto. Las compras entran sin fecha. |
 | **Conteo de la noche** | Por `cajaId` ✓ | — | Correcto. |
 | **Cupo** | Por evento ✓ (`registros/{eventoId}`) | — | Correcto. |
 | **Invitados** | Por evento ✓ | — | Correcto. |
@@ -482,8 +482,7 @@ eventos/{eventoId}
     /carta/{itemId}                   ← COPIA congelada para esta noche
         nombre, categoria, precio, disponible, orden
         receta: [{ insumoId, medidas }]
-        asignado: 40                  // medidas apartadas para esta noche
-        vendido: 12
+        vendido: 12                   // para el cierre; el stock sale del depósito
 
     /invitados/{token}                ← en vez de la colección global
         clienteId, nombre, telefono   // nombre y tel copiados al momento
@@ -531,10 +530,10 @@ cambios/{id}                          ← NUEVO: registro de cambios sensibles
    carta: cambiarle el precio no toca ninguna otra fecha, y el histórico queda
    fijo para siempre sin depender de que el pedido haya guardado bien el precio.
 
-2. **El stock se asigna, no se comparte.** `insumos` sigue siendo el depósito
-   físico único. Cada evento aparta una cantidad (`asignado`) y descuenta contra
-   eso. Lo que sobra vuelve al depósito al cerrar la noche. Así dos fechas
-   abiertas a la vez no se comen el stock entre ellas.
+2. ~~**El stock se asigna, no se comparte.**~~ **Descartado por decisión del
+   dueño (16/10):** el depósito es único y compartido por todas las fechas. Cada
+   venta lo descuenta y queda marcada con el id de la fecha, que es lo que el
+   cierre por evento va a leer. Las compras entran al depósito sin fecha.
 
 3. **El cliente existe como persona.** Hoy una persona que vino a cinco fechas
    son cinco documentos sueltos de `invitados`. Con `clientes/{id}` es una
@@ -554,8 +553,16 @@ algo para hacer la semana de una fecha.
    una plantilla y se modifica, o cada fecha se arma desde cero? ¿Cuántas
    plantillas distintas te imaginás?
 
-2. **Stock por evento: ¿apartás mercadería de verdad?** ¿O te alcanza con ver
-   cuánto se consumió en cada fecha, sin reservarlo de antemano?
+2. ~~**Stock por evento: ¿apartás mercadería de verdad?**~~
+   **RESPONDIDA (16/10):** stock único del depósito, compartido por todas las
+   fechas. No hay stock por fecha. Cada venta descuenta del depósito y queda
+   registrada con el ID de la fecha, para sacar el cierre por evento (vendido
+   por fecha y stock restante). Las compras entran al depósito sin asignarse a
+   ninguna fecha.
+   → Consecuencia: se cae la subcolección `eventos/{id}/stock` de la propuesta,
+   y el campo `asignado` de la carta del evento. Lo que pide ya es lo que el
+   código hace hoy (`pedidos.cajaId`); lo que falta es el **cierre** que lo
+   lea. El crítico C-1 se reduce a carta y precios.
 
 3. **Precios:** ¿los precios cambian por fecha temática, o cambian con el tiempo
    y da lo mismo la fecha? Son dos problemas distintos.
