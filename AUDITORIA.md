@@ -589,6 +589,15 @@ algo para hacer la semana de una fecha.
 9. **`qr.html` y el flujo de mesas:** ¿lo usan? ¿Hay mesas numeradas con QR en
    el local, o eso quedó de una idea anterior?
 
+   > **RESPONDIDA (16/10).** No hay mesas numeradas y no hay ningún QR pegado
+   > en ninguna mesa. Quedó de una idea anterior. El bar usa dos QR y nada
+   > más: el de la carta (`sotano.web.app`) y el de inscripción
+   > (`sotano.web.app/registro.html`).
+   >
+   > El flujo de mesas **no se borra todavía**, por decisión de la casa. Queda
+   > anotado como candidato a eliminar en una etapa futura: ver
+   > "Flujo de mesas" en `CANDIDATOS-A-BORRAR.md`.
+
 10. **Cierre de la noche:** ¿qué números querés ver cuando cerrás una fecha?
     Decime los cinco que mirarías primero y armo el cierre alrededor de eso.
 

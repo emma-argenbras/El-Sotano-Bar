@@ -30,7 +30,8 @@
     "respaldo": "node scripts/respaldo-completo.mjs",
     "migrar:catalogo": "node scripts/migrar-catalogo.mjs",
     "separar:whiskies": "node scripts/separar-whiskies.mjs",
-    "desplegar": "node scripts/desplegar.mjs"
+    "desplegar": "node scripts/desplegar.mjs",
+    "qr:operacion": "node scripts/qr-operacion.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
