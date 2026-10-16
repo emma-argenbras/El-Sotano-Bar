@@ -494,38 +494,42 @@ await chequear('editar un insumo no le devuelve el stock a lo que era', async ()
   // El otro bug de la misma familia: al guardar el nombre de un insumo se
   // mandaba también el stock que tenía la pantalla cuando se abrió el
   // diálogo. Si entre medio la barra vendía, esas ventas volvían atrás.
-  await barra.click('#tabDeposito');
-  await barra.waitForSelector('#btnNuevoInsumo', { timeout: 10000 });
+  //
+  // El insumo lo crea el caso: así no depende de en qué orden corran los
+  // demás, y se lo lleva al terminar.
+  const ref = db.collection('insumos').doc('insumo-de-prueba-edicion');
+  await ref.set({ nombre: 'Prueba Edición', unidad: 'botella', medidas: 1,
+                  stock: 33, costo: 1000, minimo: 0 });
+  try {
+    await barra.click('#tabDeposito');
+    await barra.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('Prueba Edición'),
+      null, { timeout: 15000 });
 
-  const q = await db.collection('insumos').where('nombre', '==', 'Fernet 750').get();
-  if (q.empty) throw new Error('no está el insumo de prueba');
-  const ref = q.docs[0].ref;
-  await ref.update({ stock: 33 });
-  await barra.waitForTimeout(500);
+    // Se abre el diálogo con 33 en pantalla…
+    await barra.locator('#deposito .item', { hasText: 'Prueba Edición' })
+      .locator('[data-editar-insumo]').click();
+    await barra.waitForSelector('#dlgInsumo[open]', { timeout: 5000 });
 
-  // Se abre el diálogo con 33 en pantalla…
-  await barra.locator('#deposito .item', { hasText: 'Fernet 750' })
-    .locator('[data-editar-insumo]').click();
-  await barra.waitForSelector('#dlgInsumo[open]', { timeout: 5000 });
+    // … y mientras está abierto, la barra vende: el stock real baja a 28.
+    await ref.update({ stock: 28 });
+    await barra.waitForTimeout(400);
 
-  // … y mientras está abierto, la barra vende: el stock real baja a 28.
-  await ref.update({ stock: 28 });
-  await barra.waitForTimeout(300);
+    // Se guarda solo un cambio de nombre.
+    await barra.fill('#inpInsNombre', 'Prueba Edición SRL');
+    await barra.click('#btnGuardarInsumo');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgInsumo')?.open, null, { timeout: 10000 });
+    await barra.waitForTimeout(1200);
 
-  // Se guarda solo un cambio de nombre.
-  await barra.fill('#inpInsNombre', 'Fernet 750 ml');
-  await barra.click('#btnGuardarInsumo');
-  await barra.waitForFunction(() =>
-    !document.querySelector('#dlgInsumo')?.open, null, { timeout: 10000 });
-
-  await barra.waitForTimeout(1000);
-  const d = (await ref.get()).data();
-  if (d.nombre !== 'Fernet 750 ml') throw new Error('no guardó el nombre nuevo');
-  if (Number(d.stock) !== 28) {
-    throw new Error(`la edición pisó el stock: quedó en ${d.stock} y tenía que quedar en 28`);
+    const d = (await ref.get()).data();
+    if (d.nombre !== 'Prueba Edición SRL') throw new Error('no guardó el nombre nuevo');
+    if (Number(d.stock) !== 28) {
+      throw new Error(`la edición pisó el stock: quedó en ${d.stock} y tenía que quedar en 28`);
+    }
+  } finally {
+    await ref.delete();
   }
-  // Se deja con el nombre de siempre para los casos que siguen.
-  await ref.update({ nombre: 'Fernet 750' });
 });
 
 await chequear('el conteo de la noche compara y marca lo que falta', async () => {
