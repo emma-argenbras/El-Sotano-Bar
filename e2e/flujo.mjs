@@ -3098,6 +3098,14 @@ await chequear('al entregarlo baja la caja de ESA marca y no la de la otra', asy
     if (!(await btn.count())) throw new Error('el ticket no tiene botón para avanzar');
     try {
       await btn.first().click({ timeout: 8000 });
+      // Al pasar a entregado el panel pregunta cómo pagó, y hasta que no se
+      // conteste el diálogo tapa el tablero entero. Es lo que corresponde:
+      // si se deja para después, no se hace nunca.
+      if (await barra.locator('#dlgCobro[open]').count()) {
+        await barra.click('#btnEfectivo');
+        await barra.waitForSelector('#dlgCobro[open]', { state: 'detached', timeout: 10000 })
+          .catch(() => {});
+      }
     } catch (e) {
       // Adivinar por qué no se puede hacer click cuesta una corrida entera.
       const diag = await barra.evaluate(() => {
