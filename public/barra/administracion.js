@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -18,6 +19,7 @@ import { EVENTOS, app, db, fallo } from './conexion.js';
 import { comoSeDice } from './deposito.js';
 import { noches } from './eventos.js';
 import { cajaActual } from './pedidos.js';
+import { CORTE, alCambiarElCorte, arranqueDeHoy, corteValido, horaCorte } from './jornada.js';
 
 // ---------- la caja de Sótano ----------
 //
@@ -26,11 +28,9 @@ import { cajaActual } from './pedidos.js';
 // debería haber en el cajón.
 export function desdeDelRango() {
   const ahora = new Date();
-  if (estado.rangoCaja === 'hoy') {
-    // El día del bar corta a las 6: lo de las 3 AM es de la noche anterior.
-    const d = new Date(ahora.getTime() - 6 * 3600 * 1000);
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 6, 0, 0);
-  }
+  // "Hoy" es la jornada en curso, no el día del calendario: arranca en el
+  // corte de esta mañana. Ver barra/jornada.js.
+  if (estado.rangoCaja === 'hoy') return arranqueDeHoy(ahora);
   if (estado.rangoCaja === 'mes') return new Date(ahora.getFullYear(), ahora.getMonth(), 1);
   return new Date(ahora.getFullYear() - 2, 0, 1);
 }
@@ -137,6 +137,24 @@ export function pintarCajaGeneral() {
       </div>
     </div>
 
+    <div class="grupo-personal">El día del bar</div>
+    <p style="color:var(--suave);font-size:.84rem;margin:0 0 .5rem">
+      La noche no termina a medianoche: lo que se vende a las 3 AM es de la
+      noche anterior. Todo lo que pase antes de esta hora cuenta para la
+      jornada del día anterior — la caja, los gastos y el cierre.
+    </p>
+    <label class="campo">
+      <span>El día arranca a las</span>
+      <input id="inpCorte" type="number" min="0" max="12" step="1" inputmode="numeric"
+             value="${horaCorte()}">
+    </label>
+    <p style="color:var(--suave);font-size:.8rem;margin:-.3rem 0 .5rem">
+      Hoy: de las ${horaCorte()}:00 de ${arranqueDeHoy().toLocaleDateString('es-AR')}
+      a las ${horaCorte()}:00 del día siguiente.
+    </p>
+    <button class="btn ancho-full" id="btnGuardarCorte" style="margin-bottom:.4rem">
+      Guardar la hora de corte</button>
+
     <div class="grupo-personal">Alias para transferencias</div>
     <p style="color:var(--suave);font-size:.84rem;margin:0 0 .5rem">
       El que ve el invitado en su pase cuando elige pagar la entrada por
@@ -185,6 +203,7 @@ export function pintarCajaGeneral() {
     pintarCajaGeneral();
   });
   $('#btnNuevoEgreso').onclick = abrirEgreso;
+  $('#btnGuardarCorte').onclick = guardarCorte;
   $('#btnGuardarAlias').onclick = async (e) => {
     const b = e.currentTarget;
     b.disabled = true; b.textContent = 'Guardando…';
@@ -205,6 +224,50 @@ export function pintarCajaGeneral() {
     try { await deleteDoc(doc(db, 'egresos', e.id)); }
     catch (err) { alert('No se pudo: ' + (err.code || err.message)); }
   });
+}
+
+// Mover el corte con la jornada empezada le cambia el día a ventas que ya
+// están cobradas: lo de las 4 AM pasa de anoche a hoy sin que nadie lo haya
+// tocado. Se cambia con la jornada vacía, no en el medio.
+export async function ventasDesdeElCorte() {
+  const snap = await getDocs(query(collection(db, 'pedidos'),
+    where('estado', '==', 'entregado'),
+    where('creadoEn', '>=', Timestamp.fromDate(arranqueDeHoy()))));
+  return snap.size;
+}
+
+export async function guardarCorte() {
+  const btn = $('#btnGuardarCorte');
+  const hora = corteValido($('#inpCorte').value);
+  if (hora === null) {
+    alert('La hora tiene que ser un número entero de 0 a 12.');
+    $('#inpCorte').focus();
+    return;
+  }
+  if (hora === horaCorte()) return;
+
+  btn.disabled = true; btn.textContent = 'Guardando…';
+  try {
+    const vendidas = await ventasDesdeElCorte();
+    if (vendidas) {
+      alert(`No se puede mover el corte ahora: la jornada ya tiene `
+        + `${vendidas} venta${vendidas === 1 ? '' : 's'} cobrada${vendidas === 1 ? '' : 's'}.`
+        + `\n\nCambiarlo le cambiaría el día a plata que ya está contada. `
+        + `Cerrá la jornada y cambialo antes de abrir la próxima.`);
+      $('#inpCorte').value = horaCorte();
+      return;
+    }
+    await setDoc(CORTE(), { horaCorte: hora });
+    btn.textContent = 'Guardado ✓';
+    return;
+  } catch (e) {
+    alert('No se pudo: ' + (e.code || e.message));
+  } finally {
+    if (btn.textContent !== 'Guardado ✓') {
+      btn.disabled = false;
+      btn.textContent = 'Guardar la hora de corte';
+    }
+  }
 }
 
 // ---------- la plata que sale ----------
@@ -250,6 +313,10 @@ export let yaEscuchaPlataDeposito = false;
 export function escucharPlataDeposito() {
   if (yaEscuchaPlataDeposito) return;
   yaEscuchaPlataDeposito = true;
+
+  // Mover el corte cambia qué entra en "hoy": la caja se tiene que volver a
+  // dibujar sola, y al hacerlo se resuscribe a la ventana nueva.
+  alCambiarElCorte(pintarCajaGeneral);
 
   // Los gastos con proveedor apuntado son los pagos a cuenta: hacen falta
   // completos, no solo los del rango que esté mirando la caja.

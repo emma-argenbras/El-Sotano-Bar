@@ -13,6 +13,7 @@ import { auth, pintarConexion } from './conexion.js';
 import { escucharDeposito } from './deposito.js';
 import { escucharEvento } from './eventos.js';
 import { escucharInvitados } from './invitados.js';
+import { escucharCorte } from './jornada.js';
 import { pintarSonido } from './pedidos.js';
 import { escucharAccesos, vigilarMiAcceso } from './usuarios.js';
 
@@ -130,6 +131,9 @@ onAuthStateChanged(auth, async (u) => {
   $('#vistaPanel').hidden = !dentro;
   if (!dentro) return;
   estado.usuario = aUsuario(u.email);
+  // El corte primero: de él depende a qué caja entra lo que se venda, y lo
+  // necesitan todos —la barra también, no solo quien mira la caja.
+  escucharCorte();
   pintarConexion(); pintarSonido(); escucharEvento(); escucharCarta();
   escucharInvitados();
   vigilarMiAcceso(u.uid);

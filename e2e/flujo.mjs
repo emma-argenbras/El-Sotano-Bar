@@ -2832,6 +2832,59 @@ await chequear('también marca el pedido con un id que no existe en la carta', a
   if (!marcado) throw new Error('el pedido con id inventado pasó sin marcar');
 });
 
+// ---------- la hora a la que corta el día del bar ----------
+// La noche no termina a medianoche. Qué plata es de qué noche depende de
+// este número, así que se mira que se vea, que se pueda mover y —sobre
+// todo— que NO se pueda mover en el medio de una jornada ya cobrada.
+console.log('\nEL DÍA DEL BAR');
+
+await chequear('Administración muestra a qué hora arranca el día', async () => {
+  await barra.click('#tabCaja');
+  await barra.waitForSelector('#inpCorte', { timeout: 15000 });
+  const hora = await barra.inputValue('#inpCorte');
+  if (hora !== '6') throw new Error('arranca por defecto en: ' + hora);
+  const t = await barra.textContent('#caja');
+  if (!t.includes('de las 6:00')) throw new Error('no dice la ventana de hoy');
+});
+
+await chequear('moverlo con la jornada ya cobrada se rechaza y el campo vuelve', async () => {
+  // Es el caso peligroso: cambiarlo ahora le cambiaría el día a ventas que
+  // ya están contadas. Tiene que frenar y decir por qué.
+  let aviso = '';
+  const oir = (d) => { aviso = d.message(); d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.fill('#inpCorte', '9');
+    await barra.click('#btnGuardarCorte');
+    for (let i = 0; i < 40 && !aviso; i++) await new Promise((ok) => setTimeout(ok, 250));
+    if (!aviso.includes('venta')) throw new Error('no avisó: ' + (aviso || 'nada'));
+
+    const d = await db.doc('publico/jornada').get();
+    if (d.exists && d.data().horaCorte === 9) throw new Error('lo guardó igual');
+
+    // Y el campo no queda mintiendo con un 9 que nunca se guardó.
+    await barra.waitForFunction(() =>
+      document.querySelector('#inpCorte')?.value === '6', null, { timeout: 5000 })
+      .catch(() => { throw new Error('el campo quedó en el valor rechazado'); });
+  } finally {
+    barra.removeListener('dialog', oir);
+  }
+});
+
+await chequear('cambiarlo mueve la ventana de la caja sin recargar', async () => {
+  await db.doc('publico/jornada').set({ horaCorte: 10 });
+  await barra.waitForFunction(() =>
+    document.querySelector('#caja')?.textContent.includes('de las 10:00'),
+    null, { timeout: 10000 })
+    .catch(() => { throw new Error('la caja siguió mostrando la ventana vieja'); });
+  const hora = await barra.inputValue('#inpCorte');
+  if (hora !== '10') throw new Error('el campo no se actualizó: ' + hora);
+
+  await db.doc('publico/jornada').set({ horaCorte: 6 });
+  await barra.waitForFunction(() =>
+    document.querySelector('#inpCorte')?.value === '6', null, { timeout: 10000 });
+});
+
 await navegador.close();
 
 const ruido = errores.filter((e) => !/favicon|sw\.js|manifest|Failed to load resource/i.test(e));

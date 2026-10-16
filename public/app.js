@@ -8,6 +8,7 @@ import {
   connectFirestoreEmulator,
   collection, doc, getDoc, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
 } from '/vendor/firebase.js';
+import { cajaDeDia } from '/corte.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
 const BAR = window.CONFIG_BAR || { moneda: '$', alertaDemoraMin: 8 };
@@ -153,9 +154,12 @@ function mostrarFalloAuth(e) {
 // pedir. Cerrado el evento, la carta se sigue viendo pero no entra nada.
 // Las reglas lo rechazan igual: esto es para avisarlo, no para custodiarlo.
 // Igual que en el panel: lo que se vende a las 3 AM es de la noche anterior.
+// La hora del corte la pone Administración y vive en publico/jornada; si
+// todavía no está, valen las 6. Que el cliente y la barra usen la misma es
+// lo que hace que el pedido de las 3 AM caiga en la caja de anoche en los
+// dos lados. Ver /corte.js.
 function cajaDelDia() {
-  const d = new Date(Date.now() - 6 * 3600 * 1000);
-  return `dia-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return cajaDeDia(new Date(), estado.horaCorte);
 }
 
 function escucharEstadoLocal() {
@@ -166,6 +170,12 @@ function escucharEstadoLocal() {
     pintarEstadoLocal();
     pintarCarta();
     pintarCarrito();
+  }, () => {});
+
+  // El corte no se dibuja en ninguna parte: solo decide a qué caja va el
+  // pedido. Por eso no repinta nada al llegar.
+  onSnapshot(doc(db, 'publico', 'jornada'), (d) => {
+    estado.horaCorte = d.exists() ? d.data().horaCorte : undefined;
   }, () => {});
 }
 

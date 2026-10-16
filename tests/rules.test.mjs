@@ -545,6 +545,79 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
   });
 
+  // La hora a la que corta el día del bar. La lee el cliente sin cuenta
+  // —si no, su pedido de las 3 AM caería en otra caja que el de la barra— y
+  // la escribe solo quien administra la plata.
+  describe('la hora de corte del día', () => {
+    it('la lee cualquiera, sin loguearse', async () => {
+      await assertSucceeds(getDoc(doc(sinLoguear(), 'publico/jornada')));
+      await assertSucceeds(getDoc(doc(anon(), 'publico/jornada')));
+    });
+
+    it('la casa la escribe', async () => {
+      await assertSucceeds(setDoc(doc(barra(), 'publico/jornada'), { horaCorte: 6 }));
+      await assertSucceeds(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: 7 }));
+    });
+
+    it('acepta los dos extremos', async () => {
+      await assertSucceeds(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: 0 }));
+      await assertSucceeds(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: 12 }));
+      await assertSucceeds(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: 6 }));
+    });
+
+    // Mover este número le cambia el día a la plata de toda una noche: lo
+    // que entra tiene que ser una hora y nada más.
+    it('un texto NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: '6' }));
+    });
+
+    it('con coma NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: 6.5 }));
+    });
+
+    it('fuera de 0 a 12 NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: -1 }));
+      await assertFails(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: 13 }));
+      await assertFails(setDoc(doc(gerente(), 'publico/jornada'), { horaCorte: 25 }));
+    });
+
+    it('un campo de más NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'publico/jornada'),
+        { horaCorte: 6, tomandoPedidos: false }));
+    });
+
+    it('sin la hora NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'publico/jornada'), { nombre: 'jornada' }));
+    });
+
+    it('un barman no mueve el día del bar', async () => {
+      await assertFails(setDoc(doc(turnoOk(), 'publico/jornada'), { horaCorte: 10 }));
+      await assertFails(setDoc(doc(puerta(), 'publico/jornada'), { horaCorte: 10 }));
+      await assertFails(setDoc(doc(aparato(), 'publico/jornada'), { horaCorte: 10 }));
+    });
+
+    it('un desconocido tampoco', async () => {
+      await assertFails(setDoc(doc(anon(), 'publico/jornada'), { horaCorte: 10 }));
+      await assertFails(setDoc(doc(sinLoguear(), 'publico/jornada'), { horaCorte: 10 }));
+    });
+
+    // Es plata: el admin que tiene apagada la pantalla de Caja no la toca,
+    // aunque pueda escribir el resto de publico/.
+    it('un admin sin la pantalla de Caja NO', async () => {
+      await assertFails(setDoc(doc(recortado(), 'publico/jornada'), { horaCorte: 10 }));
+      // Y el mismo admin sí puede con lo demás de publico/: lo que lo frena
+      // es el permiso de Caja, no estar recortado en general.
+      await assertSucceeds(setDoc(doc(recortado(), 'publico/estado'), { tomandoPedidos: true }));
+    });
+
+    it('solo el dueño la borra', async () => {
+      await assertFails(deleteDoc(doc(gerente(), 'publico/jornada')));
+      await assertSucceeds(deleteDoc(doc(barra(), 'publico/jornada')));
+      // Y queda como estaba para el resto de las pruebas.
+      await assertSucceeds(setDoc(doc(barra(), 'publico/jornada'), { horaCorte: 6 }));
+    });
+  });
+
   it('sin nombre o sin teléfono NO', async () => {
     await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-4'), invitadoNuevo({ nombre: 'A' })));
     await assertFails(setDoc(doc(anon(), 'invitados/token-largo-de-prueba-5'), invitadoNuevo({ telefono: '12' })));

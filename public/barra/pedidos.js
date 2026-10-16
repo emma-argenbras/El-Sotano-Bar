@@ -13,6 +13,7 @@ import {
 import { $, COLUMNAS, DEMORA_MS, esc, estado, plata } from './base.js';
 import { moverInsumos } from './stock.js';
 import { app, auth, db, pintarConexion } from './conexion.js';
+import { cajaDeHoy } from './jornada.js';
 import { desdeCuando, pintarEvento, resumirCaja } from './eventos.js';
 
 // ---------- pedidos ----------
@@ -186,13 +187,8 @@ export function elegirQuienAtiende() {
 }
 
 // La caja a la que entra lo que se vende: la del evento abierto, o la del día.
-// La noche de bar cruza la medianoche, así que el día corta a las 6 de la
-// mañana: lo que se vende a las 3 AM es de la noche anterior.
-export function cajaDeHoy() {
-  const d = new Date(Date.now() - 6 * 3600 * 1000);
-  return `dia-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
+// La noche de bar cruza la medianoche, así que el día no corta a medianoche
+// sino a la hora que diga Administración. Ver barra/jornada.js.
 export const cajaActual = () => estado.evento?.id || cajaDeHoy();
 
 // ---------- venta de mostrador ----------

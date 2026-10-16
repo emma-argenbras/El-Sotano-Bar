@@ -366,10 +366,31 @@ service cloud.firestore {
     // ---------- estado del local, público ----------
     // Lo lee cualquiera sin loguearse: el QR de la mesa necesita saber si se
     // está tomando pedidos antes incluso de que el cliente entre.
+
+    // La hora a la que corta el día del bar. Es un solo número y está acá
+    // porque el cliente lo tiene que leer sin cuenta: el pedido que entra
+    // desde la mesa a las 3 AM tiene que caer en la misma caja que el que se
+    // cobra en la barra.
+    //
+    // Se valida la forma porque mover este número le cambia el día a la plata
+    // de toda una noche: un string, un 25 o un campo de más y la caja de
+    // anoche pasa a ser la de hoy.
+    function corteValido() {
+      return request.resource.data.keys().hasOnly(['horaCorte'])
+        && request.resource.data.horaCorte is int
+        && request.resource.data.horaCorte >= 0
+        && request.resource.data.horaCorte <= 12;
+    }
+
     match /publico/{documento} {
       allow read: if true;
       // Cortar y reabrir los pedidos es del administrador.
-      allow create, update: if esAdmin();
+      //
+      // Ojo con el orden: Firestore concede si CUALQUIER match permite, así
+      // que un match aparte para publico/jornada no restringiría nada. La
+      // condición tiene que estar acá, en el comodín.
+      allow create, update: if esAdmin() && (documento != 'jornada'
+        || (puedo('caja') && corteValido()));
       allow delete: if esElDueno();
     }
 

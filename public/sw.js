@@ -1,15 +1,17 @@
 // Service worker de Sótano.
 // El local es un sótano: la señal se corta. El cascarón de la app tiene que
 // abrir igual, y Firestore ya resuelve sus datos con su propio cache.
-const VERSION = 'sotano-8e01ca606f7e';
+const VERSION = 'sotano-17dda3899d8f';
 const ESENCIALES = [
   '/', '/index.html', '/bar.html', '/estilos.css', '/app.js', '/bar.js',
   '/config.js', '/actualizar.js', '/ayuda.js', '/tel.js', '/instalar.js',
+  '/corte.js',
   // El panel está partido en módulos: si falta uno, no abre. Van todos.
   '/barra/base.js', '/barra/conexion.js', '/barra/login.js',
   '/barra/eventos.js', '/barra/usuarios.js', '/barra/invitados.js',
   '/barra/pedidos.js', '/barra/carta.js', '/barra/deposito.js',
   '/barra/administracion.js', '/barra/pantallas.js', '/barra/stock.js',
+  '/barra/jornada.js',
   '/manifest.webmanifest', '/vendor/firebase.js',
   '/iconos/icono.svg', '/iconos/icono-192.png', '/iconos/apple-touch-icon.png',
   '/iconos/logo-horizontal.svg', '/iconos/logo-horizontal-claro.svg', '/iconos/logo.svg',
