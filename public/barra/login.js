@@ -13,6 +13,7 @@ import { auth, pintarConexion } from './conexion.js';
 import { escucharDeposito } from './deposito.js';
 import { escucharEvento } from './eventos.js';
 import { escucharInvitados } from './invitados.js';
+import { escucharCartas } from './cartas.js';
 import { escucharCorte } from './jornada.js';
 import { pintarSonido } from './pedidos.js';
 import { escucharAccesos, vigilarMiAcceso } from './usuarios.js';
@@ -134,6 +135,7 @@ onAuthStateChanged(auth, async (u) => {
   // El corte primero: de él depende a qué caja entra lo que se venda, y lo
   // necesitan todos —la barra también, no solo quien mira la caja.
   escucharCorte();
+  escucharCartas();
   pintarConexion(); pintarSonido(); escucharEvento(); escucharCarta();
   escucharInvitados();
   vigilarMiAcceso(u.uid);

@@ -658,6 +658,53 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ---------- el catálogo y la carta de cada fecha ----------
+    //
+    // El catálogo es el maestro: todo lo que el bar sabe vender, con su
+    // precio de referencia. No es lo que se vende hoy.
+    //
+    // La carta de una fecha dice qué sale esa noche y a cuánto. Es un solo
+    // documento por fecha con un mapa producto → precio: un producto está en
+    // la carta de esa noche si tiene precio ahí, y no está si no lo tiene.
+    // Un documento y no una subcolección porque se lee entero, de una, cada
+    // vez que alguien abre la carta desde la mesa.
+    //
+    // El stock NO vive acá. El depósito es uno solo y lo que hay no depende
+    // de la fecha: eso sigue en carta/{id}.
+    match /catalogo/{id} {
+      allow read: if esBarra();
+      allow create, update, delete: if esAdmin() && puedo('carta');
+    }
+
+    function cartaDeFechaValida() {
+      return request.resource.data.keys().hasOnly(
+          ['fecha', 'precios', 'copiadaDe', 'creadaEn', 'creadaPor', 'cerrada'])
+        && request.resource.data.fecha is string
+        && request.resource.data.fecha.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.precios is map
+        && request.resource.data.precios.size() <= 200;
+    }
+
+    match /cartas/{fecha} {
+      // La lee cualquiera sin cuenta: el que abre el QR en la mesa todavía no
+      // es nadie y tiene que ver la carta de esta noche.
+      allow read: if true;
+
+      allow create: if esAdmin() && puedo('carta')
+        && fecha == request.resource.data.fecha
+        && cartaDeFechaValida();
+
+      // Una noche cerrada no se retoca: sus precios son los que se cobraron,
+      // y cambiarlos después haría que el cierre de esa noche deje de
+      // cuadrar con lo que se vendió. El dueño puede, para arreglar un error.
+      allow update: if esAdmin() && puedo('carta')
+        && cartaDeFechaValida()
+        && request.resource.data.fecha == resource.data.fecha
+        && (esElDueno() || resource.data.get('cerrada', false) != true);
+
+      allow delete: if esElDueno();
+    }
+
     // ---------- mermas: la diferencia de un conteo aplicado ----------
     // Lo que apareció de menos (o de más) cuando se aplicó un conteo al
     // depósito. Es la única explicación que queda de por qué el stock cambió

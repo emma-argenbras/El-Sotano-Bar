@@ -48,7 +48,7 @@ const SELLADOS = [
   'public/barra/eventos.js', 'public/barra/usuarios.js', 'public/barra/invitados.js',
   'public/barra/pedidos.js', 'public/barra/carta.js', 'public/barra/deposito.js',
   'public/barra/administracion.js', 'public/barra/pantallas.js', 'public/barra/stock.js',
-  'public/barra/jornada.js',
+  'public/barra/jornada.js', 'public/barra/cartas.js',
   'public/manifest.webmanifest', 'public/manifest-barra.webmanifest',
   'public/manifest-club.webmanifest',
   'public/iconos/icono.svg', 'public/iconos/icono-barra.svg',

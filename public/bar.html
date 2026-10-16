@@ -124,6 +124,7 @@
     <section id="vistaCartaBar" hidden>
       <button class="btn ancho-full" id="btnConteo" style="margin-bottom:.9rem">
         🧮 Conteo de la noche</button>
+      <button class="btn solo-gerente-inline" id="btnCartaFecha">📅 Carta por fecha</button>
       <div id="cartaBar"><div class="cargando">Cargando carta…</div></div>
     </section>
 
@@ -305,6 +306,15 @@
 </dialog>
 
 <!-- De qué insumo sale un producto de la carta. -->
+<dialog id="dlgCartaFecha">
+  <h2 style="margin-top:0" id="tituloCartaFecha">Carta de una fecha</h2>
+  <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 1rem">
+    Qué se vende esa noche y a cuánto. Si una fecha no tiene carta propia, esa
+    noche se vende la de siempre.</p>
+  <div id="cuerpoCartaFecha"></div>
+  <button class="btn ancho-full" id="btnCerrarCartaFecha" style="margin-top:.9rem">Volver</button>
+</dialog>
+
 <dialog id="dlgReceta">
   <h2 style="margin-top:0" id="tituloReceta">De qué sale</h2>
   <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 1rem">

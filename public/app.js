@@ -8,7 +8,7 @@ import {
   connectFirestoreEmulator,
   collection, doc, getDoc, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
 } from '/vendor/firebase.js';
-import { cajaDeDia, dondeRepartir } from '/corte.js';
+import { cajaDeDia, dondeRepartir, fechaDeJornada } from '/corte.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
 const BAR = window.CONFIG_BAR || { moneda: '$', alertaDemoraMin: 8 };
@@ -44,6 +44,7 @@ const estado = {
   tomandoPedidos: true,
   uid: null,
   carta: [],
+  cartaDeLaNoche: null,
   categoria: null,
   carrito: new Map(),      // itemId -> cantidad
   pedidos: [],
@@ -172,11 +173,40 @@ function escucharEstadoLocal() {
     pintarCarrito();
   }, () => {});
 
-  // El corte no se dibuja en ninguna parte: solo decide a qué caja va el
-  // pedido. Por eso no repinta nada al llegar.
+  // El corte decide a qué caja va el pedido y, de paso, de qué noche es la
+  // carta: lo que se pide a las 3 AM es de la noche anterior, y tiene que
+  // verse la carta de esa noche y no la del día que arranca.
   onSnapshot(doc(db, 'publico', 'jornada'), (d) => {
     estado.horaCorte = d.exists() ? d.data().horaCorte : undefined;
-  }, () => {});
+    escucharCartaDeLaNoche();
+  }, () => { escucharCartaDeLaNoche(); });
+}
+
+// La carta de esta noche, si la hay.
+//
+// Si la noche no tiene carta propia —que es lo normal— no hay nada que
+// escuchar y se vende la de siempre. Esto agrega la posibilidad sin cambiar
+// lo que pasa cuando nadie la usa.
+let mirandoCarta = null;
+function escucharCartaDeLaNoche() {
+  const fecha = fechaDeJornada(new Date(), estado.horaCorte);
+  if (mirandoCarta === fecha) return;
+  mirandoCarta = fecha;
+  onSnapshot(doc(db, 'cartas', fecha), (d) => {
+    estado.cartaDeLaNoche = d.exists() ? (d.data().precios || null) : null;
+    pintarCarta();
+    pintarCarrito();
+  }, () => { estado.cartaDeLaNoche = null; pintarCarta(); });
+}
+
+// Lo que se vende esta noche, con el precio de esta noche. Sin carta propia,
+// todo lo que esté en la carta de siempre.
+function loDeEstaNoche() {
+  const precios = estado.cartaDeLaNoche;
+  if (!precios) return estado.carta;
+  return estado.carta
+    .filter((i) => precios[i.id] !== undefined)
+    .map((i) => ({ ...i, precio: Number(precios[i.id]) }));
 }
 
 function pintarEstadoLocal() {
@@ -225,14 +255,15 @@ function pintarCategorias() {
 
 function pintarCarta() {
   const cont = $('#carta');
-  if (!estado.carta.length) {
+  if (!loDeEstaNoche().length) {
     cont.innerHTML = `<div class="vacio">Todavía no hay nada cargado en la carta.<br>
       <small>Desde la Mac: <code>npm run seed</code></small></div>`;
     return;
   }
+  const deEstaNoche = loDeEstaNoche();
   const visibles = estado.categoria
-    ? estado.carta.filter((i) => (i.categoria || 'Otros') === estado.categoria)
-    : estado.carta;
+    ? deEstaNoche.filter((i) => (i.categoria || 'Otros') === estado.categoria)
+    : deEstaNoche;
 
   const porCat = new Map();
   for (const i of visibles) {
@@ -317,7 +348,7 @@ function filaItem(i) {
 // es una lata equivocada servida en la barra.
 let eligiendo = null;
 function abrirOpcion(id) {
-  const i = estado.carta.find((x) => x.id === id);
+  const i = loDeEstaNoche().find((x) => x.id === id);
   if (!i) return;
   eligiendo = { id, opcionId: null };
   $('#tituloOpcion').textContent = i.nombre || id;
@@ -347,7 +378,7 @@ function abrirOpcion(id) {
 // ---------- carrito ----------
 function sumar(clave, delta) {
   const { id } = partirClave(clave);
-  const item = estado.carta.find((i) => i.id === id);
+  const item = loDeEstaNoche().find((i) => i.id === id);
   if (!item) return;
   const tope = typeof item.stock === 'number' ? item.stock : 99;
   const n = Math.max(0, Math.min(tope, (estado.carrito.get(clave) || 0) + delta));
@@ -360,7 +391,7 @@ function sumar(clave, delta) {
 function lineas() {
   return [...estado.carrito].map(([clave, cantidad]) => {
     const { id, opcionId } = partirClave(clave);
-    const i = estado.carta.find((x) => x.id === id);
+    const i = loDeEstaNoche().find((x) => x.id === id);
     const o = opcionId ? marcasDe(i).find((x) => x.id === opcionId) : null;
     return {
       id,

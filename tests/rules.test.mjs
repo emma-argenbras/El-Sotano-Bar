@@ -545,6 +545,100 @@ describe('registro de invitados', () => {
     await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
   });
 
+  // La carta de una fecha: qué se vende esa noche y a cuánto.
+  describe('la carta de una fecha', () => {
+    const carta = (extra = {}) => ({
+      fecha: '2026-11-20',
+      precios: { fernet: 9000, papas: 6000 },
+      copiadaDe: 'catalogo',
+      creadaEn: serverTimestamp(),
+      creadaPor: 'guille',
+      cerrada: false, ...extra,
+    });
+
+    it('la casa arma la carta de una noche', async () => {
+      await assertSucceeds(setDoc(doc(gerente(), 'cartas/2026-11-20'), carta()));
+    });
+
+    // El que abre el QR en la mesa todavía no es nadie y tiene que ver la
+    // carta de esa noche.
+    it('la lee cualquiera, sin cuenta', async () => {
+      await assertSucceeds(getDoc(doc(sinLoguear(), 'cartas/2026-11-20')));
+      await assertSucceeds(getDoc(doc(anon(), 'cartas/2026-11-20')));
+    });
+
+    it('el nombre del documento tiene que ser la fecha que dice adentro', async () => {
+      await assertFails(setDoc(doc(gerente(), 'cartas/2026-11-21'),
+        carta({ fecha: '2026-11-20' })));
+    });
+
+    it('una fecha con cualquier formato NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'cartas/20-11-2026'),
+        carta({ fecha: '20-11-2026' })));
+    });
+
+    it('un campo de más NO', async () => {
+      await assertFails(setDoc(doc(gerente(), 'cartas/2026-11-22'),
+        carta({ fecha: '2026-11-22', stock: 5 })));
+    });
+
+    it('el barman no arma cartas', async () => {
+      await assertFails(setDoc(doc(turnoOk(), 'cartas/2026-11-23'),
+        carta({ fecha: '2026-11-23' })));
+      await assertFails(setDoc(doc(aparato(), 'cartas/2026-11-23'),
+        carta({ fecha: '2026-11-23' })));
+      await assertFails(setDoc(doc(anon(), 'cartas/2026-11-23'),
+        carta({ fecha: '2026-11-23' })));
+    });
+
+    it('un admin con la Carta apagada tampoco', async () => {
+      await assertFails(setDoc(doc(recortado(), 'cartas/2026-11-24'),
+        carta({ fecha: '2026-11-24' })));
+    });
+
+    // Una noche cerrada no se retoca: sus precios son los que se cobraron, y
+    // cambiarlos después haría que el cierre deje de cuadrar con lo vendido.
+    it('una noche cerrada no se retoca', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'cartas/2026-11-25'), {
+          fecha: '2026-11-25', precios: { fernet: 9000 }, cerrada: true,
+        });
+      });
+      await assertFails(updateDoc(doc(gerente(), 'cartas/2026-11-25'),
+        { fecha: '2026-11-25', precios: { fernet: 1 }, cerrada: true }));
+    });
+
+    it('salvo el dueño, para arreglar un error', async () => {
+      await assertSucceeds(updateDoc(doc(barra(), 'cartas/2026-11-25'),
+        { fecha: '2026-11-25', precios: { fernet: 1 }, cerrada: true }));
+    });
+
+    it('y solo el dueño la borra', async () => {
+      await assertFails(deleteDoc(doc(gerente(), 'cartas/2026-11-20')));
+      await assertSucceeds(deleteDoc(doc(barra(), 'cartas/2026-11-20')));
+    });
+  });
+
+  // El catálogo: todo lo que el bar sabe vender.
+  describe('el catálogo', () => {
+    it('la casa lo edita y la barra lo lee', async () => {
+      await assertSucceeds(setDoc(doc(gerente(), 'catalogo/w-gold'),
+        { nombre: 'Johnnie Walker Gold', precio: 15000, activo: true }));
+      await assertSucceeds(getDoc(doc(turnoOk(), 'catalogo/w-gold')));
+    });
+
+    // Es la lista de precios de la casa: el cliente no tiene por qué verla.
+    it('el cliente no lo lee ni lo toca', async () => {
+      await assertFails(getDoc(doc(anon(), 'catalogo/w-gold')));
+      await assertFails(getDoc(doc(sinLoguear(), 'catalogo/w-gold')));
+      await assertFails(setDoc(doc(anon(), 'catalogo/inventado'), { nombre: 'X' }));
+    });
+
+    it('un admin con la Carta apagada no lo edita', async () => {
+      await assertFails(setDoc(doc(recortado(), 'catalogo/w-gold'), { nombre: 'Otro' }));
+    });
+  });
+
   // Las marcas de un producto: de qué caja sale cada una (configuración de
   // la casa) contra cuántas quedan (lo que pasa esta noche).
   describe('las marcas de un producto', () => {

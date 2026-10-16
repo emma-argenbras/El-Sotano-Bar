@@ -7,6 +7,7 @@ import { irA } from './barra/pantallas.js';
 import { guardarAlDia, guardarEgreso, pintarAdmin } from './barra/administracion.js';
 import { $, estado } from './barra/base.js';
 import { abrirConteo, guardarReceta } from './barra/carta.js';
+import { abrirCartaDeFecha } from './barra/cartas.js';
 import { guardarInsumo, pintarDeposito } from './barra/deposito.js';
 import { abrirVenta, cancelarCobro, cerrarCobro, elegirQuienAtiende, pintarTablero } from './barra/pedidos.js';
 import { crearPersona, limpiarUsuario, pintarUsuarios, pistaPersona } from './barra/usuarios.js';
@@ -37,6 +38,8 @@ $('#btnVerPass').onclick = () => {
 
 $('#btnQuienAtiende').onclick = elegirQuienAtiende;
 $('#btnConteo').onclick = abrirConteo;
+$('#btnCartaFecha').onclick = abrirCartaDeFecha;
+$('#btnCerrarCartaFecha').onclick = () => $('#dlgCartaFecha').close();
 $('#btnCancelarInsumo').onclick = () => $('#dlgInsumo').close();
 $('#btnGuardarInsumo').onclick = guardarInsumo;
 $('#btnCancelarCompra').onclick = () => $('#dlgCompra').close();

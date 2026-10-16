@@ -13,7 +13,8 @@ import {
 import { $, COLUMNAS, DEMORA_MS, esc, estado, plata } from './base.js';
 import { costoDeItems, moverInsumos, opcionesDe, recetaCompleta } from './stock.js';
 import { app, auth, db, pintarConexion } from './conexion.js';
-import { cajaDeHoy } from './jornada.js';
+import { cajaDeHoy, fechaDeHoy } from './jornada.js';
+import { preciosDe } from './cartas.js';
 import { desdeCuando, pintarEvento, resumirCaja } from './eventos.js';
 
 // ---------- pedidos ----------
@@ -100,12 +101,18 @@ export function ticket(p, col) {
   // Nunca se usa el precio que vino en el pedido como respaldo: un pedido con un
   // id inventado traía su propio precio, cuadraba solo y pasaba sin marcar.
   // Un item que no está en la carta es, por definición, para mirar a mano.
+  // El precio con el que se compara es el de LA NOCHE DEL PEDIDO, no el de
+  // hoy. Si una noche tuvo carta propia y se comparara contra la de siempre,
+  // cada pedido legítimo de esa noche saldría marcado como adulterado.
+  const precios = preciosDe(fechaDelPedido(p));
+  const precioDe = (id) => (precios && precios[id] !== undefined
+    ? Number(precios[id])
+    : Number(estado.carta.find((x) => x.id === id)?.precio || 0));
+
   const hayCarta = estado.carta.length > 0;
   const intrusos = (p.items || []).filter((i) => !estado.carta.some((x) => x.id === i.id));
-  const esperado = (p.items || []).reduce((s, i) => {
-    const c = estado.carta.find((x) => x.id === i.id);
-    return s + Number(c?.precio || 0) * Number(i.cantidad || 0);
-  }, 0);
+  const esperado = (p.items || []).reduce(
+    (s, i) => s + precioDe(i.id) * Number(i.cantidad || 0), 0);
   const desfasado = hayCarta
     && (intrusos.length > 0 || Math.abs(esperado - Number(p.total || 0)) > 0.5);
   const aviso = intrusos.length
@@ -185,6 +192,15 @@ export function elegirQuienAtiende() {
     $('#dlgAtiende').close();
   });
   $('#dlgAtiende').showModal();
+}
+
+// De qué noche es un pedido. El id de caja de un día común ya la lleva
+// adentro; el de un evento no, así que se saca de cuándo se hizo.
+export function fechaDelPedido(p) {
+  const caja = String(p?.cajaId || '');
+  if (caja.startsWith('dia-')) return caja.slice('dia-'.length);
+  const cuando = p?.creadoEn?.toDate?.();
+  return fechaDeHoy(cuando || undefined);
 }
 
 // La caja a la que entra lo que se vende: la del evento abierto, o la del día.
