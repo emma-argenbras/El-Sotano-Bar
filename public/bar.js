@@ -2770,6 +2770,240 @@ function pintarAdminCostos() {
         <b>Poner al día</b>.</p>` : ''}`;
 }
 
+// ---------- la cuenta de un proveedor ----------
+let mirandoProveedor = null;
+
+function abrirProveedor(id) {
+  const p = estado.proveedores.find((x) => x.id === id);
+  if (!p) return;
+  mirandoProveedor = p;
+  $('#dlgProveedor').showModal();
+  pintarProveedor();
+}
+
+function pintarProveedor() {
+  const p = mirandoProveedor;
+  if (!p || !$('#dlgProveedor')?.open) return;
+  const movs = movimientosProveedor(p.id);
+  const saldo = saldoProveedor(p.id);
+
+  $('#tituloProveedor').textContent = p.nombre;
+  $('#cuerpoProveedor').innerHTML = `
+    <div class="numeros" style="margin-bottom:.8rem">
+      <div class="plata"><b>${saldo > 0.5 ? plata(saldo)
+        : saldo < -0.5 ? plata(-saldo) : plata(0)}</b>
+        <span>${saldo > 0.5 ? 'se le debe' : saldo < -0.5 ? 'quedó a favor' : 'al día'}</span></div>
+    </div>
+
+    <table class="ranking"><tbody>
+      ${movs.map((m) => `
+        <tr>
+          <td><small style="color:var(--suave)">${esc(m.fecha)}</small><br>${esc(m.detalle)}</td>
+          <td class="n" style="color:${m.debe ? 'var(--naranja)' : 'var(--verde)'}">
+            ${m.debe ? '+' : '−'}${plata(m.debe || m.haber)}</td>
+          <td class="n"><small style="color:var(--suave)">${plata(m.saldo)}</small></td>
+        </tr>`).join('')}
+    </tbody></table>
+
+    <p style="font-size:.76rem;color:var(--suave);margin:.8rem 0 0">
+      Lo naranja es mercadería que se llevó a cuenta; lo verde, lo que se le pagó.
+      La última columna es cuánto se le debía después de cada movimiento.</p>
+
+    <label class="campo" style="margin-top:1rem">
+      <span>Nombre <small>(corregilo si quedó mal escrito)</small></span>
+      <input id="inpNombreProv" maxlength="60" autocomplete="off" value="${esc(p.nombre)}">
+    </label>`;
+  $('#btnGuardarProveedor').onclick = guardarNombreProveedor;
+}
+
+// ---------- poner al día el depósito ----------
+// La barra cargó la mercadería para poder vender: sin precios y sin decir de
+// quién vino. Acá se completa todo junto y cada proveedor arranca su cuenta.
+//
+// NO toca el stock. Las botellas ya están contadas en el depósito; volver a
+// sumarlas las contaría dos veces. Lo único que escribe es el papel que
+// faltaba: de quién vino cada cosa, cuánto salió, y si se debe o ya se pagó.
+function abrirAlDia() {
+  // Si el depósito está en cero es porque todavía no se cargó nada: la
+  // pantalla arranca cargando el stock. Si ya hay botellas contadas, no.
+  const hayStock = estado.insumos.some((i) => Number(i.stock || 0) > 0);
+  estado.alDia = { filas: {}, condicion: 'cuenta', stock: hayStock ? 'ya' : 'cargar' };
+  for (const i of estado.insumos) {
+    const medidas = Math.max(1, Number(i.medidas || 1));
+    estado.alDia.filas[i.id] = {
+      proveedor: estado.proveedores.find((p) => p.id === i.proveedorId)?.nombre || '',
+      costo: Number(i.costo || 0) || '',
+      unidades: Math.round(Number(i.stock || 0) / medidas * 100) / 100,
+    };
+  }
+  $('#dlgAlDia').showModal();
+  pintarAlDia();
+}
+
+function filasAlDia() {
+  return estado.insumos
+    .map((i) => ({ ins: i, ...(estado.alDia.filas[i.id] || {}) }))
+    .filter((f) => String(f.proveedor || '').trim().length >= 2
+      && Number(f.costo) > 0 && Number(f.unidades) > 0);
+}
+
+function pintarAlDia() {
+  const listas = filasAlDia();
+  const total = listas.reduce((a, f) => a + Number(f.costo) * Number(f.unidades), 0);
+
+  $('#cuerpoAlDia').innerHTML = `
+    <div class="campo">
+      <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">
+        Esta mercadería…</span>
+      <div style="display:flex;gap:.4rem">
+        ${[['cuenta', 'Se la debemos'], ['inicial', 'Ya está pagada']].map(([k, t]) => `
+          <button type="button" class="btn ${estado.alDia.condicion === k ? 'primario' : ''}"
+                  data-ald-cond="${k}" style="flex:1;font-size:.84rem">${t}</button>`).join('')}
+      </div>
+      <small class="pista">${estado.alDia.condicion === 'cuenta'
+        ? 'Arranca la cuenta corriente de cada proveedor con lo que se le debe.'
+        : 'Queda el precio y el proveedor anotados, sin deuda y sin tocar la caja.'}</small>
+    </div>
+
+    <div class="campo">
+      <span style="display:block;font-size:.82rem;color:var(--suave);margin-bottom:.4rem">
+        Y en el depósito…</span>
+      <div style="display:flex;gap:.4rem">
+        ${[['ya', 'Ya está contada'], ['cargar', 'Cargá el stock']].map(([k, t]) => `
+          <button type="button" class="btn ${estado.alDia.stock === k ? 'primario' : ''}"
+                  data-ald-stock="${k}" style="flex:1;font-size:.84rem">${t}</button>`).join('')}
+      </div>
+      <small class="pista">${estado.alDia.stock === 'ya'
+        ? 'No se toca lo guardado: ya está contado y sumarlo de nuevo lo duplica.'
+        : 'Lo guardado de cada producto pasa a ser lo que cargues acá.'}</small>
+    </div>
+
+    <datalist id="listaProvAlDia">
+      ${estado.proveedores.map((p) => `<option value="${esc(p.nombre)}">`).join('')}
+    </datalist>
+
+    ${estado.insumos.map((i) => {
+      const f = estado.alDia.filas[i.id] || {};
+      const medidas = Math.max(1, Number(i.medidas || 1));
+      return `
+      <div class="item"><div class="cuerpo" style="width:100%">
+        <div class="nombre">${esc(i.nombre)}</div>
+        <div class="desc">hay ${Math.round(Number(i.stock || 0) / medidas * 100) / 100}
+          ${esc(i.unidad || 'unidad')}${medidas > 1 ? ` de ${medidas} medidas` : ''}</div>
+        <div style="display:flex;gap:.4rem;margin-top:.45rem;flex-wrap:wrap">
+          <input data-ald-prov="${esc(i.id)}" list="listaProvAlDia" maxlength="60"
+                 autocomplete="off" placeholder="Proveedor"
+                 value="${esc(f.proveedor || '')}" style="flex:2;min-width:9rem">
+          <input data-ald-costo="${esc(i.id)}" type="number" min="0" inputmode="numeric"
+                 placeholder="$ por ${esc(i.unidad || 'unidad')}"
+                 value="${esc(String(f.costo ?? ''))}" style="flex:1;min-width:6rem">
+          <input data-ald-uni="${esc(i.id)}" type="number" min="0" step="0.01" inputmode="decimal"
+                 placeholder="cuántas" value="${esc(String(f.unidades ?? ''))}"
+                 style="flex:1;min-width:5rem">
+        </div>
+      </div></div>`;
+    }).join('')}
+
+    <div class="total-venta"><span>${listas.length} producto${
+      listas.length === 1 ? '' : 's'} listo${listas.length === 1 ? '' : 's'}</span>
+      <b>${plata(total)}</b></div>`;
+
+  $('#cuerpoAlDia').querySelectorAll('[data-ald-cond]').forEach((b) => b.onclick = () => {
+    estado.alDia.condicion = b.dataset.aldCond; pintarAlDia();
+  });
+  $('#cuerpoAlDia').querySelectorAll('[data-ald-stock]').forEach((b) => b.onclick = () => {
+    estado.alDia.stock = b.dataset.aldStock; pintarAlDia();
+  });
+  const anotar = (sel, campo) =>
+    $('#cuerpoAlDia').querySelectorAll(sel).forEach((e) => e.oninput = () => {
+      const id = e.dataset.aldProv || e.dataset.aldCosto || e.dataset.aldUni;
+      estado.alDia.filas[id] = { ...(estado.alDia.filas[id] || {}), [campo]: e.value };
+      // El total de abajo se escribe a mano para no repintar mientras escribe.
+      const l = filasAlDia();
+      const t = l.reduce((a, f) => a + Number(f.costo) * Number(f.unidades), 0);
+      const pie = $('#cuerpoAlDia .total-venta');
+      if (pie) pie.innerHTML = `<span>${l.length} producto${l.length === 1 ? '' : 's'} listo${
+        l.length === 1 ? '' : 's'}</span><b>${plata(t)}</b>`;
+    });
+  anotar('[data-ald-prov]', 'proveedor');
+  anotar('[data-ald-costo]', 'costo');
+  anotar('[data-ald-uni]', 'unidades');
+}
+
+async function guardarAlDia() {
+  const listas = filasAlDia();
+  if (!listas.length) {
+    alert('Completá al menos un producto con proveedor, precio y cantidad.');
+    return;
+  }
+  const condicion = estado.alDia.condicion;
+  const cargaStock = estado.alDia.stock === 'cargar';
+  const btn = $('#btnGuardarAlDia');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+
+  // Una compra por proveedor, con todo lo que le compramos adentro.
+  const porProveedor = new Map();
+  for (const f of listas) {
+    const nombre = String(f.proveedor).trim();
+    const clave = nombre.toLowerCase();
+    if (!porProveedor.has(clave)) porProveedor.set(clave, { nombre, filas: [] });
+    porProveedor.get(clave).filas.push(f);
+  }
+
+  try {
+    for (const { nombre, filas } of porProveedor.values()) {
+      let proveedorId = estado.proveedores.find((p) =>
+        p.nombre.toLowerCase() === nombre.toLowerCase())?.id;
+      if (!proveedorId) {
+        const ref = await addDoc(collection(db, 'proveedores'),
+          { nombre, creadoEn: serverTimestamp() });
+        proveedorId = ref.id;
+      }
+
+      const items = filas.map((f) => ({
+        insumoId: f.ins.id, nombre: f.ins.nombre,
+        unidades: Number(f.unidades), costoUnit: Number(f.costo),
+      }));
+      await addDoc(collection(db, 'compras'), {
+        proveedor: nombre, proveedorId,
+        fecha: Timestamp.fromDate(new Date()),
+        items,
+        total: items.reduce((a, i) => a + i.unidades * i.costoUnit, 0),
+        condicion,
+        // Cuando la mercadería ya estaba contada, este ingreso no la vuelve a
+        // sumar: hacerlo la contaría dos veces.
+        ...(cargaStock ? {} : { sinStock: true }),
+        cargadoPor: estado.usuario || 'casa',
+        creadoEn: serverTimestamp(),
+      });
+
+      // Y cada insumo se queda con su precio y su proveedor, que es lo que
+      // después dice cuánto deja cada trago.
+      await Promise.all(filas.map((f) => {
+        const medidas = Math.max(1, Number(f.ins.medidas || 1));
+        return updateDoc(doc(db, 'insumos', f.ins.id), {
+          costo: Number(f.costo), proveedorId,
+          ...(cargaStock ? { stock: Number(f.unidades) * medidas } : {}),
+        });
+      }));
+    }
+    $('#dlgAlDia').close();
+  } catch (e) {
+    alert('No se pudo: ' + (e.code || e.message));
+  }
+  btn.disabled = false; btn.textContent = 'Guardar';
+}
+
+async function guardarNombreProveedor() {
+  const p = mirandoProveedor;
+  const nombre = ($('#inpNombreProv')?.value || '').trim();
+  if (!p || nombre.length < 2 || nombre === p.nombre) { $('#dlgProveedor').close(); return; }
+  try {
+    await updateDoc(doc(db, 'proveedores', p.id), { nombre });
+    $('#dlgProveedor').close();
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
 // ---------- borrar un ingreso de mercadería ----------
 // Se borra el papel, no la mercadería: el stock que sumó ese ingreso queda
 // como está, porque las botellas siguen en el depósito. Sirve para los
