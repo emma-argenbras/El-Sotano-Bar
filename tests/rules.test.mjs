@@ -72,7 +72,7 @@ before(async () => {
     // Administra la plata y nada más: ve Administración, no el Depósito.
     await setDoc(doc(db, 'accesosBarra/uid-soloplata'), {
       usuario: 'contadora', activo: true, rol: 'admin',
-      permisos: { deposito: false },
+      permisos: { deposito: false, calendario: false },
     });
     await setDoc(doc(db, 'publico/registro'), { eventoId: 'ev-1', nombre: 'Noche' });
     await setDoc(doc(db, 'registros/ev-1'), {

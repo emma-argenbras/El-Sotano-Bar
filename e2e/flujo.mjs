@@ -1221,7 +1221,10 @@ await chequear('un ingreso en $0 no pasa, y el que se cargó mal se puede borrar
       document.querySelector('#admMercaderia')?.textContent.includes('carga inicial'),
       null, { timeout: 10000 });
 
-    // Y se puede borrar sin que se caiga el stock que sumó.
+    // Y se puede borrar sin que se caiga el stock que sumó. El ingreso escribe
+    // primero la compra y después el stock, así que hay que dejarlo asentar
+    // antes de anotar el número con el que se va a comparar.
+    await barra.waitForTimeout(2000);
     const stockAntes = (await db.collection('insumos')
       .where('nombre', '==', 'Fernet 750').get()).docs[0].data().stock;
     await barra.locator('#admMercaderia .item', { hasText: 'carga inicial' })
