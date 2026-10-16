@@ -38,8 +38,10 @@ const plata = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
 // Cuándo es la noche, escrito como se lo diría alguien: "Sábado 7 de noviembre".
 // Sin esto, la invitación no dice para qué día es, que es lo primero que mira
 // el que la recibe.
-function cuando() {
-  const f = registro?.fecha?.toDate?.();
+// Sin argumento, la fecha de la noche que se está mirando; con uno, la que
+// le pasen —sirve para ofrecer otra noche sin tocar la que está cargada.
+function cuando(ts) {
+  const f = (ts ?? registro?.fecha)?.toDate?.();
   if (!f) return '';
   const txt = f.toLocaleDateString('es-AR',
     { weekday: 'long', day: 'numeric', month: 'long' });
@@ -63,16 +65,38 @@ const recargar = () => {
   location.replace(u.toString());
 };
 
-function avisar(titulo, detalle, conReintento) {
+function avisar(titulo, detalle, conReintento, extra = '') {
   yaPinto = true;
   const cont = $('#pantalla');
   if (!cont) return;
   cont.innerHTML = `
     <div class="aviso mal"><span>⚠</span><div><b>${esc(titulo)}</b>${
       detalle ? '<br>' + esc(detalle) : ''}</div></div>
+    ${extra}
     ${conReintento ? `<button class="btn primario ancho-full" id="btnReintentar"
       style="margin-top:.9rem">Reintentar</button>` : ''}`;
   if ($('#btnReintentar')) $('#btnReintentar').onclick = recargar;
+}
+
+// Un link viejo no tiene por qué ser un callejón sin salida. La casa mantiene
+// en publico/registro cuál es la noche que está tomando gente; si hay una, y
+// no es esta, se la ofrece.
+async function noDisponible(detalle) {
+  avisar('Esta fecha no está disponible.', detalle, false);
+  try {
+    const apunta = (await getDoc(doc(db, 'publico', 'registro'))).data();
+    const otra = apunta?.eventoId;
+    if (!otra || otra === mirando) return;
+    const d = await getDoc(doc(db, 'registros', otra));
+    const r = d.data();
+    if (!d.exists() || r.abierto === false) return;
+    if (Number(r.registrados || 0) >= Number(r.capacidad || 0)) return;
+    avisar('Esta fecha no está disponible.', detalle, false, `
+      <a class="btn primario ancho-full" style="margin-top:.9rem"
+         href="/registro.html?ev=${encodeURIComponent(otra)}">
+        Ir a ${esc(r.nombre || 'la próxima noche')}${
+          r.fecha?.toDate ? ' · ' + cuando(r.fecha) : ''}</a>`);
+  } catch { /* si no se puede mirar, queda el aviso solo */ }
 }
 
 const fallaCarga = (e) =>
@@ -130,8 +154,13 @@ function escuchar(ev) {
       // El link apunta a una noche que no está: se dice, en vez de hacerlo
       // pasar por "no hay ninguna noche abierta", que manda a buscar donde no es.
       registro = null;
-      avisar('No encontré esa noche.',
-        'El link puede ser viejo o estar cortado. Pedinos el link de la noche que viene.', false);
+      noDisponible('El link puede ser viejo o estar cortado.');
+      return;
+    }
+    if (d.data().abierto === false) {
+      // Existe pero ya cerró. Mismo cartel: para el que llega, es lo mismo.
+      registro = null;
+      noDisponible('Esa noche dejó de tomar anotaciones.');
       return;
     }
     registro = { ...d.data(), eventoId: d.id };

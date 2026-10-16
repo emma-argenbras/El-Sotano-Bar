@@ -14,6 +14,7 @@ import {
 } from '/vendor/firebase.js';
 import { escucharPlataDeposito, pintarAdmin } from './administracion.js';
 import { $, CFG, aMail, esc, estado, plata } from './base.js';
+import { irA } from './pantallas.js';
 import { pintarCartaBar } from './carta.js';
 import { EMULADOR, app, auth, db, esElDueno, fallo } from './conexion.js';
 import { pintarDeposito } from './deposito.js';

@@ -3,8 +3,9 @@
 // Esto es el arranque y nada más: trae los módulos de barra/, engancha los
 // botones que cruzan pantallas y prende el service worker. Cada módulo se
 // ocupa de lo suyo y no hace nada al importarse salvo quedar listo.
+import { irA } from './barra/pantallas.js';
 import { guardarAlDia, guardarEgreso, pintarAdmin } from './barra/administracion.js';
-import { $, estado, irA } from './barra/base.js';
+import { $, estado } from './barra/base.js';
 import { abrirConteo, guardarReceta } from './barra/carta.js';
 import { guardarInsumo, pintarDeposito } from './barra/deposito.js';
 import { abrirVenta, cancelarCobro, cerrarCobro, elegirQuienAtiende, pintarTablero } from './barra/pedidos.js';

@@ -2270,17 +2270,54 @@ await chequear('sin alias cargado no se ofrece transferir', async () => {
   await db.doc('publico/pagos').set({ alias: 'sotano.prueba.mp', titular: 'Sotano Prueba' });
 });
 
-await chequear('un link a una noche que no existe lo dice, no se queda colgado', async () => {
+await chequear('un link a una noche que no existe lo dice, y ofrece la que hay', async () => {
   const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const pg = await ctx.newPage();
   try {
     await pg.goto(`${BASE}/registro.html?ev=no-existe-esta-noche`, { waitUntil: 'domcontentloaded' });
     await pg.waitForFunction(() =>
-      document.querySelector('#pantalla')?.textContent.includes('No encontré esa noche'),
+      document.querySelector('#pantalla')?.textContent.includes('Esta fecha no está disponible'),
       null, { timeout: 15000 });
     if ((await pg.textContent('#pantalla')).includes('Buscando la noche'))
       throw new Error('se quedó colgado en el cartel de carga');
+    // Un link muerto no tiene por qué ser un callejón sin salida: si la casa
+    // tiene una noche tomando gente, se la ofrece.
+    await pg.waitForFunction(() =>
+      (document.querySelector('#pantalla')?.textContent || '').includes('Ir a'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('no ofrece la próxima noche: '
+          + (await pg.textContent('#pantalla')).slice(0, 200));
+      });
+    const link = await pg.locator('#pantalla a.btn').getAttribute('href');
+    if (!link || !link.startsWith('/registro.html?ev=') || link.includes('no-existe'))
+      throw new Error('el link que ofrece no sirve: ' + link);
   } finally { await ctx.close(); }
+});
+
+await chequear('una noche cerrada tampoco deja colgado al que llega tarde', async () => {
+  // Existe, pero ya no toma gente. Para el que abre el link es lo mismo que si
+  // no existiera, y tiene que decir lo mismo.
+  const cerrada = 'noche-cerrada-de-prueba';
+  await db.doc(`registros/${cerrada}`).set({
+    eventoId: cerrada, nombre: 'Noche cerrada', capacidad: 10,
+    registrados: 0, abierto: false, fecha: new Date(),
+  });
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  const pg = await ctx.newPage();
+  try {
+    await pg.goto(`${BASE}/registro.html?ev=${cerrada}`, { waitUntil: 'domcontentloaded' });
+    await pg.waitForFunction(() =>
+      document.querySelector('#pantalla')?.textContent.includes('Esta fecha no está disponible'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('no avisa que cerró: '
+          + (await pg.textContent('#pantalla')).slice(0, 200));
+      });
+    if ((await pg.textContent('#pantalla')).includes('Buscando la noche'))
+      throw new Error('se quedó colgado en el cartel de carga');
+  } finally {
+    await ctx.close();
+    await db.doc(`registros/${cerrada}`).delete();
+  }
 });
 
 // De acá en adelante se usa el link propio de la noche, que es el que se

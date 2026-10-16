@@ -34,23 +34,3 @@ export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
-
-// ---------- pestañas ----------
-export function irA(cual) {
-  const vistas = { tablero: '#vistaTablero', carta: '#vistaCartaBar',
-                   evento: '#vistaEvento', caja: '#vistaCaja',
-                   deposito: '#vistaDeposito',
-                   calendario: '#vistaCalendario', puerta: '#vistaPuerta',
-                   usuarios: '#vistaUsuarios' };
-  const tabs = { tablero: '#tabTablero', carta: '#tabCartaBar',
-                 evento: '#tabEvento', caja: '#tabCaja',
-                 deposito: '#tabDeposito',
-                 calendario: '#tabCalendario', puerta: '#tabPuerta',
-                 usuarios: '#tabUsuarios' };
-  // La cámara se apaga al salir de Puerta: no se deja prendida de fondo.
-  if (cual !== 'puerta') cerrarCamara();
-  for (const k of Object.keys(vistas)) {
-    $(vistas[k]).hidden = k !== cual;
-    $(tabs[k]).setAttribute('aria-selected', String(k === cual));
-  }
-}

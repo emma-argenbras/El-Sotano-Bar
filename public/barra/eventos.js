@@ -14,6 +14,7 @@ import {
 } from '/vendor/firebase.js';
 import { pintarAdminEntradas } from './administracion.js';
 import { $, esc, estado, plata } from './base.js';
+import { irA } from './pantallas.js';
 import { ESTADO_LOCAL, EVENTOS, TURNO, app, db, fallo } from './conexion.js';
 import { bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoche, hora, pintarPuerta, plegable } from './invitados.js';
 import { escucharPedidos, pintarCaja, ticket } from './pedidos.js';
