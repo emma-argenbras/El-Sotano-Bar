@@ -60,8 +60,8 @@ const BLOQUES = {
     mirar: [
       'Abrí /qr.html y mirá cualquier QR con la cámara del celular.',
       'Tiene que abrir sotano.web.app, no otra dirección.',
-      'OJO: los QR pegados en las mesas son los viejos. Hay que reimprimirlos.',
-      'Para la hoja lista para imprimir:  npm run qr:imprimir',
+      'Los QR ya pegados siguen andando: el-sotano-bar.web.app queda activo',
+      'para siempre, justo para eso. Reimprimirlos es prolijidad, no urgencia.',
     ],
   },
 };

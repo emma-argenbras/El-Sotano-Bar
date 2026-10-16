@@ -5,6 +5,39 @@ en ningún lado: la sesión de Firebase vive en tu computadora y caduca sola.
 
 ---
 
+## Decisión tomada: las direcciones
+
+**La oficial es `sotano.web.app`.** Es la que se reparte: la que va en los QR
+de las mesas, en el link de registro y en los pases.
+
+**Los otros dos sitios se mantienen activos para siempre, sirviendo lo mismo:**
+
+| | |
+|---|---|
+| `sotano.web.app` | **la oficial** — la que se reparte de ahora en adelante |
+| `el-sotano-bar.web.app` | se mantiene activo |
+| `sotano-club.web.app` | se mantiene activo |
+
+El motivo es simple: hay QR impresos y links dados que apuntan a los otros dos.
+Un QR pegado en una mesa no se corrige con un despliegue, y un link que alguien
+guardó en el celular tampoco. Mientras los tres sirvan los mismos archivos,
+nada de eso se rompe nunca.
+
+Qué implica, en la práctica:
+
+- **Ninguno de los tres se da de baja**, ni se saca de `firebase.json`. Si
+  alguna vez hay que apagar uno, primero hay que saber qué está apuntando ahí.
+- **Los tres se publican juntos.** `firebase deploy --only hosting` los
+  actualiza a los tres de una, y el comando de abajo ya lo hace así. Nunca
+  publicar a uno solo: tres sitios con versiones distintas de la app es peor
+  que tener uno.
+- **Para verificar alcanza con abrir cualquiera**, porque muestran lo mismo.
+  Igual, verificá siempre en `sotano.web.app`: es la que usa la gente.
+- Si algún día se le pone un dominio propio al bar, se le engancha a
+  `sotano.web.app` y los otros dos siguen igual, de red de contención.
+
+---
+
 ## Una sola vez
 
 ### 1. Traerte el código
@@ -99,9 +132,10 @@ Nada de esto vende, carga ni mueve stock: es todo mirar.
 **Bloque D · Los QR apuntan a la dirección oficial**
 - Abrí `/qr.html` y escaneá cualquier QR con la cámara del celular: tiene que
   abrir **sotano.web.app**.
-- **Los QR pegados en las mesas son los viejos y hay que reimprimirlos.** Un
-  QR impreso no se arregla con un despliegue. Para la hoja lista para
-  imprimir: `npm run qr:imprimir`.
+- Los QR que estén pegados en las mesas son los viejos, pero **siguen
+  funcionando** y van a seguir funcionando: apuntan a `el-sotano-bar.web.app`,
+  que se mantiene activo. Reimprimirlos es prolijidad, no urgencia. Cuando se
+  haga: `npm run qr:imprimir`.
 
 ---
 
