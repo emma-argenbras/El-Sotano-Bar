@@ -11,6 +11,19 @@
 // copias del 6 escritas a mano, que fue lo que había.
 export const CORTE_POR_DEFECTO = 6;
 
+// La dirección que se reparte. Los links y los QR salían con el dominio
+// donde estuviera abierto el panel en ese momento: si entrabas por
+// el-sotano-bar.web.app, eso era lo que se iba por WhatsApp. Funcionan los
+// tres, pero lo que se reparte tiene que ser uno solo y ser siempre el mismo.
+//
+// En desarrollo y en los emuladores se usa el de la pestaña: ahí no hay
+// nada que repartir y apuntar a producción rompería las pruebas.
+export const OFICIAL = 'https://sotano.web.app';
+export const dondeRepartir = (origen) => {
+  const o = String(origen || '');
+  return /^https:\/\/[a-z0-9-]+\.web\.app$/.test(o) ? OFICIAL : o;
+};
+
 // Entre 0 y 12. Cero es "corta a medianoche"; más de mediodía ya no sería un
 // corte, sería el día de ayer entero.
 //

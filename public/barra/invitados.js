@@ -12,6 +12,7 @@ import {
 } from '/vendor/firebase.js';
 import { claveAnotado, digitosTel, porQueNoVale, telValido } from '/tel.js';
 import { $, esc, estado, plata } from './base.js';
+import { dondeRepartir } from '/corte.js';
 import { app, db, fallo } from './conexion.js';
 import { abrirEvento, abrirInvitar, borrarAgendado, empezarNoche, noches, pintarCalendario, pintarInvitar } from './eventos.js';
 import { quienAtiende } from './pedidos.js';
@@ -259,7 +260,7 @@ $('#btnGuardarInvitado').onclick = async () => {
 // Su pase, igual que el de quien se registró por el link: para que pueda
 // pedir con su nombre y para que lo tenga si sale y vuelve.
 export async function mostrarPaseNuevo(id, nombre) {
-  const url = `${location.origin}/pase.html?i=${encodeURIComponent(id)}`;
+  const url = `${dondeRepartir(location.origin)}/pase.html?i=${encodeURIComponent(id)}`;
   let img = '';
   try {
     const { qrDataURL } = await import('/vendor/qr.js');

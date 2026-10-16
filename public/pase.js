@@ -3,6 +3,7 @@
 import {
   initializeApp, getFirestore, connectFirestoreEmulator, doc, getDoc, onSnapshot,
 } from '/vendor/firebase.js';
+import { dondeRepartir } from '/corte.js';
 import { qrDataURL } from '/vendor/qr.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
@@ -155,7 +156,7 @@ async function pintar(inv) {
          href="/registro.html">Anotarme para la próxima noche</a>` : ''}`;
 
   $('#btnCompartir').onclick = async () => {
-    const url = `${location.origin}/pase.html?i=${encodeURIComponent(inv.id)}`;
+    const url = `${dondeRepartir(location.origin)}/pase.html?i=${encodeURIComponent(inv.id)}`;
     if (navigator.share) {
       try { await navigator.share({ title: 'Mi pase — Sótano', url }); return; }
       catch (e) { if (e.name === 'AbortError') return; }

@@ -7,6 +7,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CORTE_POR_DEFECTO,
+  OFICIAL,
+  dondeRepartir,
   arranqueDeJornada,
   cajaDeDia,
   corteOPorDefecto,
@@ -135,5 +137,33 @@ describe('el id de caja del día', () => {
     const antes = cajaDeDia(local(2026, 10, 16, 23, 30), 6);
     const despues = cajaDeDia(local(2026, 10, 17, 2, 15), 6);
     assert.equal(antes, despues);
+  });
+});
+
+describe('la dirección que se reparte', () => {
+  it('los tres sitios reparten el oficial', () => {
+    for (const otro of ['https://el-sotano-bar.web.app', 'https://sotano-club.web.app',
+                        'https://sotano.web.app']) {
+      assert.equal(dondeRepartir(otro), 'https://sotano.web.app', otro);
+    }
+  });
+
+  // El link salía con el dominio donde estuviera abierto el panel: si entrabas
+  // por el-sotano-bar, eso se iba por WhatsApp.
+  it('no importa por dónde entró la casa al panel', () => {
+    assert.equal(dondeRepartir('https://el-sotano-bar.web.app'), OFICIAL);
+  });
+
+  // En los emuladores y en desarrollo no hay nada que repartir, y apuntar a
+  // producción rompería las pruebas.
+  it('en local se queda en local', () => {
+    for (const local of ['http://127.0.0.1:5000', 'http://localhost:5000',
+                         'http://127.0.0.1:5005']) {
+      assert.equal(dondeRepartir(local), local, local);
+    }
+  });
+
+  it('un dominio propio tampoco se pisa', () => {
+    assert.equal(dondeRepartir('https://sotanobar.com.ar'), 'https://sotanobar.com.ar');
   });
 });

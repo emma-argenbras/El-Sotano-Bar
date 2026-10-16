@@ -14,6 +14,7 @@ import {
 } from '/vendor/firebase.js';
 import { escucharPlataDeposito, pintarAdmin } from './administracion.js';
 import { $, CFG, aMail, esc, estado, plata } from './base.js';
+import { dondeRepartir } from '/corte.js';
 import { irA } from './pantallas.js';
 import { pintarCartaBar } from './carta.js';
 import { EMULADOR, app, auth, db, esElDueno, fallo } from './conexion.js';
@@ -372,7 +373,7 @@ export async function crearPersona() {
     alert(`Listo.\n\nUsuario: ${usuario}\nNivel: ${q.nombre}\n\n`
       + (altaRol === 'admin' || altaRol === 'barra' ? ''
         : 'Para que entre, asignalo al evento desde "De turno".\n\n')
-      + `Que entre en:\n${location.origin}/bar.html`);
+      + `Que entre en:\n${dondeRepartir(location.origin)}/bar.html`);
   } catch (e) {
     fallaPersona(e.code === 'auth/email-already-in-use'
       ? `Ya existe un usuario "${usuario}". Elegí otro nombre.`

@@ -14,6 +14,7 @@ import {
 } from '/vendor/firebase.js';
 import { pintarAdminEntradas } from './administracion.js';
 import { $, esc, estado, plata } from './base.js';
+import { dondeRepartir } from '/corte.js';
 import { irA } from './pantallas.js';
 import { ESTADO_LOCAL, EVENTOS, TURNO, app, db, fallo } from './conexion.js';
 import { bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoche, hora, pintarPuerta, plegable } from './invitados.js';
@@ -218,7 +219,7 @@ export async function borrarAgendado(ev) {
 // El link lleva la noche adentro: el QR de una noche no manda a otra. Es la
 // diferencia entre "el link del bar" y "el link de este evento".
 export const LINK_REGISTRO = (ev) =>
-  `${location.origin}/registro.html?ev=${encodeURIComponent(ev)}`;
+  `${dondeRepartir(location.origin)}/registro.html?ev=${encodeURIComponent(ev)}`;
 
 // Un QR por noche, guardado para no rearmarlo en cada repintada.
 export const qrsGuardados = {};

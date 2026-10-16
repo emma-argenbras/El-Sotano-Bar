@@ -8,7 +8,7 @@ import {
   connectFirestoreEmulator,
   collection, doc, getDoc, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
 } from '/vendor/firebase.js';
-import { cajaDeDia } from '/corte.js';
+import { cajaDeDia, dondeRepartir } from '/corte.js';
 
 const CFG = window.CONFIG_FIREBASE || {};
 const BAR = window.CONFIG_BAR || { moneda: '$', alertaDemoraMin: 8 };
@@ -102,7 +102,7 @@ function abrirQrMesa() {
   $('#dlgMesaAyuda').textContent =
     'Que la escaneen con la cámara: les abre la carta para pedir desde su celular.';
   $('#dlgMesaCual').textContent = '';
-  $('#dlgMesaLink').textContent = location.origin;
+  $('#dlgMesaLink').textContent = dondeRepartir(location.origin);
   const img = $('#imgMesaQr');
   img.alt = 'QR de la carta';
   img.onerror = () => { $('#dlgMesaQr').hidden = true; };
@@ -113,7 +113,7 @@ function abrirQrMesa() {
 
 $('#btnCerrarMesa').onclick = () => $('#dlgMesa').close();
 $('#btnCompartirMesa').onclick = async () => {
-  const url = location.origin;
+  const url = dondeRepartir(location.origin);
   if (navigator.share) {
     try { await navigator.share({ title: 'Sótano', text: 'Pedí desde tu celular en Sótano', url }); return; }
     catch (e) { if (e.name === 'AbortError') return; }
