@@ -8,6 +8,14 @@ ui-debug.log
 # Credenciales: NUNCA al repo
 service-account*.json
 *-adminsdk-*.json
+
+# Respaldos de la base: tienen nombres y teléfonos de clientes. Van al disco
+# de la casa, nunca acá. Si uno de estos llega al repo, los datos quedan en el
+# historial de git para siempre, aunque después se borre el archivo.
+respaldo*.json
+respaldo*.csv
+deposito*.csv
+*-respaldo.json
 .env
 .env.*
 /qr/
