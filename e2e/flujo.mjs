@@ -1395,7 +1395,18 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
     }));
     throw new Error('el botón de receta nunca se hizo visible. ' + JSON.stringify(diag));
   });
-  await botonReceta.click();
+  // Un click que se cuelga sobre un elemento VISIBLE casi siempre es algo
+  // tapandolo: un <dialog> modal deja todo lo de atras sin poder tocarse. Sin
+  // esto el error es un timeout pelado y hay que adivinar cual quedo abierto.
+  await botonReceta.click({ timeout: 15000 }).catch(async (e) => {
+    const diag = await barra.evaluate(() => ({
+      dialogos: [...document.querySelectorAll('dialog[open]')].map((d) => d.id),
+      pestana: document.querySelector('#vistaCartaBar')?.hidden,
+      filas: document.querySelectorAll('#cartaBar .item').length,
+    }));
+    throw new Error('no pude tocar el boton de receta: ' + JSON.stringify(diag)
+      + ' — ' + String(e.message).split('\n')[0]);
+  });
   await barra.waitForSelector('#dlgReceta[open]', { timeout: 5000 });
   await barra.locator('[data-receta]').first().fill('1');
   await barra.click('#btnGuardarReceta');
