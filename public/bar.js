@@ -6,7 +6,7 @@
 import { irA } from './barra/pantallas.js';
 import { guardarAlDia, guardarEgreso, pintarAdmin } from './barra/administracion.js';
 import { $, estado } from './barra/base.js';
-import { abrirConteo, guardarReceta } from './barra/carta.js';
+import { abrirConteo, abrirNuevoProducto, guardarNuevoProducto, guardarReceta } from './barra/carta.js';
 import { abrirCartaDeFecha } from './barra/cartas.js';
 import './barra/cierre.js';
 import { guardarInsumo, pintarDeposito } from './barra/deposito.js';
@@ -40,6 +40,9 @@ $('#btnVerPass').onclick = () => {
 $('#btnQuienAtiende').onclick = elegirQuienAtiende;
 $('#btnConteo').onclick = abrirConteo;
 $('#btnCartaFecha').onclick = abrirCartaDeFecha;
+$('#btnNuevoProducto').onclick = abrirNuevoProducto;
+$('#btnGuardarProducto').onclick = guardarNuevoProducto;
+$('#btnCancelarProducto').onclick = () => $('#dlgNuevoProducto').close();
 $('#btnCerrarCartaFecha').onclick = () => $('#dlgCartaFecha').close();
 $('#btnCancelarCierre').onclick = () => $('#dlgCerrarJornada').close();
 $('#btnCancelarCierreBarra').onclick = () => $('#dlgCerrarBarra').close();

@@ -1,4 +1,5 @@
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -14,6 +15,65 @@ import { comoSeDice, huerfanosDe, porQueNoSale, rindeDeposito, sincronizarCartaC
 import { hora } from './invitados.js';
 import { cajaActual, pintarTablero, quienAtiende } from './pedidos.js';
 import { moverInsumos, opcionesDe, recetaCompleta, saleDelDeposito } from './stock.js';
+
+// ---------- un producto nuevo ----------
+//
+// Lo que se arma con varios insumos: un gin tonic, un fernet con coca. Lo que
+// se vende tal cual sale del Depósito, tildando «se vende tal cual», que es
+// un camino más corto y no pasa por acá.
+//
+// Crear y decir de qué sale son dos pasos encadenados a propósito: un
+// producto sin receta se vende sin descontar nada, así que el diálogo de la
+// receta se abre solo apenas nace. Es el mismo de siempre —ya sabe de varios
+// insumos y de marcas—, no uno nuevo.
+export function abrirNuevoProducto() {
+  $('#inpProdNombre').value = '';
+  $('#inpProdCategoria').value = '';
+  $('#inpProdPrecio').value = '';
+  $('#errorProducto').classList.add('oculto');
+  $('#listaCategoriasProd').innerHTML = [...new Set((estado.carta || [])
+    .map((c) => c.categoria).filter(Boolean))]
+    .map((c) => `<option value="${esc(c)}">`).join('');
+  $('#dlgNuevoProducto').showModal();
+  $('#inpProdNombre').focus();
+}
+
+export async function guardarNuevoProducto() {
+  const nombre = $('#inpProdNombre').value.trim();
+  const precio = Math.max(0, Number($('#inpProdPrecio').value) || 0);
+  const fallar = (t) => {
+    $('#errorProductoTexto').textContent = t;
+    $('#errorProducto').classList.remove('oculto');
+  };
+  if (nombre.length < 2) { fallar('Falta el nombre.'); $('#inpProdNombre').focus(); return; }
+  if (!precio) { fallar('Falta a cuánto se vende.'); $('#inpProdPrecio').focus(); return; }
+  if ((estado.carta || []).some((c) => (c.nombre || '').trim().toLowerCase() === nombre.toLowerCase())) {
+    fallar('Ya hay un producto con ese nombre.');
+    $('#inpProdNombre').focus();
+    return;
+  }
+
+  const btn = $('#btnGuardarProducto');
+  btn.disabled = true; btn.textContent = 'Creando…';
+  try {
+    const ref = await addDoc(collection(db, 'carta'), {
+      nombre,
+      categoria: $('#inpProdCategoria').value.trim() || 'Otros',
+      precio,
+      receta: [],
+      orden: 50,
+      enCarta: true,
+      disponible: true,
+    });
+    $('#dlgNuevoProducto').close();
+    // Y derecho a decir de qué sale: sin receta se vende sin descontar nada.
+    abrirReceta({ id: ref.id, nombre, receta: [], opciones: [] });
+  } catch (e) {
+    fallar('No se pudo crear: ' + (e.code || e.message));
+  } finally {
+    btn.disabled = false; btn.textContent = 'Crear y decir de qué sale';
+  }
+}
 
 // ---------- de qué sale cada producto de la carta ----------
 export let recetaDe = null;

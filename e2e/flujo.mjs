@@ -1848,6 +1848,51 @@ await chequear('un insumo se pone a la venta desde el Depósito, con su precio',
   throw new Error('el precio no se pudo cambiar desde la Carta');
 });
 
+// La barra tiene que poder armar un trago compuesto sin pedirle permiso a
+// nadie: lo que se vende tal cual sale del Deposito, y lo que se arma con
+// varios insumos, de aca.
+await chequear('la barra crea un producto compuesto y dice de qué sale', async () => {
+  await barra.click('#tabCartaBar');
+  await barra.waitForSelector('#btnNuevoProducto', { timeout: 20000 });
+  await barra.click('#btnNuevoProducto');
+  await barra.waitForSelector('#dlgNuevoProducto[open]', { timeout: 10000 });
+  await barra.fill('#inpProdNombre', 'Gin de prueba');
+  await barra.fill('#inpProdCategoria', 'Tragos');
+  await barra.fill('#inpProdPrecio', '11000');
+  await barra.click('#btnGuardarProducto');
+
+  // Crear y decir de qué sale van encadenados: sin receta se vende sin
+  // descontar nada, así que el diálogo de la receta se abre solo.
+  await barra.waitForSelector('#dlgReceta[open]', { timeout: 15000 })
+    .catch(() => { throw new Error('no encadenó con la receta'); });
+
+  let item;
+  for (let i = 0; i < 40; i++) {
+    const q = await db.collection('carta').where('nombre', '==', 'Gin de prueba').get();
+    if (!q.empty) { item = q.docs[0]; break; }
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!item) throw new Error('no quedó en la carta');
+
+  try {
+    if (Number(item.data().precio) !== 11000)
+      throw new Error('no guardó el precio: ' + item.data().precio);
+
+    // Y la receta se carga desde ese mismo diálogo.
+    await barra.locator('#cuerpoReceta [data-receta]').first().fill('2');
+    await barra.click('#btnGuardarReceta');
+    for (let i = 0; i < 40; i++) {
+      const r = (await item.ref.get()).data().receta || [];
+      if (r.length && Number(r[0].medidas) === 2) return;
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    throw new Error('no guardó la receta del producto nuevo');
+  } finally {
+    await barra.evaluate(() => document.querySelector('#dlgReceta')?.close());
+    await item.ref.delete();
+  }
+});
+
 await chequear('sin Caja no se muestra ningún saldo de proveedor', async () => {
   // El admin recortado no puede leer los gastos: las reglas se los niegan.
   // Sin los pagos, un saldo diría que se debe plata que ya se pagó. Antes

@@ -128,6 +128,8 @@
     <section id="vistaCartaBar" hidden>
       <button class="btn ancho-full" id="btnConteo" style="margin-bottom:.9rem">
         🧮 Conteo de la noche</button>
+      <button class="btn primario ancho-full solo-gerente-inline" id="btnNuevoProducto"
+              style="margin-bottom:.6rem">+ Producto</button>
       <button class="btn solo-gerente-inline" id="btnCartaFecha">📅 Carta por fecha</button>
       <div id="cartaBar"><div class="cargando">Cargando carta…</div></div>
     </section>
@@ -360,6 +362,37 @@
     noche se vende la de siempre.</p>
   <div id="cuerpoCartaFecha"></div>
   <button class="btn ancho-full" id="btnCerrarCartaFecha" style="margin-top:.9rem">Volver</button>
+</dialog>
+
+<!-- Un producto nuevo de la carta. Lo que lleva se dice en el paso
+     siguiente, que es el mismo diálogo de receta de siempre: un trago sale
+     de varios insumos y eso ya sabe resolverlo. -->
+<dialog id="dlgNuevoProducto">
+  <h2 style="margin-top:0">Producto nuevo</h2>
+  <p style="color:var(--suave);font-size:.86rem;margin:.2rem 0 1rem">
+    Para algo que se arma con varios insumos: un gin tonic, un fernet con coca.
+    Si se vende tal cual —una lata, un Red Bull— es más corto hacerlo desde el
+    <b>Depósito</b>, tildando «se vende tal cual».</p>
+  <label class="campo">
+    <span>Cómo se llama</span>
+    <input id="inpProdNombre" maxlength="60" autocomplete="off" placeholder="Gin tonic">
+  </label>
+  <label class="campo">
+    <span>En qué parte de la carta</span>
+    <input id="inpProdCategoria" maxlength="30" autocomplete="off"
+           list="listaCategoriasProd" placeholder="Tragos, Cervezas, Para picar…">
+    <datalist id="listaCategoriasProd"></datalist>
+  </label>
+  <label class="campo">
+    <span>A cuánto se vende</span>
+    <input id="inpProdPrecio" type="number" min="0" inputmode="numeric">
+  </label>
+  <div id="errorProducto" class="aviso mal oculto"><span>⚠</span><div id="errorProductoTexto"></div></div>
+  <div style="display:flex;gap:.6rem;margin-top:.9rem">
+    <button class="btn" id="btnCancelarProducto" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnGuardarProducto" style="flex:1.4">
+      Crear y decir de qué sale</button>
+  </div>
 </dialog>
 
 <dialog id="dlgReceta">
