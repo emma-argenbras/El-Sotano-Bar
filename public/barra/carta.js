@@ -37,6 +37,25 @@ export function abrirReceta(item) {
       }).join('')}</div>`
     : `<div class="aviso mal"><span>⚠</span><div>
         <b>Todavía no hay insumos.</b> Cargalos en <b>Depósito</b> y volvé.</div></div>`;
+
+  // Una línea que apunta a un insumo borrado no tenía fila donde aparecer: la
+  // lista se arma recorriendo el depósito, y lo que no está en el depósito no
+  // se dibuja. El producto quedaba en cero y acá se veía todo bien, que es la
+  // peor combinación posible. Ahora se muestra, y guardar la saca.
+  const fantasmas = (item.receta || [])
+    .filter((r) => !estado.insumos.some((i) => i.id === r.insumoId));
+  if (fantasmas.length) {
+    $('#cuerpoReceta').insertAdjacentHTML('afterbegin', `
+      <div class="aviso mal" style="margin-bottom:.8rem"><span>⛔</span><div>
+        <b>Esta receta apunta a ${fantasmas.length}
+        ${fantasmas.length === 1 ? 'insumo que ya no está' : 'insumos que ya no están'}
+        en el depósito.</b> Por eso el producto sale agotado aunque haya
+        mercadería. <b>Tocá Guardar</b> y
+        ${fantasmas.length === 1 ? 'esa línea se va' : 'esas líneas se van'};
+        después poné de qué sale ahora.
+        <br><small>${fantasmas.map((r) => `«${esc(r.insumoId)}» × ${esc(String(r.medidas))}`).join(' · ')}</small>
+      </div></div>`);
+  }
   pintarMarcas(item);
   verPestañaReceta('receta');
   $('#tabsReceta').querySelectorAll('[data-tabreceta]').forEach((b) =>

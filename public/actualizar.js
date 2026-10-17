@@ -38,10 +38,31 @@
     } catch { return false; }
   }
 
-  async function revisar() {
+  // Al ABRIR se actualiza sola; estando abierta, avisa y espera.
+  //
+  // La diferencia no es de gusto: al abrir no hay nada empezado que perder,
+  // y en medio de la noche una recarga sorpresa se lleva puesto el pedido que
+  // alguien estaba cargando. Decirle a la gente "cerrá y abrí la app" no
+  // alcanzaba —la app guardada sigue sirviendo lo viejo hasta que alguien
+  // toca el botón—, así que abrir tiene que hacer de verdad lo que promete.
+  const YA_PROBE = 'sotano:autoactualizado';
+
+  async function revisar(alAbrir) {
     const aviso = $('#avisoVersion');
-    if (!aviso || !(await hayNueva())) return;
-    aviso.classList.remove('oculto');
+    if (!(await hayNueva())) {
+      try { sessionStorage.removeItem(YA_PROBE); } catch { /* da igual */ }
+      return;
+    }
+    // Una sola vez por pestaña: si la versión nueva no llega a quedar
+    // corriendo, esto recargaría para siempre.
+    let probado = true;
+    try { probado = sessionStorage.getItem(YA_PROBE) === '1'; } catch { /* sin sesión, no auto */ }
+    if (alAbrir && !probado) {
+      try { sessionStorage.setItem(YA_PROBE, '1'); } catch { return; }
+      actualizar(null);
+      return;
+    }
+    if (aviso) aviso.classList.remove('oculto');
   }
 
   document.querySelectorAll('[data-actualizar]').forEach((b) => {
@@ -51,9 +72,9 @@
 
   // Al abrir, al volver a la app, y cada diez minutos si queda abierta toda
   // la noche. No cuesta nada: es un archivo de treinta bytes.
-  addEventListener('load', revisar);
-  addEventListener('visibilitychange', () => { if (!document.hidden) revisar(); });
-  setInterval(revisar, 10 * 60 * 1000);
+  addEventListener('load', () => revisar(true));
+  addEventListener('visibilitychange', () => { if (!document.hidden) revisar(false); });
+  setInterval(() => revisar(false), 10 * 60 * 1000);
 
   // Si la URL quedó con el cache-buster, se limpia para no arrastrarlo.
   if (new URL(location.href).searchParams.has('v')) {

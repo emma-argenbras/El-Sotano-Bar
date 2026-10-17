@@ -589,7 +589,7 @@ export function pintarAdminCostos() {
     <table class="ranking">
       <thead><tr>
         <th style="text-align:left">Producto</th>
-        <th class="n">Se vende a</th>
+        <th class="n" style="width:6.5rem">Se vende a</th>
         <th class="n">Deja</th>
       </tr></thead>
       <tbody>

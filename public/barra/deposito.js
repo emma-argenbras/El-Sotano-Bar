@@ -12,7 +12,7 @@ import { $, esc, estado, plata } from './base.js';
 import { pintarConteo } from './carta.js';
 import { db, fallo } from './conexion.js';
 import { quienAtiende } from './pedidos.js';
-import { insumosHuerfanos, opcionesDe, rindeCon, rindeOpcion, trabasDe } from './stock.js';
+import { insumosHuerfanos, opcionesDe, productosQueUsan, rindeCon, rindeOpcion, trabasDe } from './stock.js';
 
 // ---------- el depósito ----------
 //
@@ -202,10 +202,14 @@ export function pintarDeposito() {
 // agotaría solo, sin que nadie entienda por qué.
 export let dandoDeBaja = null;
 
+// Quién se queda sin de dónde salir si este insumo desaparece.
+//
+// Mira las recetas Y las marcas: un producto cuya única fuente es la marca no
+// tiene receta propia, y mirando solo recetas el candado lo dejaba pasar.
+// Borrado el insumo, el producto queda en cero para siempre y la linea muerta
+// ni siquiera se ve en el editor.
 export function quienUsa(insumoId) {
-  return estado.carta
-    .filter((c) => (c.receta || []).some((r) => r.insumoId === insumoId))
-    .map((c) => c.nombre || c.id);
+  return productosQueUsan([insumoId]).map((c) => c.nombre || c.id);
 }
 
 export function abrirBaja(ins) {
@@ -244,6 +248,14 @@ $('#btnConfirmarBaja').onclick = async () => {
   const usan = quienUsa(ins.id);
   if (usan.length) {
     fallar(`Primero sacalo de la receta de ${usan.join(', ')}, en Carta y stock.`);
+    return;
+  }
+  // La carta se lee de memoria. Si todavía no llegó, "no lo usa nadie" no es
+  // una respuesta: es no haber mirado. Y borrar con eso deja al producto
+  // apuntando a un insumo que ya no existe.
+  if (!estado.carta.length) {
+    fallar('Todavía no cargó la carta. Esperá unos segundos y probá de nuevo: '
+      + 'sin ella no se puede saber qué productos salen de este insumo.');
     return;
   }
   const btn = $('#btnConfirmarBaja');

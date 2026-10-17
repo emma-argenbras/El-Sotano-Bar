@@ -59,6 +59,23 @@ export function bloqueClub() {
     // hay que decirlo, no esconderlo detrás de un cero.
     const sinTel = (estado.invitadosTodos || [])
       .filter((i) => !digitosTel(i.telefono || '')).length;
+
+    // El caso grave: los contadores de cada noche dicen que hay anotados pero
+    // no hay un solo invitado guardado. Entonces la puerta no tiene contra
+    // qué chequear a nadie, y eso no se puede descubrir con la cola afuera.
+    const contados = Object.values(estado.registros || {})
+      .reduce((a, r) => a + Number(r?.registrados || 0), 0);
+    if (!(estado.invitadosTodos || []).length && contados > 0) {
+      return `<div class="grupo-personal">Sótano Club</div>
+        <div class="aviso mal" style="margin:0"><span>⛔</span><div>
+          <b>Los contadores dicen ${contados} anotados y no hay ninguno guardado.</b>
+          El número de cada noche es un contador aparte; los nombres viven en
+          otro lado y acá no llegó ninguno. Si esto sigue así, <b>la puerta no
+          tiene lista contra qué chequear</b>.
+          <br><small>Mirá la pestaña Puerta: si tampoco muestra nombres, es
+          eso. Si los muestra, lo que falla es este bloque.</small></div></div>`;
+    }
+
     return `<div class="grupo-personal">Sótano Club</div>
       <p style="color:var(--suave);font-size:.9rem;margin:0">${sinTel ? `
         Hay <b>${sinTel}</b> anotado${sinTel === 1 ? '' : 's'}, pero
