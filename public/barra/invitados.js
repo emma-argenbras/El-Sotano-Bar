@@ -52,11 +52,11 @@ export function genteDelClub() {
 
 export function bloqueClub() {
   const todos = genteDelClub();
-  // Cuántos invitados tiene cargados el panel AHORA. Va en pantalla siempre
-  // que el Club salga vacío: tres veces arregle esto a ciegas porque el
-  // cartel decia "no hay nadie" sin decir cuantos habia visto, y la misma
-  // pantalla mostraba la lista llena dos toques mas alla. Un cartel que no
-  // dice su evidencia no se puede discutir.
+  // Cuántos invitados tiene cargados el panel AHORA. Va solo en los dos
+  // casos raros —contadores que suman con la lista vacia, y anotados sin
+  // telefono—, que es cuando hace falta poder discutirle al cartel. En el
+  // caso benigno, con el bar recien abierto y nadie anotado todavia, el
+  // numero es ruido.
   const cargados = (estado.invitadosTodos || []).length;
   if (!todos.length) {
     // "No se anotó nadie" con la lista llena es mentira, y manda a buscar un
@@ -91,7 +91,7 @@ export function bloqueClub() {
         QR siempre lo deja, y el que cargás a mano desde el panel, solo si se lo
         ponés. <small>(${cargados} cargados, ${sinTel} sin teléfono.)</small>`
       : `Todavía no se anotó nadie. Cada persona que se anota a una noche entra
-        acá sola. <small>(el panel tiene ${cargados} invitados cargados.)</small>`}</p>`;
+        acá sola.`}</p>`;
   }
   const q = estado.buscaClub.trim().toLowerCase();
   const qTel = digitosTel(estado.buscaClub);
