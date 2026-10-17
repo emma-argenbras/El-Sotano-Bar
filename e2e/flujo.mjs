@@ -1889,10 +1889,10 @@ await chequear('un insumo se pone a la venta desde el Depósito, con su precio',
 await chequear('sin carta cargada el depósito no acusa a ningún insumo', async () => {
   const acusa = await barra.evaluate(async () => {
     const base = await import('/barra/base.js');
+    const { pintarDeposito } = await import('/barra/deposito.js');
     const antes = base.estado.carta;
     base.estado.carta = [];
     try {
-      const { pintarDeposito } = await import('/barra/deposito.js');
       document.querySelector('#vistaDeposito').hidden = false;
       pintarDeposito();
       return (document.querySelector('#deposito')?.textContent || '')
