@@ -522,7 +522,13 @@ export function pintarCartaBar() {
   if (!cont) return;
   // Si están escribiendo un precio acá adentro, repintar se lo borra a mitad
   // de camino. La pantalla espera: el próximo cambio la vuelve a dibujar.
-  if (cont.contains(document.activeElement)) return;
+  //
+  // Solo el casillero del precio, no cualquier cosa con foco: al tocar un
+  // botón el foco queda EN ese botón, que también vive acá adentro, y un
+  // guardia ancho dejaba la pantalla congelada después de cada click —
+  // marcabas agotado y no pasaba nada a la vista.
+  const foco = document.activeElement;
+  if (foco && cont.contains(foco) && foco.matches?.('input[data-precio-carta]')) return;
   if (!estado.carta.length) {
     cont.innerHTML = `<div class="vacio">La carta está vacía.<br><small>Desde la Mac: <code>npm run seed</code></small></div>`;
     return;
