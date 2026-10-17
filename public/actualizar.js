@@ -13,15 +13,33 @@
     if (boton) { boton.disabled = true; boton.dataset.antes = boton.textContent; boton.textContent = '…'; }
     // Cada paso va por su cuenta: si pedir el service worker falla, vaciar el
     // cache igual tiene que pasar — es lo que de verdad destraba la app vieja.
+    // Se DA DE BAJA al service worker, no se le pide que se actualice.
+    //
+    // update() le pregunta al service worker instalado si hay uno nuevo. Si
+    // justamente ese es el que esta sirviendo los archivos viejos, se le esta
+    // pidiendo al problema que se arregle solo, y queda un celular clavado en
+    // una version vieja con el cartel puesto para siempre.
+    //
+    // Sin registro no hay quien intercepte: la recarga va derecho a la red, y
+    // bar.js vuelve a registrar uno fresco al cargar. Se pierde el modo sin
+    // senal por unos segundos, que es exactamente cuando el que toca
+    // Actualizar tiene senal.
     try {
-      const reg = await navigator.serviceWorker?.getRegistration();
-      await reg?.update();
+      const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+      await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
     } catch { /* seguimos */ }
     try {
       if (window.caches) {
         for (const k of await caches.keys()) await caches.delete(k);
       }
     } catch { /* seguimos: recargar ya arregla la mayoría de los casos */ }
+    // Y se obliga al navegador a revalidar version.js, que es de donde sale el
+    // número que decide si el cartel aparece. El HTML se recarga con un
+    // cache-buster, pero el <script src="/version.js"> de adentro no lleva
+    // ninguno: si esa copia quedó vieja en el cache del navegador, el cartel
+    // vuelve a aparecer aunque todo lo demás ya sea nuevo.
+    try { await fetch('/version.js', { cache: 'reload' }); } catch { /* seguimos */ }
+
     // Cache-buster para el HTML, que no pasa por el service worker al recargar.
     const u = new URL(location.href);
     u.searchParams.set('v', Date.now().toString(36));
@@ -61,12 +79,14 @@
       try { sessionStorage.removeItem(YA_PROBE); } catch { /* da igual */ }
       return;
     }
-    // Una sola vez por pestaña: si la versión nueva no llega a quedar
-    // corriendo, esto recargaría para siempre.
-    let probado = true;
-    try { probado = sessionStorage.getItem(YA_PROBE) === '1'; } catch { /* sin sesión, no auto */ }
-    if (alAbrir && !probado) {
-      try { sessionStorage.setItem(YA_PROBE, '1'); } catch { return; }
+    // Se guarda QUÉ versión se intentó, no un sí o no. Con un sí o no, un
+    // intento fallido dejaba la pestaña sin reintentar nunca más, y el
+    // despliegue siguiente tampoco entraba: el seguro contra el bucle
+    // terminaba tapando lo que venía después.
+    let probado = DEL_SERVIDOR;
+    try { probado = sessionStorage.getItem(YA_PROBE); } catch { /* sin sesión, no auto */ }
+    if (alAbrir && probado !== DEL_SERVIDOR) {
+      try { sessionStorage.setItem(YA_PROBE, DEL_SERVIDOR); } catch { return; }
       actualizar(null);
       return;
     }
