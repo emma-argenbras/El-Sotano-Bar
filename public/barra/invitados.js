@@ -265,7 +265,7 @@ export async function mostrarPaseNuevo(id, nombre) {
   try {
     const { qrDataURL } = await import('/vendor/qr.js');
     img = await qrDataURL(id, { width: 600, margin: 1, errorCorrectionLevel: 'H',
-      color: { dark: '#0d0b10', light: '#ffffff' } });
+      color: { dark: '#141012', light: '#ffffff' } });
   } catch { /* sin QR igual queda el link */ }
   $('#btnGuardarInvitado').hidden = true;
   $('#paseNuevo').innerHTML = `
