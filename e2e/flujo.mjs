@@ -65,10 +65,35 @@ async function fotoDelFallo(m) {
   }
 }
 
+// Un click que se cuelga treinta segundos sobre algo que "esta ahi" tiene
+// pocas explicaciones posibles, y las tres se leen del DOM: la pestaña esta
+// oculta porque se perdio el permiso de gerente, hay un dialogo tapando, o el
+// panel esta repintandose sin parar. Esto las deja escritas al lado del fallo
+// en vez de dejar un timeout pelado que hay que adivinar.
+async function comoEstabaLaBarra() {
+  const pag = paginas[1];
+  if (!pag) return '';
+  try {
+    const d = await pag.evaluate(() => ({
+      clase: document.body.className,
+      dialogos: [...document.querySelectorAll('dialog[open]')].map((x) => x.id),
+      pestanas: [...document.querySelectorAll('.tabs [role="tab"]')]
+        .filter((b) => b.id)
+        .map((b) => b.id + (b.offsetParent === null ? ':oculta' : '')),
+    }));
+    const ocultas = d.pestanas.filter((x) => x.endsWith(':oculta'));
+    return ' · barra: ' + JSON.stringify({
+      clase: d.clase, dialogos: d.dialogos,
+      pestanasOcultas: ocultas.length ? ocultas : 'ninguna',
+    });
+  } catch { return ''; }
+}
+
 async function chequear(m, fn) {
   ultimoCaso = m;
   try { await fn(); ok(m); } catch (e) {
-    mal(m, e.message.split('\n')[0]);
+    const porque = /Timeout .* exceeded/.test(e.message) ? await comoEstabaLaBarra() : '';
+    mal(m, e.message.split('\n')[0] + porque);
     await fotoDelFallo(m);
     await limpiarDialogos();
   }
