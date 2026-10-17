@@ -200,7 +200,9 @@ export function pintarDeposito() {
           <div class="nombre">${esc(i.nombre)}</div>
           <div class="desc">${comoSeDice(i)}${
             Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}${
-            huerfano(i) ? ' · <b style="color:var(--naranja)">no sale en la carta</b>' : ''}</div>
+            huerfano(i) ? ' · <b style="color:var(--naranja)">no sale en la carta</b>'
+              : ` · <span style="color:var(--suave)">sale en ${
+                  esc(productosQueUsan([i.id]).map((c) => c.nombre || c.id).join(', '))}</span>`}</div>
         </div>
         ${soloMira ? '' : `
         <button class="btn" data-editar-insumo="${esc(i.id)}"
@@ -326,6 +328,34 @@ export function abrirInsumo(ins) {
   $('#inpInsVende').checked = vende;
   $('#inpInsPrecio').value = yaEsta?.precio ?? '';
   $('#inpInsCategoria').value = yaEsta?.categoria || '';
+
+  // Qué se vende: la unidad entera o una medida. Son dos cosas distintas y
+  // la app no puede adivinar. Un vino que se lleva la mesa descuenta la
+  // botella; un gin en copa, una medida. Antes descontaba siempre una, asi
+  // que dieciseis botellas de dieciseis medidas se ofrecian como 256.
+  const medidasPorUnidad = Math.max(1, Number(ins?.medidas || 1));
+  const llevaAhora = Number(yaEsta?.receta?.[0]?.medidas || 1);
+  $('#inpInsQueVende').value = llevaAhora > 1 ? 'unidad' : 'medida';
+  pintarQueSeVende(ins);
+  $('#inpInsMedidas').oninput = () => pintarQueSeVende({
+    ...ins, medidas: Number($('#inpInsMedidas').value) || 1,
+  });
+  $('#inpInsQueVende').onchange = () => pintarQueSeVende({
+    ...ins, medidas: Number($('#inpInsMedidas').value) || 1,
+  });
+
+  // Y si el insumo ya sale en otros productos, se dice. No se frena: el
+  // mismo gin puede ser "Gin tonic" y "Gin solo" a precios distintos, y eso
+  // es deseado. Lo que no puede pasar es que ocurra sin que nadie lo vea.
+  const otros = ins
+    ? productosQueUsan([ins.id]).filter((c) => c.id !== ins.id && c.enCarta !== false)
+    : [];
+  $('#avisaYaSale').classList.toggle('oculto', !otros.length);
+  if (otros.length) {
+    $('#avisaYaSaleTexto').innerHTML = `Este insumo ya sale en
+      <b>${esc(otros.map((c) => c.nombre || c.id).join(', '))}</b>.
+      Esto agrega <b>otro</b> producto que descuenta de la misma mercadería.`;
+  }
   $('#listaCategorias').innerHTML = [...new Set((estado.carta || [])
     .map((c) => c.categoria).filter(Boolean))]
     .map((c) => `<option value="${esc(c)}">`).join('');
@@ -335,6 +365,22 @@ export function abrirInsumo(ins) {
 
   $('#dlgInsumo').showModal();
   $('#inpInsNombre').focus();
+}
+
+// Cuántas medidas se lleva una venta, y cómo se lo explica. Con una sola
+// medida por unidad no hay dos casos: la lata ES la medida, y preguntar
+// sería inventar una decisión que no existe.
+function pintarQueSeVende(ins) {
+  const m = Math.max(1, Number(ins?.medidas || 1));
+  const unidad = ins?.unidad || 'unidad';
+  const campo = $('#campoQueSeVende');
+  if (!campo) return;
+  campo.classList.toggle('oculto', m === 1);
+  if (m === 1) { $('#pistaQueVende').textContent = ''; return; }
+  const entera = $('#inpInsQueVende').value === 'unidad';
+  $('#pistaQueVende').textContent = entera
+    ? `Cada venta descuenta ${m} medidas, o sea una ${unidad} entera.`
+    : `Cada venta descuenta 1 de las ${m} medidas que da cada ${unidad}.`;
 }
 
 export async function guardarInsumo() {
@@ -374,11 +420,14 @@ export async function guardarInsumo() {
     // trago si la botella da veinte.
     const yaEsta = productoTalCual(editandoInsumo);
     if (vende) {
+      // Una medida, o todas las que da la unidad. Con una sola medida por
+      // unidad las dos ramas dan lo mismo y el selector ni se muestra.
+      const lleva = $('#inpInsQueVende').value === 'unidad' ? medidas : 1;
       await setDoc(doc(db, 'carta', id), {
         nombre: datos.nombre,
         categoria: $('#inpInsCategoria').value.trim() || 'Otros',
         precio,
-        receta: [{ insumoId: id, medidas: 1 }],
+        receta: [{ insumoId: id, medidas: lleva }],
         enCarta: true,
         ...(yaEsta ? {} : { orden: 50, disponible: true }),
       }, { merge: true });

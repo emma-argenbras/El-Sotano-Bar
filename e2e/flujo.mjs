@@ -1814,6 +1814,10 @@ await chequear('un insumo se pone a la venta desde el Depósito, con su precio',
   await barra.check('#inpInsVende');
   await barra.fill('#inpInsPrecio', '7000');
   await barra.fill('#inpInsCategoria', 'Sin alcohol');
+  // Con una sola medida por unidad no hay dos casos, asi que el selector ni
+  // se muestra: preguntar seria inventar una decision que no existe.
+  if (await barra.locator('#campoQueSeVende').isVisible())
+    throw new Error('pregunta qué se vende cuando la unidad ES la medida');
   await barra.click('#btnGuardarInsumo');
   await barra.waitForSelector('#dlgInsumo[open]', { state: 'detached', timeout: 10000 })
     .catch(() => {});
@@ -1851,6 +1855,46 @@ await chequear('un insumo se pone a la venta desde el Depósito, con su precio',
 // La barra tiene que poder armar un trago compuesto sin pedirle permiso a
 // nadie: lo que se vende tal cual sale del Deposito, y lo que se arma con
 // varios insumos, de aca.
+// El hallazgo del 17: una botella de 16 medidas tildada como "se vende tal
+// cual" se ofrecia 256 veces, porque la venta descontaba una medida en vez
+// de la botella entera. Son dos casos distintos y hay que preguntarlos.
+await chequear('vender la unidad entera descuenta todas sus medidas', async () => {
+  await barra.click('#tabDeposito');
+  await barra.waitForSelector('#btnNuevoInsumo', { timeout: 20000 });
+  await barra.click('#btnNuevoInsumo');
+  await barra.waitForSelector('#dlgInsumo[open]', { timeout: 10000 });
+  await barra.fill('#inpInsNombre', 'Vino de prueba');
+  await barra.fill('#inpInsUnidad', 'botella');
+  await barra.fill('#inpInsMedidas', '16');
+  await barra.check('#inpInsVende');
+  await barra.fill('#inpInsPrecio', '20000');
+  await barra.fill('#inpInsCategoria', 'Vinos');
+
+  // Con mas de una medida por unidad, la pregunta tiene que aparecer.
+  await barra.locator('#campoQueSeVende').waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => { throw new Error('no pregunta qué se vende con 16 medidas por botella'); });
+  await barra.selectOption('#inpInsQueVende', 'unidad');
+  await barra.click('#btnGuardarInsumo');
+  await barra.waitForSelector('#dlgInsumo[open]', { state: 'detached', timeout: 10000 })
+    .catch(() => {});
+
+  let item;
+  for (let i = 0; i < 40; i++) {
+    const q = await db.collection('carta').where('nombre', '==', 'Vino de prueba').get();
+    if (!q.empty) { item = q.docs[0]; break; }
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!item) throw new Error('no quedó en la carta');
+  try {
+    const lleva = Number(item.data().receta?.[0]?.medidas);
+    if (lleva !== 16)
+      throw new Error('una venta descuenta ' + lleva + ' y la botella da 16');
+  } finally {
+    await item.ref.delete();
+    await db.collection('insumos').doc(item.id).delete().catch(() => {});
+  }
+});
+
 await chequear('la barra crea un producto compuesto y dice de qué sale', async () => {
   await barra.click('#tabCartaBar');
   await barra.waitForSelector('#btnNuevoProducto', { timeout: 20000 });
