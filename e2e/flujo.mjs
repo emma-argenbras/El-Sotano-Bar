@@ -567,7 +567,6 @@ await chequear('editar un insumo no le devuelve el stock a lo que era', async ()
     }
   } finally {
     await ref.delete();
-    await Promise.all(suyos.map((id) => db.collection('insumos').doc(id).delete()));
   }
 });
 
@@ -1748,6 +1747,7 @@ await chequear('un producto que sale solo de sus marcas SÍ sale del depósito',
       throw new Error('lo da por agotado con las dos marcas cargadas: ' + fila.slice(0, 160));
   } finally {
     await ref.delete();
+    await Promise.all(suyos.map((id) => db.collection('insumos').doc(id).delete()));
   }
 });
 
