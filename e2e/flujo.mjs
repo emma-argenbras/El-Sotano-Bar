@@ -1206,6 +1206,11 @@ await chequear('con una noche abierta no se puede arrancar otra', async () => {
     if (abiertas !== 1) throw new Error('quedaron ' + abiertas + ' noches abiertas');
   } finally {
     barra.off('dialog', oir);
+    // Que no quede agendada: los casos que siguen cuentan lo que hay en el
+    // calendario, y una noche de prueba colada corre todos los numeros.
+    const sobra = (await db.collection('barra').doc('eventos').collection('items')
+      .where('nombre', '==', 'La segunda noche').get());
+    await Promise.all(sobra.docs.map((d) => d.ref.delete()));
   }
   await barra.click('#tabEvento');
 });

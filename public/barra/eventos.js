@@ -186,8 +186,10 @@ export async function empezarNoche(ev) {
   // venta se sella con el id de la noche en curso, y con dos abiertas lo que
   // se vende hoy puede entrar en la caja de anteayer. La asistencia sale del
   // mismo lado y muestra la de la otra. Eso no se avisa, se frena.
-  const abierta = (estado.eventos || []).find((e) =>
-    e.estado === 'abierto' && e.id !== ev.id);
+  // La noche abierta vive en estado.evento, en singular: estado.eventos son
+  // las CERRADAS del historico. Mirar la lista equivocada hacia que el freno
+  // no frenara nunca, que es como no tenerlo.
+  const abierta = estado.evento && estado.evento.id !== ev.id ? estado.evento : null;
   if (abierta) {
     alert(`No se puede arrancar "${ev.nombre}": "${abierta.nombre}" sigue abierta.\n\n`
       + 'Con dos noches abiertas, lo que se venda hoy puede entrar en la caja de '
