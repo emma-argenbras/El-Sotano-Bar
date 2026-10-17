@@ -1801,6 +1801,53 @@ await chequear('sin depósito cargado no acusa a ninguna receta de rota', async 
     throw new Error('acusa con el depósito vacío: ' + JSON.stringify(roto));
 });
 
+// La barra tiene que poder poner algo a la venta sin que nadie la ayude:
+// cargaron 74 insumos con costo y no tenian donde poner el precio.
+await chequear('un insumo se pone a la venta desde el Depósito, con su precio', async () => {
+  await barra.click('#tabDeposito');
+  await barra.waitForSelector('#btnNuevoInsumo', { timeout: 20000 });
+  await barra.click('#btnNuevoInsumo');
+  await barra.waitForSelector('#dlgInsumo[open]', { timeout: 10000 });
+  await barra.fill('#inpInsNombre', 'Red Bull');
+  await barra.fill('#inpInsUnidad', 'lata');
+  await barra.fill('#inpInsMedidas', '1');
+  await barra.check('#inpInsVende');
+  await barra.fill('#inpInsPrecio', '7000');
+  await barra.fill('#inpInsCategoria', 'Sin alcohol');
+  await barra.click('#btnGuardarInsumo');
+  await barra.waitForSelector('#dlgInsumo[open]', { state: 'detached', timeout: 10000 })
+    .catch(() => {});
+
+  // Tiene que estar en la carta, saliendo del depósito y con su precio.
+  let item;
+  for (let i = 0; i < 40; i++) {
+    const q = await db.collection('carta').where('nombre', '==', 'Red Bull').get();
+    if (!q.empty) { item = q.docs[0]; break; }
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (!item) throw new Error('no quedó en la carta');
+  const d = item.data();
+  if (Number(d.precio) !== 7000) throw new Error('no guardó el precio: ' + d.precio);
+  if (d.receta?.[0]?.insumoId !== item.id || Number(d.receta[0].medidas) !== 1)
+    throw new Error('la receta no apunta a su propio insumo por una medida: ' + JSON.stringify(d.receta));
+  if (d.enCarta === false) throw new Error('nació fuera de la carta');
+
+  // Y el precio se corrige desde la Carta, sin pasar por Administración.
+  await barra.click('#tabCartaBar');
+  await barra.waitForSelector('#cartaBar .item', { timeout: 20000 });
+  const campo = barra.locator('#cartaBar .item', { hasText: 'Red Bull' })
+    .locator('[data-precio-carta]').first();
+  await campo.waitFor({ state: 'visible', timeout: 20000 });
+  await campo.fill('9000');
+  await campo.blur();
+  for (let i = 0; i < 40; i++) {
+    const d2 = (await item.ref.get()).data();
+    if (Number(d2.precio) === 9000) return;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  throw new Error('el precio no se pudo cambiar desde la Carta');
+});
+
 await chequear('sin Caja no se muestra ningún saldo de proveedor', async () => {
   // El admin recortado no puede leer los gastos: las reglas se los niegan.
   // Sin los pagos, un saldo diría que se debe plata que ya se pagó. Antes

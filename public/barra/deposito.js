@@ -5,6 +5,7 @@ import {
   doc,
   onSnapshot,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from '/vendor/firebase.js';
 import { pintarAdmin } from './administracion.js';
@@ -306,6 +307,11 @@ $('#btnConfirmarBaja').onclick = async () => {
 };
 
 export let editandoInsumo = null;
+// El producto que sale de este insumo tal cual, si existe. Lleva el id del
+// insumo: uno por insumo, y así editarlo lo encuentra sin buscar por nombre.
+const productoTalCual = (ins) =>
+  ins ? (estado.carta || []).find((c) => c.id === ins.id) : null;
+
 export function abrirInsumo(ins) {
   editandoInsumo = ins;
   $('#tituloInsumo').textContent = ins ? 'Editar insumo' : 'Nuevo insumo';
@@ -314,6 +320,19 @@ export function abrirInsumo(ins) {
   $('#inpInsMedidas').value = ins?.medidas ?? 1;
   $('#inpInsCosto').value = ins?.costo ?? '';
   $('#inpInsMinimo').value = ins?.minimo ?? '';
+
+  const yaEsta = productoTalCual(ins);
+  const vende = !!yaEsta && yaEsta.enCarta !== false;
+  $('#inpInsVende').checked = vende;
+  $('#inpInsPrecio').value = yaEsta?.precio ?? '';
+  $('#inpInsCategoria').value = yaEsta?.categoria || '';
+  $('#listaCategorias').innerHTML = [...new Set((estado.carta || [])
+    .map((c) => c.categoria).filter(Boolean))]
+    .map((c) => `<option value="${esc(c)}">`).join('');
+  $('#camposVende').classList.toggle('oculto', !vende);
+  $('#inpInsVende').onchange = () =>
+    $('#camposVende').classList.toggle('oculto', !$('#inpInsVende').checked);
+
   $('#dlgInsumo').showModal();
   $('#inpInsNombre').focus();
 }
@@ -336,9 +355,38 @@ export async function guardarInsumo() {
     ...(editandoInsumo?.proveedorId ? { proveedorId: editandoInsumo.proveedorId } : {}),
     ...(editandoInsumo ? {} : { creadoEn: serverTimestamp() }),
   };
+  const vende = $('#inpInsVende').checked;
+  const precio = Math.max(0, Number($('#inpInsPrecio').value) || 0);
+  if (vende && !precio) {
+    alert('Para que salga en la carta hace falta a cuánto se vende.');
+    $('#inpInsPrecio').focus();
+    return;
+  }
+
   try {
-    if (editandoInsumo) await updateDoc(doc(db, 'insumos', editandoInsumo.id), datos);
-    else await addDoc(collection(db, 'insumos'), datos);
+    let id = editandoInsumo?.id;
+    if (editandoInsumo) await updateDoc(doc(db, 'insumos', id), datos);
+    else id = (await addDoc(collection(db, 'insumos'), datos)).id;
+
+    // Y el producto que sale de él tal cual. Va con el MISMO id que el
+    // insumo: uno por insumo, sin inventar claves y sin buscar por nombre.
+    // Una venta descuenta una medida — la lata si la lata es una medida, un
+    // trago si la botella da veinte.
+    const yaEsta = productoTalCual(editandoInsumo);
+    if (vende) {
+      await setDoc(doc(db, 'carta', id), {
+        nombre: datos.nombre,
+        categoria: $('#inpInsCategoria').value.trim() || 'Otros',
+        precio,
+        receta: [{ insumoId: id, medidas: 1 }],
+        enCarta: true,
+        ...(yaEsta ? {} : { orden: 50, disponible: true }),
+      }, { merge: true });
+    } else if (yaEsta && yaEsta.enCarta !== false) {
+      // Destildarlo lo saca de la carta, no lo borra: el histórico de lo que
+      // se vendió tiene que seguir encontrando el producto.
+      await updateDoc(doc(db, 'carta', id), { enCarta: false });
+    }
     $('#dlgInsumo').close();
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }

@@ -519,6 +519,10 @@ export function escucharCarta() {
 
 export function pintarCartaBar() {
   const cont = $('#cartaBar');
+  if (!cont) return;
+  // Si están escribiendo un precio acá adentro, repintar se lo borra a mitad
+  // de camino. La pantalla espera: el próximo cambio la vuelve a dibujar.
+  if (cont.contains(document.activeElement)) return;
   if (!estado.carta.length) {
     cont.innerHTML = `<div class="vacio">La carta está vacía.<br><small>Desde la Mac: <code>npm run seed</code></small></div>`;
     return;
@@ -594,6 +598,10 @@ export function pintarCartaBar() {
           : delDeposito ? 'Agotar a mano'
           : i.disponible === false ? 'Activar' : 'Agotar'}
       </button>
+      <input class="precio-carta solo-gerente-inline" data-precio-carta="${i.id}"
+             type="number" min="0" inputmode="numeric" value="${Number(i.precio || 0) || ''}"
+             aria-label="Precio de ${esc(i.nombre || i.id)}" placeholder="$"
+             title="A cuánto se vende">
       <button class="btn solo-gerente-inline" data-receta-de="${i.id}"
               style="padding:.4rem .7rem;font-size:.82rem"
               title="De qué insumo sale">${saleDelDeposito(i) ? '🧾' : '🧾+'}</button>
@@ -602,6 +610,19 @@ export function pintarCartaBar() {
       </button>
     </div>`;
   }).join('');
+
+  // El precio se corrige donde se lo ve. Antes habia que ir a Administracion,
+  // y el que esta armando la carta no siempre entra ahi.
+  cont.querySelectorAll('[data-precio-carta]').forEach((e) => e.onchange = async () => {
+    const i = estado.carta.find((x) => x.id === e.dataset.precioCarta);
+    const nuevo = Math.max(0, Number(e.value) || 0);
+    if (!i || nuevo === Number(i.precio || 0)) return;
+    try { await updateDoc(doc(db, 'carta', i.id), { precio: nuevo }); }
+    catch (err) {
+      alert('No se pudo cambiar el precio: ' + (err.code || err.message));
+      e.value = Number(i.precio || 0) || '';
+    }
+  });
 
   cont.querySelectorAll('[data-receta-de]').forEach((b) => b.onclick = () =>
     abrirReceta(estado.carta.find((i) => i.id === b.dataset.recetaDe)));

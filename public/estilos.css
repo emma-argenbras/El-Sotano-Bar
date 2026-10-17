@@ -331,6 +331,11 @@ dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
   font-size: .7rem; letter-spacing: .07em; text-transform: uppercase;
   color: var(--suave); font-weight: 650; text-align: left; }
 .ranking thead th.n { text-align: right; }
+/* El precio, editable en el renglón de la carta: angosto, para que entre al
+   lado de los botones sin empujarlos a otra línea. */
+body.es-gerente .precio-carta { display: inline-block !important; width: 5.2rem;
+  text-align: right; padding: .4rem .5rem; font-size: .82rem;
+  font-variant-numeric: tabular-nums; }
 #eventosPasados .item .total { font-weight: 700; color: var(--oro); white-space: nowrap; }
 
 /* Tres niveles en el mismo panel. Lo que la barra no puede hacer, no lo ve:
