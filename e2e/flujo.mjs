@@ -44,10 +44,32 @@ async function limpiarDialogos() {
   }
 }
 
+// Una foto de la pantalla en el instante del fallo. Los diagnosticos de
+// texto que fui agregando dieron todo lo que podian dar —que clase tiene la
+// fila, que dice el boton, si la app se quejo— y el caso del deposito sigue
+// sin explicacion. Lo que falta es VER la pantalla: si hay algo encima, si
+// quedo a mitad de un repintado, si el boton esta donde creo que esta.
+const FOTOS = process.env.FOTOS_FALLOS || '';
+let nFallo = 0;
+async function fotoDelFallo(m) {
+  if (!FOTOS) return;
+  nFallo += 1;
+  const slug = m.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50);
+  for (const [nombre, pag] of [['barra', paginas[1]], ['cliente', paginas[0]]]) {
+    try {
+      await pag?.screenshot({
+        path: `${FOTOS}/${String(nFallo).padStart(2, '0')}-${slug}-${nombre}.png`,
+        fullPage: true,
+      });
+    } catch { /* la pagina puede estar cerrada */ }
+  }
+}
+
 async function chequear(m, fn) {
   ultimoCaso = m;
   try { await fn(); ok(m); } catch (e) {
     mal(m, e.message.split('\n')[0]);
+    await fotoDelFallo(m);
     await limpiarDialogos();
   }
 }
