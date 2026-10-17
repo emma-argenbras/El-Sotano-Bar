@@ -12,7 +12,7 @@ import { $, esc, estado, plata } from './base.js';
 import { pintarConteo } from './carta.js';
 import { db, fallo } from './conexion.js';
 import { quienAtiende } from './pedidos.js';
-import { opcionesDe, rindeCon, rindeOpcion } from './stock.js';
+import { insumosHuerfanos, opcionesDe, rindeCon, rindeOpcion } from './stock.js';
 
 // ---------- el depósito ----------
 //
@@ -44,6 +44,13 @@ const loQueHay = () =>
 
 export function rindeDeposito(item) {
   return rindeCon(item, loQueHay());
+}
+
+// Si la receta quedó apuntando a algo que no está, el cero no es falta de
+// mercadería. Se devuelve el nombre del insumo cuando se lo puede recuperar,
+// y si no el identificador: algo que buscar es mejor que nada.
+export function huerfanosDe(item) {
+  return insumosHuerfanos(item, loQueHay());
 }
 
 // El cliente no puede leer el depósito —ni debe: ahí están los costos y lo que

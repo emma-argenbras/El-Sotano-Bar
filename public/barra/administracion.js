@@ -586,7 +586,13 @@ export function pintarAdminCostos() {
   const conCuenta = filas.filter((f) => f.deja !== null);
 
   cont.innerHTML = `
-    <table class="ranking"><tbody>
+    <table class="ranking">
+      <thead><tr>
+        <th style="text-align:left">Producto</th>
+        <th class="n">Se vende a</th>
+        <th class="n">Deja</th>
+      </tr></thead>
+      <tbody>
       ${filas.map((f) => `
         <tr>
           <td>${esc(f.nombre)}<br><small style="color:var(--suave)">
@@ -594,8 +600,7 @@ export function pintarAdminCostos() {
           <td class="n" style="width:6.5rem">
             <input data-precio="${esc(f.id)}" type="number" min="0" inputmode="numeric"
                    value="${f.precio || ''}" aria-label="Precio de ${esc(f.nombre)}"
-                   style="width:100%;text-align:right">
-            <small style="color:var(--suave)">se vende</small></td>
+                   style="width:100%;text-align:right"></td>
           <td class="n">${f.deja === null ? '—'
             : `<b style="color:var(--${f.deja > 0 ? 'verde' : 'rojo'})">${plata(f.deja)}</b>
                <br><small style="color:var(--suave)">${f.precio

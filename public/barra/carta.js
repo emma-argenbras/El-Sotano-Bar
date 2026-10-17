@@ -10,7 +10,7 @@ import {
 import { pintarAdminCostos } from './administracion.js';
 import { $, esc, estado, plata } from './base.js';
 import { app, db } from './conexion.js';
-import { comoSeDice, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
+import { comoSeDice, huerfanosDe, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
 import { hora } from './invitados.js';
 import { cajaActual, pintarTablero, quienAtiende } from './pedidos.js';
 import { moverInsumos, opcionesDe } from './stock.js';
@@ -505,7 +505,22 @@ export function pintarCartaBar() {
   const sueltos = estado.carta.filter((i) =>
     i.enCarta !== false && !((i.receta || []).length));
 
-  cont.innerHTML = `${sueltos.length && !estado.esAparato ? `
+  // Y una receta rota es peor que una que falta: el producto sale agotado en
+  // el QR aunque el depósito esté lleno, y el cartel de abajo manda a comprar
+  // lo que ya está guardado. Esto va primero porque está costando ventas.
+  const rotas = estado.carta.filter((i) =>
+    i.enCarta !== false && (i.receta || []).length && huerfanosDe(i).length);
+
+  cont.innerHTML = `${rotas.length && !estado.esAparato ? `
+    <div class="aviso mal" style="margin-bottom:.9rem"><span>⛔</span><div>
+      <b>${rotas.length} producto${rotas.length === 1 ? ' tiene su receta rota' : 's tienen la receta rota'}:
+      ${esc(rotas.map((i) => i.nombre || i.id).join(', '))}.</b>
+      Apunta${rotas.length === 1 ? '' : 'n'} a un insumo que ya no está en el depósito
+      —borrado, renombrado o duplicado—, así que sale${rotas.length === 1 ? '' : 'n'}
+      agotado${rotas.length === 1 ? '' : 's'} aunque haya mercadería.
+      Tocale${rotas.length === 1 ? '' : 's'} el 🧾 y deci${rotas.length === 1 ? '' : 'les'}
+      de qué insumo sale${rotas.length === 1 ? '' : 'n'} ahora.</div></div>` : ''}`
+    + `${sueltos.length && !estado.esAparato ? `
     <div class="aviso mal" style="margin-bottom:.9rem"><span>⚠</span><div>
       <b>${sueltos.length} de ${estado.carta.filter((i) => i.enCarta !== false).length}
       productos no salen del depósito.</b> Venderlos no descuenta ninguna botella.
@@ -517,13 +532,18 @@ export function pintarCartaBar() {
     // los − + ahí sería mentir, porque la próxima venta lo vuelve a calcular.
     const delDeposito = (i.receta || []).length > 0;
     const rinde = delDeposito ? rindeDeposito(i) : null;
+    // Un cero por receta rota no se arregla comprando: hay que tocar la
+    // receta. Decir "sin material" manda a buscar lo que ya está guardado.
+    const rota = rinde === 0 ? huerfanosDe(i) : [];
     return `
     <div class="item ${fuera || i.disponible === false || i.apagadoAMano || rinde === 0 ? 'agotado' : ''}">
       <div class="cuerpo">
         <div class="nombre">${esc(i.nombre || i.id)}${fuera ? ' — <small>fuera de carta</small>' : ''}</div>
         <div class="desc">${esc(i.categoria || '')} · ${plata(i.precio)} · ${
           delDeposito
-            ? (rinde === 0 ? 'sin material en el depósito' : 'sale del depósito')
+            ? (rota.length
+                ? '<b style="color:var(--rojo)">la receta apunta a un insumo que no está</b>'
+                : rinde === 0 ? 'sin material en el depósito' : 'sale del depósito')
             : '<b style="color:var(--naranja)">no sale del depósito</b>'}${
           i.apagadoAMano ? ' · <b style="color:var(--rojo)">agotado a mano</b>' : ''}</div>
       </div>

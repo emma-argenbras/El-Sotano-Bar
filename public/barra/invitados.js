@@ -53,10 +53,21 @@ export function genteDelClub() {
 export function bloqueClub() {
   const todos = genteDelClub();
   if (!todos.length) {
+    // "No se anotó nadie" con la lista llena es mentira, y manda a buscar un
+    // problema que no existe. El Club junta por teléfono —es el único dato
+    // que no se repite—, así que el que se anotó sin teléfono no entra. Eso
+    // hay que decirlo, no esconderlo detrás de un cero.
+    const sinTel = (estado.invitadosTodos || [])
+      .filter((i) => !digitosTel(i.telefono || '')).length;
     return `<div class="grupo-personal">Sótano Club</div>
-      <p style="color:var(--suave);font-size:.9rem;margin:0">
-        Todavía no se anotó nadie. Cada persona que se anota a una noche entra
-        acá sola.</p>`;
+      <p style="color:var(--suave);font-size:.9rem;margin:0">${sinTel ? `
+        Hay <b>${sinTel}</b> anotado${sinTel === 1 ? '' : 's'}, pero
+        ${sinTel === 1 ? 'no dejó' : 'ninguno dejó'} teléfono. El Club junta por
+        teléfono, que es el único dato que no se repite: el que se anota por el
+        QR siempre lo deja, y el que cargás a mano desde el panel, solo si se lo
+        ponés.`
+      : `Todavía no se anotó nadie. Cada persona que se anota a una noche entra
+        acá sola.`}</p>`;
   }
   const q = estado.buscaClub.trim().toLowerCase();
   const qTel = digitosTel(estado.buscaClub);

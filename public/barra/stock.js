@@ -67,6 +67,27 @@ export function rindeCon(item, stockPorInsumo) {
 export const rindeOpcion = (item, opcionId, stockPorInsumo) =>
   rindeReceta(recetaCompleta(item, opcionId), stockPorInsumo);
 
+// A qué insumos apunta la receta que ya no están en el depósito.
+//
+// Un cero puede ser dos cosas muy distintas: que no haya stock, o que la
+// receta apunte a algo que no existe —un insumo borrado, uno duplicado, una
+// receta vieja que quedó señalando al de antes—. La primera se arregla
+// comprando; la segunda, tocando la receta, y mostrarla como "no hay stock"
+// manda a comprar lo que ya está en el depósito.
+export function insumosHuerfanos(item, stockPorInsumo) {
+  const marcas = opcionesDe(item);
+  const recetas = marcas.length
+    ? marcas.map((o) => recetaCompleta(item, o.id))
+    : [recetaCompleta(item)];
+  const sueltos = new Set();
+  for (const receta of recetas) {
+    for (const r of receta) {
+      if (!stockPorInsumo.has(r.insumoId)) sueltos.add(r.insumoId);
+    }
+  }
+  return [...sueltos];
+}
+
 // El stock que va a quedar después del movimiento, según lo que el panel tiene
 // en memoria. Es una estimación: la resta de verdad la hace el servidor con
 // increment, así que si otro celular vendió en el mismo segundo este número

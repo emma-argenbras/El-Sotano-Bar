@@ -1565,6 +1565,36 @@ await chequear('la carta avisa cuándo un producto no sale del depósito', async
     throw new Error('marca como suelto a uno que tiene receta');
 });
 
+// El caso de la noche del 16: Trumpeter y Catena con 6 y 3 botellas en el
+// depósito salían agotados en el QR y la carta decía "sin material", que
+// manda a comprar lo que ya está guardado. La receta apuntaba a un insumo
+// que no estaba. Un cero tiene que decir cuál de las dos cosas es.
+await chequear('una receta que apunta a un insumo que no está lo dice, y no "sin material"', async () => {
+  const carta = await db.collection('carta').get();
+  const victima = carta.docs.find((d) => (d.data().receta || []).length);
+  if (!victima) throw new Error('no hay ningún producto con receta para romper');
+  const antes = victima.data().receta;
+  await victima.ref.update({ receta: [{ insumoId: 'insumo-que-no-existe', medidas: 1 }] });
+
+  try {
+    await barra.click('#tabCartaBar');
+    await barra.waitForFunction(() =>
+      document.querySelector('#cartaBar')?.textContent.includes('la receta apunta a un insumo que no está'),
+      null, { timeout: 15000 })
+      .catch(() => { throw new Error('no dice que la receta está rota'); });
+
+    const t = await barra.textContent('#cartaBar');
+    // Y no puede seguir diciendo lo otro: son dos arreglos distintos.
+    const fila = await barra.locator('#cartaBar .item', { hasText: victima.data().nombre }).first().textContent();
+    if (fila.includes('sin material en el depósito'))
+      throw new Error('sigue diciendo "sin material", que manda a comprar de más');
+    if (!t.includes('receta rota'))
+      throw new Error('no lo avisa arriba, donde se ve sin buscar');
+  } finally {
+    await victima.ref.update({ receta: antes });
+  }
+});
+
 await chequear('sin Caja no se muestra ningún saldo de proveedor', async () => {
   // El admin recortado no puede leer los gastos: las reglas se los niegan.
   // Sin los pagos, un saldo diría que se debe plata que ya se pagó. Antes
