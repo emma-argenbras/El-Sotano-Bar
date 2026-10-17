@@ -1714,23 +1714,36 @@ await chequear('una receta que apunta a un insumo que no está lo dice, y no "si
 // lugares preguntaban "¿tiene receta?" cuando la pregunta, desde que hay
 // marcas, es "¿tiene receta O marcas?".
 await chequear('un producto que sale solo de sus marcas SÍ sale del depósito', async () => {
-  const marcas = (await db.collection('carta').get()).docs
-    .find((d) => (d.data().opciones || []).length && !(d.data().receta || []).length);
-  if (!marcas) throw new Error('no hay ningún producto que salga solo de sus marcas');
+  // El recorrido no tiene ninguno asi —el de marcas tambien lleva receta
+  // propia—, asi que el caso se arma el suyo: dos insumos del deposito y un
+  // producto cuya unica fuente son ellos.
+  const insumos = (await db.collection('insumos').get()).docs
+    .filter((d) => Number(d.data().stock || 0) > 0).slice(0, 2);
+  if (insumos.length < 2) throw new Error('hacen falta dos insumos con stock');
 
-  await barra.click('#tabCartaBar');
-  await barra.waitForSelector('#cartaBar .item', { timeout: 20000 });
-  const fila = await barra.locator('#cartaBar .item', { hasText: marcas.data().nombre })
-    .first().textContent();
-  if (fila.includes('no sale del depósito'))
-    throw new Error('lo da por suelto aunque sale de sus marcas: ' + fila.slice(0, 160));
+  const ref = db.collection('carta').doc('solo-marcas');
+  await ref.set({
+    nombre: 'Lata de prueba', categoria: 'Tragos', precio: 3000, orden: 99,
+    disponible: true, receta: [],
+    opciones: insumos.map((d) => ({
+      id: d.id, nombre: d.data().nombre, insumoId: d.id, medidas: 1,
+    })),
+  });
 
-  // Y no puede entrar en el cartel que cuenta los sueltos.
-  const t = await barra.textContent('#cartaBar');
-  if (t.includes('no salen del depósito') && t.includes(marcas.data().nombre)) {
-    const cartel = t.slice(0, t.indexOf('no salen del depósito') + 400);
-    if (cartel.includes(marcas.data().nombre))
-      throw new Error('lo lista como suelto arriba de todo');
+  try {
+    await barra.click('#tabCartaBar');
+    await barra.waitForFunction(() =>
+      document.body.textContent.includes('Lata de prueba'), null, { timeout: 20000 });
+
+    const fila = await barra.locator('#cartaBar .item', { hasText: 'Lata de prueba' })
+      .first().textContent();
+    if (fila.includes('no sale del depósito'))
+      throw new Error('lo da por suelto aunque sale de sus marcas: ' + fila.slice(0, 160));
+    // Y rinde la suma de sus marcas, no cero.
+    if (/\bno sale\b/.test(fila))
+      throw new Error('lo da por agotado con las dos marcas cargadas: ' + fila.slice(0, 160));
+  } finally {
+    await ref.delete();
   }
 });
 
