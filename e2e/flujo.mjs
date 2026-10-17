@@ -567,6 +567,7 @@ await chequear('editar un insumo no le devuelve el stock a lo que era', async ()
     }
   } finally {
     await ref.delete();
+    await Promise.all(suyos.map((id) => db.collection('insumos').doc(id).delete()));
   }
 });
 
@@ -1717,16 +1718,19 @@ await chequear('un producto que sale solo de sus marcas SÍ sale del depósito',
   // El recorrido no tiene ninguno asi —el de marcas tambien lleva receta
   // propia—, asi que el caso se arma el suyo: dos insumos del deposito y un
   // producto cuya unica fuente son ellos.
-  const insumos = (await db.collection('insumos').get()).docs
-    .filter((d) => Number(d.data().stock || 0) > 0).slice(0, 2);
-  if (insumos.length < 2) throw new Error('hacen falta dos insumos con stock');
+  // Y sus propios insumos: depender de los que deja otro caso es heredar sus
+  // fallas. Este caso prueba una cuenta, no el orden del recorrido.
+  const suyos = ['lata-prueba-a', 'lata-prueba-b'];
+  await Promise.all(suyos.map((id, n) => db.collection('insumos').doc(id).set({
+    nombre: `Lata de prueba ${n + 1}`, unidad: 'lata', medidas: 1, stock: 6,
+  })));
 
   const ref = db.collection('carta').doc('solo-marcas');
   await ref.set({
     nombre: 'Lata de prueba', categoria: 'Tragos', precio: 3000, orden: 99,
     disponible: true, receta: [],
-    opciones: insumos.map((d) => ({
-      id: d.id, nombre: d.data().nombre, insumoId: d.id, medidas: 1,
+    opciones: suyos.map((id, n) => ({
+      id, nombre: `Lata de prueba ${n + 1}`, insumoId: id, medidas: 1,
     })),
   });
 
