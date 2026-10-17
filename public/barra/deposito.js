@@ -314,6 +314,20 @@ export let editandoInsumo = null;
 const productoTalCual = (ins) =>
   ins ? (estado.carta || []).find((c) => c.id === ins.id) : null;
 
+// Qué parte de la carta propone el nombre. Es una PROPUESTA que se escribe
+// en el campo y se puede cambiar: nunca se guarda sola. Adivinar en silencio
+// es peor que el cajón de sastre; proponer y que confirmen, no.
+const PARTES = [
+  [/cerveza|lata|porr[oó]n|ipa|lager|heineken|quilmes|brahma|corona|stella|grunbauch|grünbauch/i, 'Cervezas'],
+  [/vino|malbec|cabernet|tinto|blanco|rosado|trumpeter|catena|moulin/i, 'Vinos'],
+  [/champ|espumante|chandon|baron/i, 'Espumantes'],
+  [/gin|vodka|whisk|ron |ron$|tequila|aperol|campari|fernet|licor|aperitivo/i, 'Destilados'],
+  [/gaseosa|coca|sprite|fanta|agua|jugo|tonica|tónica|red bull|energizante/i, 'Sin alcohol'],
+  [/papa|picada|tabla|mani|maní|snack|empanada/i, 'Para picar'],
+];
+const parteQueSugiere = (nombre) =>
+  (PARTES.find(([re]) => re.test(nombre || '')) || [])[1] || '';
+
 export function abrirInsumo(ins) {
   editandoInsumo = ins;
   $('#tituloInsumo').textContent = ins ? 'Editar insumo' : 'Nuevo insumo';
@@ -327,7 +341,15 @@ export function abrirInsumo(ins) {
   const vende = !!yaEsta && yaEsta.enCarta !== false;
   $('#inpInsVende').checked = vende;
   $('#inpInsPrecio').value = yaEsta?.precio ?? '';
-  $('#inpInsCategoria').value = yaEsta?.categoria || '';
+  $('#inpInsCategoria').value = yaEsta?.categoria || parteQueSugiere(ins?.nombre);
+  // Mientras no tenga una propia, el nombre va proponiendo. En cuanto la
+  // tocan a mano, deja de proponer: lo que escribieron manda.
+  $('#inpInsNombre').oninput = () => {
+    if ($('#inpInsCategoria').dataset.tocada === '1') return;
+    $('#inpInsCategoria').value = parteQueSugiere($('#inpInsNombre').value);
+  };
+  $('#inpInsCategoria').dataset.tocada = '';
+  $('#inpInsCategoria').oninput = () => { $('#inpInsCategoria').dataset.tocada = '1'; };
 
   // Qué se vende: la unidad entera o una medida. Son dos cosas distintas y
   // la app no puede adivinar. Un vino que se lleva la mesa descuenta la
@@ -408,6 +430,27 @@ export async function guardarInsumo() {
     $('#inpInsPrecio').focus();
     return;
   }
+  // La categoría se elige. Caer en "Otros" sin decir nada dejó quince
+  // productos ahí dentro: cervezas, vinos y gins juntos en un cajón de
+  // sastre, y el cliente abriendo el QR para encontrarlos.
+  const categoria = $('#inpInsCategoria').value.trim();
+  if (vende && !categoria) {
+    alert('Elegí en qué parte de la carta va: Cervezas, Vinos, Tragos…');
+    $('#inpInsCategoria').focus();
+    return;
+  }
+  // Y el nombre repetido se frena acá también. Fernet quedó dos veces con el
+  // mismo nombre, en dos partes distintas de la carta: el cliente ve dos
+  // renglones iguales y la barra no sabe cuál tocar.
+  const repetido = vende && (estado.carta || []).find((c) =>
+    c.id !== editandoInsumo?.id && c.enCarta !== false
+    && (c.nombre || '').trim().toLowerCase() === nombre.toLowerCase());
+  if (repetido) {
+    alert(`Ya hay un producto que se llama "${nombre}" en la carta.\n\n`
+      + 'Dos renglones con el mismo nombre no se distinguen: ponele otro '
+      + 'nombre a este, o sacá el que ya está.');
+    return;
+  }
 
   try {
     let id = editandoInsumo?.id;
@@ -425,7 +468,7 @@ export async function guardarInsumo() {
       const lleva = $('#inpInsQueVende').value === 'unidad' ? medidas : 1;
       await setDoc(doc(db, 'carta', id), {
         nombre: datos.nombre,
-        categoria: $('#inpInsCategoria').value.trim() || 'Otros',
+        categoria,
         precio,
         receta: [{ insumoId: id, medidas: lleva }],
         enCarta: true,

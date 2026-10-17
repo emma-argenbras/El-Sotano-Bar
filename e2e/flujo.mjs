@@ -1858,6 +1858,67 @@ await chequear('un insumo se pone a la venta desde el Depósito, con su precio',
 // El hallazgo del 17: una botella de 16 medidas tildada como "se vende tal
 // cual" se ofrecia 256 veces, porque la venta descontaba una medida en vez
 // de la botella entera. Son dos casos distintos y hay que preguntarlos.
+// Lo que vimos con la barra cargando sola: Fernet quedo dos veces con el
+// mismo nombre en dos partes de la carta, y quince productos cayeron en
+// "Otros" sin que nadie lo eligiera.
+await chequear('no deja dos productos con el mismo nombre en la carta', async () => {
+  const ya = (await db.collection('carta').where('enCarta', '!=', false).get())
+    .docs.find((d) => d.data().nombre);
+  if (!ya) throw new Error('no hay ningún producto en la carta');
+  const nombre = ya.data().nombre;
+
+  let aviso = '';
+  const oir = async (d) => { aviso = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#tabDeposito');
+    await barra.waitForSelector('#btnNuevoInsumo', { timeout: 20000 });
+    await barra.click('#btnNuevoInsumo');
+    await barra.waitForSelector('#dlgInsumo[open]', { timeout: 10000 });
+    await barra.fill('#inpInsNombre', nombre);
+    await barra.fill('#inpInsUnidad', 'unidad');
+    await barra.fill('#inpInsMedidas', '1');
+    await barra.check('#inpInsVende');
+    await barra.fill('#inpInsPrecio', '1000');
+    await barra.fill('#inpInsCategoria', 'Tragos');
+    await barra.click('#btnGuardarInsumo');
+    await barra.waitForTimeout(1500);
+    if (!/mismo nombre|Ya hay un producto/i.test(aviso))
+      throw new Error('dejó crear un segundo producto con el mismo nombre: ' + aviso);
+  } finally {
+    barra.off('dialog', oir);
+    await barra.evaluate(() => document.querySelector('#dlgInsumo')?.close());
+  }
+});
+
+await chequear('la categoría se elige: no cae en "Otros" sin que nadie lo diga', async () => {
+  let aviso = '';
+  const oir = async (d) => { aviso = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#btnNuevoInsumo');
+    await barra.waitForSelector('#dlgInsumo[open]', { timeout: 10000 });
+    await barra.fill('#inpInsNombre', 'Chatarra sin categoría');
+    await barra.fill('#inpInsUnidad', 'unidad');
+    await barra.check('#inpInsVende');
+    await barra.fill('#inpInsPrecio', '1000');
+    await barra.fill('#inpInsCategoria', '');
+    await barra.click('#btnGuardarInsumo');
+    await barra.waitForTimeout(1500);
+    if (!/parte de la carta/i.test(aviso))
+      throw new Error('lo dejó pasar sin categoría: ' + aviso);
+
+    // Y el nombre propone: una cerveza no deberia caer en Otros.
+    await barra.fill('#inpInsNombre', 'Cerveza Heineken');
+    const propuesta = await barra.inputValue('#inpInsCategoria');
+    if (propuesta !== 'Cervezas')
+      throw new Error('no propuso la parte de la carta: "' + propuesta + '"');
+  } finally {
+    barra.off('dialog', oir);
+    await barra.evaluate(() => document.querySelector('#dlgInsumo')?.close());
+  }
+});
+
 await chequear('vender la unidad entera descuenta todas sus medidas', async () => {
   await barra.click('#tabDeposito');
   await barra.waitForSelector('#btnNuevoInsumo', { timeout: 20000 });
