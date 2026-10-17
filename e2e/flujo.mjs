@@ -1376,9 +1376,26 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
     });
 
   // Un producto de la carta que sale de esa botella: una medida por trago.
+  //
+  // El botón de la receta lleva la clase solo-gerente-inline: existe en el
+  // HTML pero vive en display:none hasta que llega de Firestore el permiso
+  // que dice que esta cuenta es gerente. Hacer click sin esperar eso es una
+  // carrera, y perderla daba un timeout pelado de 30 segundos que parecía
+  // azar. Se espera a que el botón sea visible, y si no aparece se dice por
+  // qué en vez de dejar un timeout a secas.
   await barra.click('#tabCartaBar');
-  await barra.locator('.item', { hasText: 'Fernet con coca' })
-    .locator('[data-receta-de]').click();
+  await barra.waitForSelector('#cartaBar .item', { timeout: 20000 });
+  const botonReceta = barra.locator('.item', { hasText: 'Fernet con coca' })
+    .locator('[data-receta-de]');
+  await botonReceta.waitFor({ state: 'visible', timeout: 20000 }).catch(async () => {
+    const diag = await barra.evaluate(() => ({
+      filas: document.querySelectorAll('#cartaBar .item').length,
+      botones: document.querySelectorAll('#cartaBar [data-receta-de]').length,
+      gerente: document.body.className,
+    }));
+    throw new Error('el botón de receta nunca se hizo visible. ' + JSON.stringify(diag));
+  });
+  await botonReceta.click();
   await barra.waitForSelector('#dlgReceta[open]', { timeout: 5000 });
   await barra.locator('[data-receta]').first().fill('1');
   await barra.click('#btnGuardarReceta');
