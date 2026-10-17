@@ -1883,6 +1883,28 @@ await chequear('un insumo se pone a la venta desde el Depósito, con su precio',
 // Lo que vimos con la barra cargando sola: Fernet quedo dos veces con el
 // mismo nombre en dos partes de la carta, y quince productos cayeron en
 // "Otros" sin que nadie lo eligiera.
+// El mismo error, por cuarta vez, en codigo publicado hoy: el deposito
+// decia "no sale en la carta" calculandolo contra una carta que todavia no
+// habia llegado. Setenta y cuatro acusaciones falsas.
+await chequear('sin carta cargada el depósito no acusa a ningún insumo', async () => {
+  const acusa = await barra.evaluate(async () => {
+    const base = await import('/barra/base.js');
+    const antes = base.estado.carta;
+    base.estado.carta = [];
+    try {
+      const { pintarDeposito } = await import('/barra/deposito.js');
+      document.querySelector('#vistaDeposito').hidden = false;
+      pintarDeposito();
+      return (document.querySelector('#deposito')?.textContent || '')
+        .includes('no sale en la carta');
+    } finally {
+      base.estado.carta = antes;
+      pintarDeposito();
+    }
+  });
+  if (acusa) throw new Error('acusa con la carta vacía');
+});
+
 await chequear('no deja dos productos con el mismo nombre en la carta', async () => {
   const ya = (await db.collection('carta').where('enCarta', '!=', false).get())
     .docs.find((d) => d.data().nombre);

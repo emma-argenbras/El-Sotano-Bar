@@ -11,7 +11,7 @@ import {
 import { pintarAdminCostos } from './administracion.js';
 import { $, esc, estado, plata } from './base.js';
 import { app, db } from './conexion.js';
-import { comoSeDice, huerfanosDe, porQueNoSale, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
+import { comoSeDice, huerfanosDe, pintarDeposito, porQueNoSale, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
 import { hora } from './invitados.js';
 import { cajaActual, pintarTablero, quienAtiende } from './pedidos.js';
 import { moverInsumos, opcionesDe, recetaCompleta, saleDelDeposito } from './stock.js';
@@ -568,6 +568,10 @@ export function escucharCarta() {
       .sort((a, b) => (a.categoria || '').localeCompare(b.categoria || '') || (a.orden ?? 999) - (b.orden ?? 999));
     pintarCartaBar();
     pintarTablero();
+    // Y el depósito, que dice en qué productos sale cada insumo. Sin esto
+    // se queda con la foto de antes de que llegara la carta.
+    pintarDeposito();
+    pintarConteo();
     // El margen sale de cruzar el precio de venta con el costo de la receta:
     // si cambia cualquiera de los dos, hay que volver a hacer la cuenta.
     pintarAdminCostos();

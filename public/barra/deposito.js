@@ -154,8 +154,13 @@ export function pintarDeposito() {
   // Cargar mercadería en el depósito NO la pone en la carta: hace falta que
   // algún producto diga que sale de ahí. Nadie avisaba eso, y se cargaban
   // cajones enteros esperando verlos aparecer del otro lado.
-  const huerfano = (i) => !productosQueUsan([i.id]).length;
-  const sueltos = estado.insumos.filter(huerfano);
+  // Con la carta todavía en camino NINGÚN insumo encuentra su producto, y
+  // los setenta y cuatro dirían "no sale en la carta". Es el mismo error que
+  // cometí hoy en el Club, en el candado de la baja y en las recetas rotas:
+  // una pantalla que dicta sentencia antes de que lleguen los datos.
+  const hayCarta = (estado.carta || []).length > 0;
+  const huerfano = (i) => hayCarta && !productosQueUsan([i.id]).length;
+  const sueltos = hayCarta ? estado.insumos.filter(huerfano) : [];
 
   // El celular de la barra mira y nada más: no da de alta mercadería y no
   // ve la plata. Mostrarle esos botones sería ofrecerle algo que las reglas
@@ -200,7 +205,8 @@ export function pintarDeposito() {
           <div class="nombre">${esc(i.nombre)}</div>
           <div class="desc">${comoSeDice(i)}${
             Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}${
-            huerfano(i) ? ' · <b style="color:var(--naranja)">no sale en la carta</b>'
+            !hayCarta ? ''
+              : huerfano(i) ? ' · <b style="color:var(--naranja)">no sale en la carta</b>'
               : ` · <span style="color:var(--suave)">sale en ${
                   esc(productosQueUsan([i.id]).map((c) => c.nombre || c.id).join(', '))}</span>`}</div>
         </div>
