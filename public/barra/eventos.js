@@ -245,7 +245,7 @@ export async function qrRegistro(ev) {
   const { qrDataURL } = await import('/vendor/qr.js');
   const base = await qrDataURL(LINK_REGISTRO(ev), {
     width: 600, margin: 2, errorCorrectionLevel: 'H',
-    color: { dark: '#141012', light: '#ffffff' },
+    color: { dark: '#0d0b10', light: '#ffffff' },
   });
   let final = base;
   try {

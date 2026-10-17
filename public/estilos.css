@@ -1,25 +1,13 @@
-/* Sótano Bar — los colores de la marca: el salón es un sótano, las pantallas
-   no deben encandilar.
-
-   Los tres de la marca son el fondo, la tinta y el oro. Todo lo demás sale de
-   ahí: los paneles son el fondo subido, lo suave es la tinta bajada. Un color
-   escrito a mano en una regla suelta rompe eso, así que no hay ninguno: lo
-   que no es de marca —verde, rojo, naranja, azul— es señal de estado y se
-   mide aparte.
-
-   Todos los pares de texto dan 5:1 o más sobre su fondo. Eso no es un gusto:
-   es un bar a oscuras y el que lee está apurado. */
+/* Sótano Bar — tema oscuro: el salón es un sótano, las pantallas no deben encandilar */
 :root {
-  --fondo: #141012;
-  --panel: #1E1A1D;
-  --panel-alto: #2A2529;
-  --borde: #403A40;
-  --texto: #CCCABE;
-  --suave: #8E8A84;
-  --oro: #CDA130;
-  --oro-hover: #E0B548;
-  /* Lo que va ARRIBA del oro: un botón dorado con tinta clara no se lee. */
-  --sobre-oro: #141012;
+  --fondo: #0d0b10;
+  --panel: #17141c;
+  --panel-alto: #211d2a;
+  --borde: #322c3e;
+  --texto: #f1ecf5;
+  --suave: #a79fb4;
+  --oro: #e8b84b;
+  --oro-hover: #f3c963;
   --verde: #46c08a;
   --rojo: #e8655f;
   --naranja: #e89b4b;
@@ -59,7 +47,7 @@ a { color: var(--oro); }
   position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
   padding: calc(.7rem + var(--safe-t)) calc(1rem + var(--safe-r)) .7rem calc(1rem + var(--safe-l));
-  background: rgba(20,16,18,.92);
+  background: rgba(13,11,16,.92);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--borde);
 }
@@ -120,7 +108,7 @@ a { color: var(--oro); }
   transition: .15s;
 }
 .categorias button[aria-selected="true"] {
-  background: var(--oro); color: var(--sobre-oro); border-color: var(--oro); font-weight: 600;
+  background: var(--oro); color: #1a1410; border-color: var(--oro); font-weight: 600;
 }
 
 /* ---------- items de la carta ---------- */
@@ -147,7 +135,7 @@ a { color: var(--oro); }
   border: 1px solid var(--borde);
   font-size: 1.15rem; line-height: 1; cursor: pointer;
 }
-.cant button:active { background: var(--oro); color: var(--sobre-oro); }
+.cant button:active { background: var(--oro); color: #1a1410; }
 .cant button:disabled { opacity: .3; cursor: not-allowed; }
 .cant .n { min-width: 26px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 650; }
 
@@ -161,7 +149,7 @@ a { color: var(--oro); }
   transition: .15s;
 }
 .btn:hover:not(:disabled) { background: var(--borde); }
-.btn.primario { background: var(--oro); color: var(--sobre-oro); border-color: var(--oro); }
+.btn.primario { background: var(--oro); color: #1a1410; border-color: var(--oro); }
 .btn.primario:hover:not(:disabled) { background: var(--oro-hover); }
 .btn.peligro  { color: var(--rojo); border-color: rgba(232,101,95,.4); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -171,7 +159,7 @@ a { color: var(--oro); }
 .carrito {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
   padding: .85rem 1rem calc(.85rem + var(--safe-b));
-  background: rgba(30,26,29,.97);
+  background: rgba(23,20,28,.97);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--borde);
   transform: translateY(105%); transition: transform .22s ease;
@@ -266,7 +254,7 @@ dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
 .ticket ul li b { color: var(--oro); font-variant-numeric: tabular-nums; }
 .ticket .nota {
   margin-top: .45rem; padding: .35rem .5rem; border-radius: 8px;
-  background: rgba(205,161,48,.1); border: 1px solid rgba(205,161,48,.3);
+  background: rgba(232,184,75,.1); border: 1px solid rgba(232,184,75,.3);
   font-size: .83rem;
 }
 .ticket .pie { display: flex; align-items: center; gap: .45rem; margin-top: .6rem; }
@@ -418,7 +406,7 @@ body.es-gerente .ancho-full.solo-gerente-inline { display: block !important; wid
   background: var(--panel-alto); cursor: pointer; text-align: center;
 }
 .elegir-pago label:has(input:checked) {
-  border-color: var(--oro); background: rgba(205,161,48,.12);
+  border-color: var(--oro); background: rgba(198,160,47,.1);
 }
 .elegir-pago input { position: absolute; opacity: 0; pointer-events: none; }
 /* El radio no se ve, así que el foco se dibuja sobre la tarjeta: sin esto,
