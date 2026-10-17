@@ -14,7 +14,7 @@ import { escucharDeposito } from './deposito.js';
 import { escucharEvento } from './eventos.js';
 import { escucharInvitados } from './invitados.js';
 import { escucharCartas } from './cartas.js';
-import { escucharJornadas } from './cierre.js';
+import { escucharCierresBarra, escucharJornadas } from './cierre.js';
 import { escucharCorte } from './jornada.js';
 import { pintarSonido } from './pedidos.js';
 import { escucharAccesos, vigilarMiAcceso } from './usuarios.js';
@@ -138,6 +138,7 @@ onAuthStateChanged(auth, async (u) => {
   escucharCorte();
   escucharCartas();
   escucharJornadas();
+  escucharCierresBarra();
   pintarConexion(); pintarSonido(); escucharEvento(); escucharCarta();
   escucharInvitados();
   vigilarMiAcceso(u.uid);

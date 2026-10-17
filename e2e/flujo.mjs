@@ -2946,6 +2946,93 @@ await chequear('también marca el pedido con un id que no existe en la carta', a
   if (!marcado) throw new Error('el pedido con id inventado pasó sin marcar');
 });
 
+// ---------- el cierre de la barra ----------
+// Son dos cierres, no uno. El barman cuenta SU cajón: el efectivo que cobró
+// en la barra, sin entradas y sin egresos. Lo que se prueba acá es que el
+// conteo sea a ciegas y que no se pueda rehacer una vez visto el resultado.
+console.log('\nEL CIERRE DE LA BARRA');
+
+await chequear('el botón de cerrar la barra vive en Pedidos, no en caja', async () => {
+  await barra.click('#tabTablero');
+  await barra.waitForSelector('#btnCerrarBarra', { timeout: 20000 });
+});
+
+await chequear('no deja cerrar la barra sin contar el cajón', async () => {
+  try {
+    await barra.click('#btnCerrarBarra');
+    await barra.waitForSelector('#dlgCerrarBarra[open]', { timeout: 10000 });
+
+    // Contar ANTES de ver lo esperado, igual que en la jornada.
+    const antes = await barra.textContent('#cuerpoCerrarBarra');
+    // Ojo con el texto de la consigna, que dice "lo que la app esperaba":
+    // lo que no puede estar es el NUMERO, y ese sale con su rótulo.
+    if (/Cobrado en efectivo/i.test(antes))
+      throw new Error('muestra lo cobrado antes de que cuenten: se copia');
+
+    await barra.click('#btnVerCierreBarra');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#errorBarra')?.classList.contains('oculto'),
+      null, { timeout: 10000 })
+      .catch(() => { throw new Error('dejó seguir sin contar el cajón'); });
+    if (!(await db.collection('cierresBarra').get()).empty)
+      throw new Error('cerró la barra igual');
+  } catch (e) {
+    await barra.evaluate(() => document.querySelector('#dlgCerrarBarra')?.close());
+    throw e;
+  }
+});
+
+await chequear('contado el cajón, la barra muestra su diferencia exacta', async () => {
+  try {
+    await barra.fill('#inpContadoBarra', '1');
+    await barra.click('#btnVerCierreBarra');
+    await barra.waitForFunction(() =>
+      document.querySelector('#cuerpoCerrarBarra')?.textContent.includes('Cobrado en efectivo'),
+      null, { timeout: 15000 });
+    const t = await barra.textContent('#cuerpoCerrarBarra');
+    if (!/Faltan|Sobran|Cuadra/i.test(t))
+      throw new Error('no dice si falta o sobra: ' + t.slice(0, 200));
+    // Y tiene que decir que esto es solo la barra: si no, el barman cree que
+    // está respondiendo por las entradas.
+    if (!t.includes('solo la barra'))
+      throw new Error('no aclara que cuenta solo la barra');
+  } catch (e) {
+    await barra.evaluate(() => document.querySelector('#dlgCerrarBarra')?.close());
+    throw e;
+  }
+});
+
+await chequear('al confirmar, el cierre de barra queda escrito con la resta', async () => {
+  await barra.click('#btnConfirmarBarra');
+  await barra.waitForSelector('#dlgCerrarBarra[open]', { state: 'detached', timeout: 15000 })
+    .catch(() => {});
+
+  let c;
+  for (let i = 0; i < 60; i++) {
+    const q = await db.collection('cierresBarra').get();
+    if (!q.empty) { c = q.docs[0].data(); break; }
+    if (i === 59) throw new Error('nunca escribió el cierre de la barra');
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  if (c.contado !== 1) throw new Error('no guardó lo contado: ' + c.contado);
+  if (c.diferencia !== c.contado - c.esperado)
+    throw new Error('la diferencia no sale de la resta: ' + JSON.stringify(c));
+  if (!c.cerradaPor) throw new Error('no dice quién contó');
+  // El cajón del barman no incluye las entradas: lo esperado es solo lo que
+  // cobró la barra en efectivo.
+  if (c.esperado !== c.ventas.efectivo)
+    throw new Error('lo esperado no es el efectivo de la barra: ' + JSON.stringify(c));
+});
+
+await chequear('contada una vez, la barra no se vuelve a contar', async () => {
+  await barra.waitForFunction(() =>
+    document.querySelector('#cierreBarra')?.textContent.includes('La barra la cerró'),
+    null, { timeout: 15000 })
+    .catch(() => { throw new Error('no avisa que la barra ya se cerró'); });
+  if (await barra.locator('#btnCerrarBarra').count())
+    throw new Error('el botón de contar sigue ahí después de contar');
+});
+
 // ---------- el cierre de la jornada ----------
 // El número con el que se termina la noche. Lo que importa no es que la
 // pantalla dibuje: es que al cerrar los números queden CONGELADOS.
@@ -2992,6 +3079,10 @@ await chequear('contado el cajón, muestra la diferencia exacta', async () => {
   if (!/Faltan|Sobran|cuadra/i.test(t))
     throw new Error('no dice si falta o sobra: ' + t.slice(0, 200));
   if (!t.includes('congelados')) throw new Error('no avisa que se congela');
+  // El punto de los dos cierres: el gerente ve el conteo del barman al lado
+  // del suyo antes de confirmar.
+  if (!t.includes('La barra la cerró'))
+    throw new Error('no le muestra al gerente lo que contó el barman');
 });
 
 await chequear('al confirmar, la jornada queda cerrada y con sus números', async () => {
@@ -3015,6 +3106,11 @@ await chequear('al confirmar, la jornada queda cerrada y con sus números', asyn
     throw new Error('la diferencia no sale de la resta: ' + JSON.stringify(c.caja));
   if (!j.cerradaPor) throw new Error('no dice quién cerró');
   if (j.horaCorte !== 6) throw new Error('no guardó con qué corte se cerró');
+  // El conteo del barman viaja congelado con el resto: si mañana se corrige
+  // el documento de la barra, el cierre de anoche no se mueve.
+  if (!c.barra) throw new Error('el cierre no se llevó el conteo de la barra');
+  if (c.barra.contado !== 1)
+    throw new Error('congeló otro número: ' + JSON.stringify(c.barra));
 });
 
 // Esto es lo que hace que un cierre sirva: que no se mueva después.

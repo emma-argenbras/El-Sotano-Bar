@@ -14,8 +14,8 @@
 // corrige una receta, el cierre de anoche no se mueve. Una jornada cerrada es
 // historia, no una consulta que se vuelve a correr.
 import {
-  Timestamp, collection, doc, getDocs, onSnapshot, query, serverTimestamp,
-  setDoc, updateDoc, where,
+  Timestamp, collection, doc, getDocs, onSnapshot, orderBy, query,
+  serverTimestamp, setDoc, updateDoc, where,
 } from '/vendor/firebase.js';
 import { $, esc, estado, plata } from './base.js';
 import { db } from './conexion.js';
@@ -334,6 +334,29 @@ function pintarComparar() {
     </div>`;
 }
 
+// Lo que contó el barman, para que el gerente lo vea al lado del suyo.
+//
+// Son dos cuentas distintas a propósito: el barman responde por el efectivo
+// de la barra, el gerente por todo el cajón. Si las dos cuadran por separado
+// y la jornada no, lo que falta no salió de la barra.
+function avisoBarra(b) {
+  if (!b) {
+    return `<div class="aviso"><span>💵</span><div>
+      <b>La barra no se cerró.</b> El barman no contó su cajón esta noche.
+      </div></div>`;
+  }
+  const d = Number(b.diferencia || 0);
+  const hora = b.cerradaEn?.toDate?.()
+    ? b.cerradaEn.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    : '';
+  return `<div class="aviso ${d === 0 ? 'ok' : 'mal'}"><span>💵</span><div>
+    <b>La barra la cerró ${esc(b.cerradaPor || 'la casa')}${hora ? ` a las ${hora}` : ''}.</b>
+    Contó ${plata(b.contado)} sobre ${plata(b.esperado)} cobrados en efectivo.
+    ${d === 0 ? 'Esa parte cuadra.'
+      : `<b>${d < 0 ? 'Faltan' : 'Sobran'} ${plata(Math.abs(d))}</b> en la barra.`}
+    </div></div>`;
+}
+
 // ---------- la pantalla entera ----------
 export function pintarCierre() {
   const cont = $('#cierre');
@@ -396,6 +419,8 @@ export function pintarCierre() {
 
       ${tarjetaVendido(n)}
       ${tarjetaCaja(n)}
+      ${avisoBarra(guardada?.cierre?.barra
+        || (esHoy ? (estado.cierresBarra || {})[fecha] : null))}
       ${tarjetaGanancia(n)}
       ${tarjetaAsistencia(asistencia)}
       ${tarjetaTop(n)}
@@ -460,6 +485,7 @@ export function revisarCierre() {
       ${tarjetaVendido(n)}
       ${tarjetaGanancia(n)}
     </div>
+    ${avisoBarra(cierreBarraDeHoy())}
     <div class="aviso ${d === 0 ? 'ok' : 'mal'}"><span>${d === 0 ? '✓' : '⚠'}</span><div>
       ${d === 0 ? '<b>La caja cuadra.</b>'
         : `<b>${d < 0 ? 'Faltan' : 'Sobran'} ${plata(Math.abs(d))}.</b>
@@ -494,7 +520,9 @@ export async function cerrarJornada(contado) {
       cerradaEn: serverTimestamp(),
       cerradaPor: quienAtiende() || estado.usuario || 'la casa',
       vecesReabierta: Number(ya?.vecesReabierta || 0),
-      cierre: { ...n, asistencia },
+      // El conteo del barman se congela con el resto: mañana el documento
+      // de la barra puede corregirse, y el cierre de anoche no se mueve.
+      cierre: { ...n, asistencia, ...(cierreBarraDeHoy() ? { barra: cierreBarraDeHoy() } : {}) },
     });
     $('#dlgCerrarJornada').close();
     verJornada = fecha;
@@ -520,4 +548,185 @@ export async function reabrirJornada() {
         .find((j) => j.fecha === fecha)?.vecesReabierta || 0) + 1,
     });
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+// ---------- el cierre de la barra ----------
+//
+// Son dos cierres, no uno partido en dos pantallas. El barman cuenta SU
+// cajón y nada más: lo que cobró en efectivo en la barra. Las entradas las
+// cobra la puerta y los egresos los hace el dueño — ni una cosa ni la otra
+// pasan por este cajón, y meterlas acá le pediría al barman que responda por
+// plata que nunca tocó.
+//
+// Después Guille cierra la jornada entera, ve el conteo del barman al lado
+// del suyo, y ahí sí entran entradas y egresos.
+//
+// Las ventas se traen de una, con su propia consulta, y no de lo que el
+// tablero tenga en pantalla: el tablero arranca donde arranca el evento, y
+// la jornada arranca en el corte. Una venta de la tarde quedaría afuera.
+export const CIERRE_BARRA_DE = (fecha) => doc(db, 'cierresBarra', fecha);
+
+export function escucharCierresBarra() {
+  onSnapshot(collection(db, 'cierresBarra'), (snap) => {
+    estado.cierresBarra = Object.fromEntries(
+      snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+    pintarCierreBarra();
+    pintarCierre();
+  }, () => {});
+}
+
+export const cierreBarraDeHoy = () => (estado.cierresBarra || {})[fechaDeHoy()] || null;
+
+async function ventasDeLaBarra(desde) {
+  const q = query(collection(db, 'pedidos'),
+    where('estado', '==', 'entregado'),
+    where('creadoEn', '>=', Timestamp.fromDate(desde)),
+    orderBy('creadoEn', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data());
+}
+
+export function numerosDeBarra(ventas, contado) {
+  const efectivo = sumar(ventas, 'total', 'efectivo');
+  const virtual = sumar(ventas, 'total', 'virtual');
+  const total = sumar(ventas, 'total');
+  const conto = contado === null || contado === undefined ? null : Number(contado);
+  return {
+    ventas: { efectivo, virtual, sinForma: total - efectivo - virtual,
+              total, cantidad: ventas.length },
+    caja: { esperado: efectivo, contado: conto,
+            diferencia: conto === null ? null : conto - efectivo },
+  };
+}
+
+// El botón vive en Pedidos, que es la pantalla que el celular de la barra
+// tiene abierta toda la noche. La pantalla de caja no la ve.
+export function pintarCierreBarra() {
+  const cont = $('#cierreBarra');
+  if (!cont) return;
+  const ya = cierreBarraDeHoy();
+
+  if (ya) {
+    const d = Number(ya.diferencia || 0);
+    const hora = ya.cerradaEn?.toDate?.()
+      ? ya.cerradaEn.toDate().toLocaleTimeString('es-AR',
+        { hour: '2-digit', minute: '2-digit' })
+      : '';
+    cont.innerHTML = `
+      <div class="aviso ${d === 0 ? 'ok' : 'mal'}"><span>${d === 0 ? '✓' : '⚠'}</span><div>
+        <b>La barra la cerró ${esc(ya.cerradaPor || 'la casa')}${hora ? ` a las ${hora}` : ''}.</b>
+        Contó ${plata(ya.contado)} y la app esperaba ${plata(ya.esperado)}.
+        ${d === 0 ? 'Cuadra.'
+          : `<b>${d < 0 ? 'Faltan' : 'Sobran'} ${plata(Math.abs(d))}.</b>`}<br>
+        <small>Si se siguió vendiendo después de contar, la cuenta de la
+        jornada va a dar distinto. Eso lo cierra el gerente.</small></div></div>`;
+    return;
+  }
+
+  cont.innerHTML = `
+    <button class="btn ancho-full" id="btnCerrarBarra">💵 Cerrar la barra</button>
+    <p class="pie-chico">Contás el cajón al final de la noche. Primero el
+      número, después lo que la app esperaba.</p>`;
+  $('#btnCerrarBarra').onclick = abrirCierreBarra;
+}
+
+// Contar ANTES de ver lo esperado, igual que en la jornada: si se ve primero,
+// el número deja de ser un conteo y pasa a ser una confirmación.
+export function abrirCierreBarra() {
+  $('#cuerpoCerrarBarra').innerHTML = `
+    <p style="color:var(--suave);font-size:.9rem;margin:.2rem 0 1rem">
+      Contá la plata que hay en el cajón de la barra y escribila. Recién
+      después vas a ver lo que la app esperaba.</p>
+    <label class="campo">
+      <span>Cuánta plata hay en el cajón</span>
+      <input id="inpContadoBarra" type="number" min="0" inputmode="numeric" placeholder="0">
+    </label>
+    <div id="errorBarra" class="aviso mal oculto"><span>⚠</span><div id="errorBarraTexto"></div></div>
+    <button class="btn primario ancho-full" id="btnVerCierreBarra" style="margin-top:.6rem">
+      Ver el cierre de la barra</button>`;
+  $('#btnVerCierreBarra').onclick = revisarCierreBarra;
+  $('#dlgCerrarBarra').showModal();
+  $('#inpContadoBarra').focus();
+}
+
+export async function revisarCierreBarra() {
+  const crudo = $('#inpContadoBarra').value;
+  if (crudo === '' || Number(crudo) < 0 || !Number.isFinite(Number(crudo))) {
+    $('#errorBarraTexto').textContent = 'Escribí cuánta plata hay, aunque sea cero.';
+    $('#errorBarra').classList.remove('oculto');
+    $('#inpContadoBarra').focus();
+    return;
+  }
+  const contado = Math.round(Number(crudo));
+  const btn = $('#btnVerCierreBarra');
+  btn.disabled = true; btn.textContent = 'Sumando…';
+
+  let ventas;
+  try {
+    ventas = await ventasDeLaBarra(arranqueDeHoy());
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Ver el cierre de la barra';
+    $('#errorBarraTexto').textContent = 'No pude traer las ventas: ' + (e.code || e.message);
+    $('#errorBarra').classList.remove('oculto');
+    return;
+  }
+
+  const n = numerosDeBarra(ventas, contado);
+  const d = n.caja.diferencia;
+
+  $('#cuerpoCerrarBarra').innerHTML = `
+    <div class="cierre">
+      <div class="tarjeta">
+        <div class="rotulo">La caja de la barra</div>
+        <div class="numeron ${d === 0 ? 'neutro' : (d < 0 ? 'malo' : '')}">
+          ${d === 0 ? 'Cuadra' : `${d < 0 ? 'Faltan' : 'Sobran'} ${plata(Math.abs(d))}`}</div>
+        <div class="fila-barra" style="margin-top:.8rem">
+          <span class="que">Cobrado en efectivo</span>
+          <span class="cuanto">${plata(n.caja.esperado)}</span></div>
+        <div class="fila-barra">
+          <span class="que">Contado en el cajón</span>
+          <span class="cuanto">${plata(contado)}</span></div>
+        <div class="fila-barra">
+          <span class="que">Cobrado por transferencia</span>
+          <span class="cuanto">${plata(n.ventas.virtual)}</span></div>
+        <div class="fila-barra">
+          <span class="que">Pedidos</span>
+          <span class="cuanto">${n.ventas.cantidad}</span></div>
+      </div>
+    </div>
+    <div class="aviso"><span>ℹ</span><div>
+      Esto cuenta <b>solo la barra</b>: lo que cobraste vos en efectivo. Las
+      entradas y la plata que se sacó del cajón las cierra el gerente.</div></div>
+    <div style="display:flex;gap:.6rem;margin-top:.9rem">
+      <button class="btn" id="btnVolverBarra" style="flex:1">Volver</button>
+      <button class="btn primario" id="btnConfirmarBarra" style="flex:1.4">
+        Cerrar la barra</button>
+    </div>`;
+  $('#btnVolverBarra').onclick = abrirCierreBarra;
+  $('#btnConfirmarBarra').onclick = () => cerrarBarra(contado, n);
+}
+
+export async function cerrarBarra(contado, n) {
+  const btn = $('#btnConfirmarBarra');
+  btn.disabled = true; btn.textContent = 'Cerrando…';
+  try {
+    await setDoc(CIERRE_BARRA_DE(fechaDeHoy()), {
+      fecha: fechaDeHoy(),
+      desde: Timestamp.fromDate(arranqueDeHoy()),
+      cerradaEn: serverTimestamp(),
+      cerradaPor: quienAtiende() || estado.usuario || 'la barra',
+      contado,
+      esperado: n.caja.esperado,
+      diferencia: n.caja.diferencia,
+      ventas: n.ventas,
+    });
+    $('#dlgCerrarBarra').close();
+    pintarCierreBarra();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Cerrar la barra';
+    const texto = e.code === 'permission-denied'
+      ? 'La barra de hoy ya está cerrada. Si el número quedó mal, lo corrige el gerente.'
+      : 'No se pudo cerrar: ' + (e.code || e.message);
+    alert(texto);
+  }
 }

@@ -42,6 +42,7 @@ $('#btnConteo').onclick = abrirConteo;
 $('#btnCartaFecha').onclick = abrirCartaDeFecha;
 $('#btnCerrarCartaFecha').onclick = () => $('#dlgCartaFecha').close();
 $('#btnCancelarCierre').onclick = () => $('#dlgCerrarJornada').close();
+$('#btnCancelarCierreBarra').onclick = () => $('#dlgCerrarBarra').close();
 $('#btnCancelarInsumo').onclick = () => $('#dlgInsumo').close();
 $('#btnGuardarInsumo').onclick = guardarInsumo;
 $('#btnCancelarCompra').onclick = () => $('#dlgCompra').close();

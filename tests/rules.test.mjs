@@ -659,6 +659,81 @@ describe('registro de invitados', () => {
     });
   });
 
+  // El cierre de la barra: el cajón del barman, contado una sola vez.
+  describe('el cierre de la barra', () => {
+    const barraCierre = (extra = {}) => ({
+      fecha: '2026-12-01',
+      cerradaEn: serverTimestamp(),
+      cerradaPor: 'nacho',
+      contado: 48000,
+      esperado: 50000,
+      diferencia: -2000,
+      ventas: { efectivo: 50000, virtual: 20000, sinForma: 0, total: 70000, cantidad: 12 },
+      ...extra,
+    });
+
+    it('el celular de la barra cierra su cajón', async () => {
+      await assertSucceeds(setDoc(doc(aparato(), 'cierresBarra/2026-12-01'), barraCierre()));
+    });
+
+    it('el barman de turno también', async () => {
+      await assertSucceeds(setDoc(doc(turnoOk(), 'cierresBarra/2026-12-02'),
+        barraCierre({ fecha: '2026-12-02' })));
+    });
+
+    // El candado del conteo a ciegas: si se pudiera reescribir después de ver
+    // la diferencia, el número sería una confirmación y no un conteo.
+    it('contado una vez, el barman no lo reescribe', async () => {
+      await assertFails(setDoc(doc(aparato(), 'cierresBarra/2026-12-01'),
+        barraCierre({ contado: 50000, diferencia: 0 })));
+      await assertFails(updateDoc(doc(aparato(), 'cierresBarra/2026-12-01'),
+        { contado: 50000, diferencia: 0 }));
+    });
+
+    it('un número mal tipeado lo corrige el gerente', async () => {
+      await assertSucceeds(updateDoc(doc(gerente(), 'cierresBarra/2026-12-01'),
+        { ...barraCierre(), contado: 49000, diferencia: -1000 }));
+    });
+
+    // Sin tolerancia quiere decir que la diferencia es exactamente la resta.
+    // Una diferencia escrita a mano convertiría el candado en un adorno.
+    it('la diferencia tiene que ser la resta, no un número escrito', async () => {
+      await assertFails(setDoc(doc(aparato(), 'cierresBarra/2026-12-03'),
+        barraCierre({ fecha: '2026-12-03', contado: 48000, esperado: 50000, diferencia: 0 })));
+    });
+
+    it('el nombre del documento tiene que ser su fecha', async () => {
+      await assertFails(setDoc(doc(aparato(), 'cierresBarra/2026-12-04'),
+        barraCierre({ fecha: '2026-12-09' })));
+    });
+
+    it('la hora la pone el servidor, no el que cuenta', async () => {
+      await assertFails(setDoc(doc(aparato(), 'cierresBarra/2026-12-05'),
+        barraCierre({ fecha: '2026-12-05', cerradaEn: new Date(2020, 0, 1) })));
+    });
+
+    it('no se cuenta plata negativa', async () => {
+      await assertFails(setDoc(doc(aparato(), 'cierresBarra/2026-12-06'),
+        barraCierre({ fecha: '2026-12-06', contado: -1000, esperado: 50000, diferencia: -51000 })));
+    });
+
+    it('la puerta no cierra la barra ni la mira', async () => {
+      await assertFails(setDoc(doc(puerta(), 'cierresBarra/2026-12-07'),
+        barraCierre({ fecha: '2026-12-07' })));
+      await assertFails(getDoc(doc(puerta(), 'cierresBarra/2026-12-01')));
+    });
+
+    it('el cliente no la ve', async () => {
+      await assertFails(getDoc(doc(anon(), 'cierresBarra/2026-12-01')));
+      await assertFails(getDoc(doc(sinLoguear(), 'cierresBarra/2026-12-01')));
+    });
+
+    it('y solo el dueño la borra', async () => {
+      await assertFails(deleteDoc(doc(gerente(), 'cierresBarra/2026-12-01')));
+      await assertSucceeds(deleteDoc(doc(barra(), 'cierresBarra/2026-12-01')));
+    });
+  });
+
   // La carta de una fecha: qué se vende esa noche y a cuánto.
   describe('la carta de una fecha', () => {
     const carta = (extra = {}) => ({

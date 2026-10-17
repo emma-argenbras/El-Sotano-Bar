@@ -601,7 +601,8 @@ body:not(.es-sadmin) .solo-sadmin { display: none !important; }
                   letter-spacing: .09em; color: var(--suave); }
 .cierre .tarjeta { background: var(--panel); border: 1px solid var(--borde);
                    border-radius: var(--radio); padding: 1rem; margin-bottom: .7rem; }
-.cierre .pie-chico { font-size: .8rem; color: var(--suave); margin: .4rem 0 0; }
+.cierre .pie-chico,
+#cierreBarra .pie-chico { font-size: .8rem; color: var(--suave); margin: .4rem 0 0; }
 
 /* Barras: finas, con las puntas redondeadas y 2px de aire entre tramos para
    que se distingan sin depender del color. */

@@ -684,6 +684,44 @@ service cloud.firestore {
         && request.resource.data.get('vecesReabierta', 0) >= 0;
     }
 
+    // ---------- el cierre de la barra ----------
+    //
+    // Son dos cierres. Este es el del barman: cuenta SU cajon, el efectivo
+    // que cobro en la barra, y nada mas. Las entradas las cobra la puerta y
+    // los egresos los hace el dueno; ni una cosa ni la otra pasan por aca.
+    //
+    // Se escribe una sola vez. Volver a escribirlo despues de haber visto la
+    // diferencia seria contar con la respuesta delante, y eso no es un
+    // conteo: corregir un numero mal tipeado es del gerente.
+    function cierreBarraValido() {
+      return request.resource.data.keys().hasOnly(
+          ['fecha', 'desde', 'cerradaEn', 'cerradaPor', 'contado', 'esperado',
+           'diferencia', 'ventas'])
+        && request.resource.data.fecha is string
+        && request.resource.data.fecha.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.contado is int
+        && request.resource.data.contado >= 0
+        && request.resource.data.esperado is int
+        && request.resource.data.diferencia is int
+        && request.resource.data.diferencia
+             == request.resource.data.contado - request.resource.data.esperado;
+    }
+
+    match /cierresBarra/{fecha} {
+      allow read: if esBarra();
+
+      allow create: if esBarra()
+        && fecha == request.resource.data.fecha
+        && cierreBarraValido()
+        && request.resource.data.cerradaEn == request.time;
+
+      allow update: if esAdmin() && puedo('caja')
+        && cierreBarraValido()
+        && request.resource.data.fecha == resource.data.fecha;
+
+      allow delete: if esElDueno();
+    }
+
     match /jornadas/{fecha} {
       allow read: if esAdmin() && puedo('caja');
 
