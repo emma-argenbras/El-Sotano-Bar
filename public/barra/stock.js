@@ -32,6 +32,16 @@ export function recetaCompleta(item, opcionId) {
   return o ? [...base, { insumoId: o.insumoId, medidas: Number(o.medidas) }] : base;
 }
 
+// ¿Este producto sale del depósito?
+//
+// Desde que hay marcas, la pregunta dejó de ser "¿tiene receta?". Un producto
+// cuya única fuente son sus marcas no tiene receta propia y sale del depósito
+// igual: lo que lleva está en la marca que elige el cliente. Seis lugares
+// preguntaban lo viejo, y por eso una cerveza con seis marcas cargadas
+// figuraba como que no sale del depósito.
+export const saleDelDeposito = (item) =>
+  (item?.receta || []).length > 0 || opcionesDe(item).length > 0;
+
 // Cuántas salen con el stock que se le pase. Infinity es "no lleva cuenta":
 // los productos sin receta no salen del depósito.
 function rindeReceta(receta, stockPorInsumo) {

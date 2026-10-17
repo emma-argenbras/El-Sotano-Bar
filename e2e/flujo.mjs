@@ -1709,6 +1709,31 @@ await chequear('una receta que apunta a un insumo que no está lo dice, y no "si
   }
 });
 
+// El caso del 17: cuatro productos con marcas cargadas figuraban como que no
+// salen del depósito, y entraban al cartel de "9 de 12 no salen". Seis
+// lugares preguntaban "¿tiene receta?" cuando la pregunta, desde que hay
+// marcas, es "¿tiene receta O marcas?".
+await chequear('un producto que sale solo de sus marcas SÍ sale del depósito', async () => {
+  const marcas = (await db.collection('carta').get()).docs
+    .find((d) => (d.data().opciones || []).length && !(d.data().receta || []).length);
+  if (!marcas) throw new Error('no hay ningún producto que salga solo de sus marcas');
+
+  await barra.click('#tabCartaBar');
+  await barra.waitForSelector('#cartaBar .item', { timeout: 20000 });
+  const fila = await barra.locator('#cartaBar .item', { hasText: marcas.data().nombre })
+    .first().textContent();
+  if (fila.includes('no sale del depósito'))
+    throw new Error('lo da por suelto aunque sale de sus marcas: ' + fila.slice(0, 160));
+
+  // Y no puede entrar en el cartel que cuenta los sueltos.
+  const t = await barra.textContent('#cartaBar');
+  if (t.includes('no salen del depósito') && t.includes(marcas.data().nombre)) {
+    const cartel = t.slice(0, t.indexOf('no salen del depósito') + 400);
+    if (cartel.includes(marcas.data().nombre))
+      throw new Error('lo lista como suelto arriba de todo');
+  }
+});
+
 await chequear('sin Caja no se muestra ningún saldo de proveedor', async () => {
   // El admin recortado no puede leer los gastos: las reglas se los niegan.
   // Sin los pagos, un saldo diría que se debe plata que ya se pagó. Antes

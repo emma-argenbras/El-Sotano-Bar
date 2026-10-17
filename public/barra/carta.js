@@ -13,7 +13,7 @@ import { app, db } from './conexion.js';
 import { comoSeDice, huerfanosDe, porQueNoSale, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
 import { hora } from './invitados.js';
 import { cajaActual, pintarTablero, quienAtiende } from './pedidos.js';
-import { moverInsumos, opcionesDe } from './stock.js';
+import { moverInsumos, opcionesDe, recetaCompleta, saleDelDeposito } from './stock.js';
 
 // ---------- de qué sale cada producto de la carta ----------
 export let recetaDe = null;
@@ -164,7 +164,7 @@ export function escucharConteo() {
 // botella.
 export function cosasAContar() {
   const sueltos = estado.carta.filter((i) =>
-    i.enCarta !== false && !(i.receta || []).length && typeof i.stock === 'number');
+    i.enCarta !== false && !saleDelDeposito(i) && typeof i.stock === 'number');
   return [
     ...estado.insumos.map((i) => ({
       clave: `ins:${i.id}`, nombre: i.nombre, insumo: i,
@@ -188,8 +188,13 @@ export function consumoDeLaCaja() {
     for (const i of (p.items || [])) {
       const c = estado.carta.find((x) => x.id === i.id);
       const cuantos = Number(i.cantidad || 0);
-      if (c && (c.receta || []).length) {
-        for (const r of c.receta) sumar(`ins:${r.insumoId}`, Number(r.medidas || 0) * cuantos);
+      // Con la marca que se vendió: dos Quilmes salen de la caja de Quilmes,
+      // no de una bolsa común. Sin esto, un producto que sale solo de sus
+      // marcas se contaba como una unidad suelta y el conteo no cerraba
+      // nunca contra el depósito.
+      const receta = c ? recetaCompleta(c, i.opcionId) : [];
+      if (receta.length) {
+        for (const r of receta) sumar(`ins:${r.insumoId}`, Number(r.medidas || 0) * cuantos);
       } else {
         sumar(`item:${i.id}`, cuantos);
       }
@@ -522,13 +527,13 @@ export function pintarCartaBar() {
   // vende sin descontar ninguna botella, y el depósito deja de servir para
   // saber qué hay. Mientras falte alguno, el panel lo dice arriba de todo.
   const sueltos = estado.carta.filter((i) =>
-    i.enCarta !== false && !((i.receta || []).length));
+    i.enCarta !== false && !saleDelDeposito(i));
 
   // Y una receta rota es peor que una que falta: el producto sale agotado en
   // el QR aunque el depósito esté lleno, y el cartel de abajo manda a comprar
   // lo que ya está guardado. Esto va primero porque está costando ventas.
   const rotas = estado.carta.filter((i) =>
-    i.enCarta !== false && (i.receta || []).length && huerfanosDe(i).length);
+    i.enCarta !== false && saleDelDeposito(i) && huerfanosDe(i).length);
 
   cont.innerHTML = `${rotas.length && !estado.esAparato ? `
     <div class="aviso mal" style="margin-bottom:.9rem"><span>⛔</span><div>
@@ -549,7 +554,7 @@ export function pintarCartaBar() {
     const fuera = i.enCarta === false;   // retirado: el cliente no lo ve
     // Con receta, el número no se toca a mano: lo pone el depósito. Mostrar
     // los − + ahí sería mentir, porque la próxima venta lo vuelve a calcular.
-    const delDeposito = (i.receta || []).length > 0;
+    const delDeposito = saleDelDeposito(i);
     const rinde = delDeposito ? rindeDeposito(i) : null;
     // Un cero por receta rota no se arregla comprando: hay que tocar la
     // receta. Decir "sin material" manda a buscar lo que ya está guardado.
@@ -591,7 +596,7 @@ export function pintarCartaBar() {
       </button>
       <button class="btn solo-gerente-inline" data-receta-de="${i.id}"
               style="padding:.4rem .7rem;font-size:.82rem"
-              title="De qué insumo sale">${(i.receta || []).length ? '🧾' : '🧾+'}</button>
+              title="De qué insumo sale">${saleDelDeposito(i) ? '🧾' : '🧾+'}</button>
       <button class="btn solo-gerente-inline" data-carta="${i.id}" style="padding:.4rem .7rem;font-size:.82rem">
         ${fuera ? 'Poner en carta' : 'Sacar'}
       </button>
@@ -612,7 +617,7 @@ export function pintarCartaBar() {
   // mira y no toca hasta que alguien la saque.
   cont.querySelectorAll('[data-toggle]').forEach((b) => b.onclick = async () => {
     const i = estado.carta.find((x) => x.id === b.dataset.toggle);
-    const sale = (i.receta || []).length > 0;
+    const sale = saleDelDeposito(i);
     const datos = sale
       ? (i.apagadoAMano
         ? { apagadoAMano: false, disponible: rindeDeposito(i) > 0 }
