@@ -19,9 +19,14 @@ const paginas = [];
 // Un <dialog> modal deja TODO lo de atrás sin poder tocarse: un caso que
 // falla con uno abierto se lleva puestos a los que siguen, y el segundo
 // fallo es un timeout pelado que no tiene nada que ver con lo que probaba.
-// Ya paso tres veces en este archivo. En vez de arreglarlo click por click,
-// cada caso arranca con la mesa limpia — y se avisa, porque dejar uno
-// abierto sigue siendo un defecto del caso anterior, no algo para esconder.
+// Ya paso tres veces en este archivo y las tres lo arregle click por click.
+//
+// Se limpia DESPUÉS DE UN CASO QUE FALLÓ, no antes de cada uno. La
+// diferencia importa: varios casos dejan el diálogo abierto a propósito
+// porque el que sigue continúa el mismo flujo —contar el cajón, elegir la
+// marca—, y cerrarlo siempre rompe justo lo que esos casos prueban. Abierto
+// después de un caso verde es parte del recorrido; abierto después de uno
+// rojo es el destrozo que hay que barrer.
 let ultimoCaso = '(el arranque)';
 async function limpiarDialogos() {
   for (const p of paginas) {
@@ -40,9 +45,11 @@ async function limpiarDialogos() {
 }
 
 async function chequear(m, fn) {
-  await limpiarDialogos();
   ultimoCaso = m;
-  try { await fn(); ok(m); } catch (e) { mal(m, e.message.split('\n')[0]); }
+  try { await fn(); ok(m); } catch (e) {
+    mal(m, e.message.split('\n')[0]);
+    await limpiarDialogos();
+  }
 }
 
 // ---------- preparar datos en el emulador ----------
