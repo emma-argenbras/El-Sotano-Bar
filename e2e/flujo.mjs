@@ -1414,7 +1414,18 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
       const f = [...document.querySelectorAll('#cartaBar .item')]
         .find((x) => x.textContent.includes('Fernet con coca'));
       return f && !f.className.includes('agotado');
-    }, null, { timeout: 10000 });
+    }, null, { timeout: 10000 }).catch(async () => {
+      // Sin esto el fallo es un timeout pelado y hay que adivinar cuál de las
+      // cuatro cosas que marcan "agotado" quedó puesta.
+      const diag = await barra.evaluate(() => {
+        const f = [...document.querySelectorAll('#cartaBar .item')]
+          .find((x) => x.textContent.includes('Fernet con coca'));
+        return { clase: f?.className || '(no está la fila)',
+                 dice: (f?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
+                 boton: f?.querySelector('[data-toggle]')?.textContent.trim() };
+      });
+      throw new Error('reactivar no le sacó el agotado. ' + JSON.stringify(diag));
+    });
   }
 
   // Y al venderlo, baja UNA MEDIDA, no una botella.
