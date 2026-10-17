@@ -52,6 +52,12 @@ export function genteDelClub() {
 
 export function bloqueClub() {
   const todos = genteDelClub();
+  // Cuántos invitados tiene cargados el panel AHORA. Va en pantalla siempre
+  // que el Club salga vacío: tres veces arregle esto a ciegas porque el
+  // cartel decia "no hay nadie" sin decir cuantos habia visto, y la misma
+  // pantalla mostraba la lista llena dos toques mas alla. Un cartel que no
+  // dice su evidencia no se puede discutir.
+  const cargados = (estado.invitadosTodos || []).length;
   if (!todos.length) {
     // "No se anotó nadie" con la lista llena es mentira, y manda a buscar un
     // problema que no existe. El Club junta por teléfono —es el único dato
@@ -72,8 +78,9 @@ export function bloqueClub() {
           El número de cada noche es un contador aparte; los nombres viven en
           otro lado y acá no llegó ninguno. Si esto sigue así, <b>la puerta no
           tiene lista contra qué chequear</b>.
-          <br><small>Mirá la pestaña Puerta: si tampoco muestra nombres, es
-          eso. Si los muestra, lo que falla es este bloque.</small></div></div>`;
+          <br><small>El panel tiene ${cargados} invitados cargados.
+          Mirá la pestaña Puerta: si tampoco muestra nombres, es eso. Si los
+          muestra, lo que falla es este bloque.</small></div></div>`;
     }
 
     return `<div class="grupo-personal">Sótano Club</div>
@@ -82,9 +89,9 @@ export function bloqueClub() {
         ${sinTel === 1 ? 'no dejó' : 'ninguno dejó'} teléfono. El Club junta por
         teléfono, que es el único dato que no se repite: el que se anota por el
         QR siempre lo deja, y el que cargás a mano desde el panel, solo si se lo
-        ponés.`
+        ponés. <small>(${cargados} cargados, ${sinTel} sin teléfono.)</small>`
       : `Todavía no se anotó nadie. Cada persona que se anota a una noche entra
-        acá sola.`}</p>`;
+        acá sola. <small>(el panel tiene ${cargados} invitados cargados.)</small>`}</p>`;
   }
   const q = estado.buscaClub.trim().toLowerCase();
   const qTel = digitosTel(estado.buscaClub);

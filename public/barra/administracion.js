@@ -22,6 +22,8 @@ import { noches } from './eventos.js';
 import { cajaActual } from './pedidos.js';
 import { CORTE, alCambiarElCorte, arranqueDeHoy, corteValido, horaCorte } from './jornada.js';
 import { pintarCierre } from './cierre.js';
+import { preciosDe } from './cartas.js';
+import { fechaDeHoy } from './jornada.js';
 
 // ---------- la caja de Sótano ----------
 //
@@ -580,7 +582,13 @@ export function pintarAdminCostos() {
     .map((i) => {
       const costo = costoDeReceta(i);
       const precio = Number(i.precio || 0);
-      return { id: i.id, nombre: i.nombre || i.id, precio, costo,
+      // Un precio vacío acá puede ser dos cosas: que el producto no tenga
+      // precio en la carta de siempre, o que lo tenga solo en la carta de una
+      // fecha. Desde que la carta puede ser distinta cada noche, el precio
+      // vive en dos lugares y esta pantalla solo editaba uno; un casillero en
+      // blanco al lado de un costo cargado no dice cuál de las dos es.
+      const deHoy = Number((preciosDe(fechaDeHoy()) || {})[i.id] || 0);
+      return { id: i.id, nombre: i.nombre || i.id, precio, costo, deHoy,
                deja: costo === null ? null : precio - costo };
     });
   const conCuenta = filas.filter((f) => f.deja !== null);
@@ -600,7 +608,9 @@ export function pintarAdminCostos() {
           <td class="n" style="width:6.5rem">
             <input data-precio="${esc(f.id)}" type="number" min="0" inputmode="numeric"
                    value="${f.precio || ''}" aria-label="Precio de ${esc(f.nombre)}"
-                   style="width:100%;text-align:right"></td>
+                   style="width:100%;text-align:right">${f.precio ? '' : `
+            <small style="color:var(--${f.deHoy ? 'naranja' : 'suave'});font-size:.7rem">${
+              f.deHoy ? `solo en la carta de hoy: ${plata(f.deHoy)}` : 'sin precio'}</small>`}</td>
           <td class="n">${f.deja === null ? '—'
             : `<b style="color:var(--${f.deja > 0 ? 'verde' : 'rojo'})">${plata(f.deja)}</b>
                <br><small style="color:var(--suave)">${f.precio
