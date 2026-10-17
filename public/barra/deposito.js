@@ -12,7 +12,7 @@ import { $, esc, estado, plata } from './base.js';
 import { pintarConteo } from './carta.js';
 import { db, fallo } from './conexion.js';
 import { quienAtiende } from './pedidos.js';
-import { insumosHuerfanos, opcionesDe, rindeCon, rindeOpcion } from './stock.js';
+import { insumosHuerfanos, opcionesDe, rindeCon, rindeOpcion, trabasDe } from './stock.js';
 
 // ---------- el depósito ----------
 //
@@ -51,6 +51,14 @@ export function rindeDeposito(item) {
 // y si no el identificador: algo que buscar es mejor que nada.
 export function huerfanosDe(item) {
   return insumosHuerfanos(item, loQueHay());
+}
+
+// Por qué este producto no sale, con nombres y números en vez de una frase.
+export function porQueNoSale(item) {
+  const nombres = new Map(estado.insumos.map((i) => [i.id, i.nombre || i.id]));
+  return trabasDe(item, loQueHay()).map((t) => t.falta
+    ? `«${t.insumoId}» no está en el depósito`
+    : `${nombres.get(t.insumoId)}: hay ${t.hay}, lleva ${t.lleva}`);
 }
 
 // El cliente no puede leer el depósito —ni debe: ahí están los costos y lo que
@@ -120,12 +128,34 @@ export function pintarDeposito() {
   const bajos = estado.insumos.filter((i) =>
     Number(i.minimo || 0) > 0 && unidadesDe(i) < Number(i.minimo));
 
+  // Dos insumos con el mismo nombre es la trampa más cara del depósito: la
+  // receta apunta a uno, la mercadería entra en el otro, y el producto sale
+  // agotado con el depósito lleno. A ojo no se distinguen —se llaman igual—,
+  // así que lo tiene que decir la pantalla.
+  const porNombre = new Map();
+  for (const i of estado.insumos) {
+    const clave = String(i.nombre || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!clave) continue;
+    porNombre.set(clave, [...(porNombre.get(clave) || []), i]);
+  }
+  const repetidos = [...porNombre.values()].filter((g) => g.length > 1);
+
   // El celular de la barra mira y nada más: no da de alta mercadería y no
   // ve la plata. Mostrarle esos botones sería ofrecerle algo que las reglas
   // le van a negar.
   const soloMira = estado.esAparato;
 
   cont.innerHTML = `
+    ${repetidos.length ? `
+    <div class="aviso mal" style="margin-bottom:.9rem"><span>⛔</span><div>
+      <b>Hay nombres repetidos en el depósito.</b> La receta apunta a uno solo,
+      así que la mercadería que entra en el otro no la ve nadie y el producto
+      sale agotado con el depósito lleno.
+      ${repetidos.map((g) => `<br>• <b>${esc(g[0].nombre)}</b> está ${g.length} veces:
+        ${g.map((i) => comoSeDice(i)).join(' / ')}`).join('')}
+      <br><small>Dejá uno solo: pasale el stock al que usa la receta y dale de
+      baja al otro.</small></div></div>` : ''}
+
     ${soloMira ? '' : `
     <button class="btn primario ancho-full" id="btnNuevoInsumo"
             style="margin-bottom:.9rem">+ Insumo</button>`}

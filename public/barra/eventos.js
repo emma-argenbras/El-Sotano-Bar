@@ -182,6 +182,19 @@ export async function apuntarLinkViejo() {
 
 // Arrancar la noche: recién acá entran pedidos.
 export async function empezarNoche(ev) {
+  // Dos noches abiertas a la vez no es un desorden visual: la caja de cada
+  // venta se sella con el id de la noche en curso, y con dos abiertas lo que
+  // se vende hoy puede entrar en la caja de anteayer. La asistencia sale del
+  // mismo lado y muestra la de la otra. Eso no se avisa, se frena.
+  const abierta = (estado.eventos || []).find((e) =>
+    e.estado === 'abierto' && e.id !== ev.id);
+  if (abierta) {
+    alert(`No se puede arrancar "${ev.nombre}": "${abierta.nombre}" sigue abierta.\n\n`
+      + 'Con dos noches abiertas, lo que se venda hoy puede entrar en la caja de '
+      + 'la otra, y la asistencia que se muestra es la de ella.\n\n'
+      + `Cerrala primero: Noche → Cerrar evento y hacer la caja.`);
+    return;
+  }
   if (!confirm(`¿Arrancar "${ev.nombre}"?\n\nDesde ahora entran pedidos y la caja cuenta.`)) return;
   try {
     await updateDoc(doc(db, 'barra', 'eventos', 'items', ev.id),

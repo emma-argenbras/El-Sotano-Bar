@@ -10,7 +10,7 @@ import {
 import { pintarAdminCostos } from './administracion.js';
 import { $, esc, estado, plata } from './base.js';
 import { app, db } from './conexion.js';
-import { comoSeDice, huerfanosDe, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
+import { comoSeDice, huerfanosDe, porQueNoSale, rindeDeposito, sincronizarCartaConDeposito } from './deposito.js';
 import { hora } from './invitados.js';
 import { cajaActual, pintarTablero, quienAtiende } from './pedidos.js';
 import { moverInsumos, opcionesDe } from './stock.js';
@@ -535,6 +535,9 @@ export function pintarCartaBar() {
     // Un cero por receta rota no se arregla comprando: hay que tocar la
     // receta. Decir "sin material" manda a buscar lo que ya está guardado.
     const rota = rinde === 0 ? huerfanosDe(i) : [];
+    // Con los números a la vista no hay nada que adivinar: o falta mercadería
+    // de verdad, o el que tiene stock es otro insumo con el mismo nombre.
+    const trabas = rinde === 0 ? porQueNoSale(i) : [];
     return `
     <div class="item ${fuera || i.disponible === false || i.apagadoAMano || rinde === 0 ? 'agotado' : ''}">
       <div class="cuerpo">
@@ -543,7 +546,9 @@ export function pintarCartaBar() {
           delDeposito
             ? (rota.length
                 ? '<b style="color:var(--rojo)">la receta apunta a un insumo que no está</b>'
-                : rinde === 0 ? 'sin material en el depósito' : 'sale del depósito')
+                : rinde === 0
+                  ? `<b style="color:var(--rojo)">no sale</b> — ${esc(trabas.join(' · '))}`
+                  : 'sale del depósito')
             : '<b style="color:var(--naranja)">no sale del depósito</b>'}${
           i.apagadoAMano ? ' · <b style="color:var(--rojo)">agotado a mano</b>' : ''}</div>
       </div>

@@ -1178,6 +1178,38 @@ await chequear('abre un evento y la caja pasa a contar desde ahí', async () => 
     document.querySelector('#evento .caja-evento .plata b')?.textContent.replace(/\D/g, '') === '0',
     null, { timeout: 10000 });
 });
+// Dos noches abiertas a la vez mandan la venta de hoy a la caja de la otra,
+// y muestran su asistencia. Con 50 personas en la puerta eso no se descubre
+// hasta el cierre, cuando ya no se puede arreglar.
+await chequear('con una noche abierta no se puede arrancar otra', async () => {
+  await barra.click('#tabCalendario');
+  await barra.waitForSelector('#btnAgendar', { timeout: 10000 });
+  await barra.click('#btnAgendar');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  await barra.fill('#inpEvento', 'La segunda noche');
+  await barra.click('#btnConfirmarEvento');
+  await barra.waitForFunction(() =>
+    document.body.textContent.includes('La segunda noche'), null, { timeout: 10000 });
+
+  let aviso = '';
+  const oir = async (d) => { aviso = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    const fila = barra.locator('.item', { hasText: 'La segunda noche' }).first();
+    await fila.locator('[data-empezar]').first().click();
+    await barra.waitForTimeout(1500);
+    if (!/sigue abierta/i.test(aviso))
+      throw new Error('la dejó arrancar con otra abierta, o no explicó: ' + aviso);
+
+    const abiertas = (await db.collection('barra').doc('eventos')
+      .collection('items').where('estado', '==', 'abierto').get()).size;
+    if (abiertas !== 1) throw new Error('quedaron ' + abiertas + ' noches abiertas');
+  } finally {
+    barra.off('dialog', oir);
+  }
+  await barra.click('#tabEvento');
+});
+
 await chequear('un pedido nuevo entra al evento y suma a la caja al entregarlo', async () => {
   await db.collection('pedidos').add({
     clienteId: 'cliente-evento', estado: 'entregado',

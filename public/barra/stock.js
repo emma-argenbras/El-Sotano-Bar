@@ -88,6 +88,30 @@ export function insumosHuerfanos(item, stockPorInsumo) {
   return [...sueltos];
 }
 
+// Qué está trabando: la línea de receta que no alcanza, con los dos números.
+//
+// "Sin material" no se puede discutir. "Vino Trumpeter: hay 0, lleva 1" sí:
+// se mira el depósito y se ve de una si el que falta es ese o es otro con el
+// mismo nombre. Un cartel que no se puede verificar obliga a adivinar, y
+// adivinar con el bar abierto sale caro.
+export function trabasDe(item, stockPorInsumo) {
+  const marcas = opcionesDe(item);
+  const recetas = marcas.length
+    ? marcas.map((o) => recetaCompleta(item, o.id))
+    : [recetaCompleta(item)];
+  const trabas = new Map();
+  for (const receta of recetas) {
+    for (const r of receta) {
+      if (trabas.has(r.insumoId)) continue;
+      const hay = stockPorInsumo.get(r.insumoId);
+      const lleva = Number(r.medidas);
+      if (hay === undefined) { trabas.set(r.insumoId, { insumoId: r.insumoId, falta: true }); continue; }
+      if (Math.floor(hay / lleva) === 0) trabas.set(r.insumoId, { insumoId: r.insumoId, hay, lleva });
+    }
+  }
+  return [...trabas.values()];
+}
+
 // El stock que va a quedar después del movimiento, según lo que el panel tiene
 // en memoria. Es una estimación: la resta de verdad la hace el servidor con
 // increment, así que si otro celular vendió en el mismo segundo este número
