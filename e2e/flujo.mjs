@@ -1780,6 +1780,27 @@ await chequear('un insumo que ningún producto usa se marca "no sale en la carta
   }
 });
 
+// La regresion del 17: con el deposito todavia en camino, el mapa de stock
+// esta vacio y NINGUNA receta encuentra su insumo, asi que la carta marcaba
+// siete productos como rotos y agotados. Acusar sin haber mirado.
+await chequear('sin depósito cargado no acusa a ninguna receta de rota', async () => {
+  const roto = await barra.evaluate(async () => {
+    const m = await import('/barra/deposito.js');
+    const base = await import('/barra/base.js');
+    const antes = base.estado.insumos;
+    base.estado.insumos = [];
+    try {
+      const conReceta = base.estado.carta.find((c) => (c.receta || []).length);
+      return {
+        huerfanos: m.huerfanosDe(conReceta || {}).length,
+        trabas: m.porQueNoSale(conReceta || {}).length,
+      };
+    } finally { base.estado.insumos = antes; }
+  });
+  if (roto.huerfanos || roto.trabas)
+    throw new Error('acusa con el depósito vacío: ' + JSON.stringify(roto));
+});
+
 await chequear('sin Caja no se muestra ningún saldo de proveedor', async () => {
   // El admin recortado no puede leer los gastos: las reglas se los niegan.
   // Sin los pagos, un saldo diría que se debe plata que ya se pagó. Antes

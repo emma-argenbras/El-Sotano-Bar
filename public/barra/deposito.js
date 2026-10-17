@@ -9,7 +9,7 @@ import {
 } from '/vendor/firebase.js';
 import { pintarAdmin } from './administracion.js';
 import { $, esc, estado, plata } from './base.js';
-import { pintarConteo } from './carta.js';
+import { pintarCartaBar, pintarConteo } from './carta.js';
 import { db, fallo } from './conexion.js';
 import { quienAtiende } from './pedidos.js';
 import { insumosHuerfanos, opcionesDe, productosQueUsan, rindeCon, rindeOpcion, trabasDe } from './stock.js';
@@ -50,11 +50,17 @@ export function rindeDeposito(item) {
 // mercadería. Se devuelve el nombre del insumo cuando se lo puede recuperar,
 // y si no el identificador: algo que buscar es mejor que nada.
 export function huerfanosDe(item) {
+  // Sin depósito cargado, TODO parece huérfano: el mapa está vacío y ninguna
+  // receta encuentra su insumo. Acusar ahí es acusar sin haber mirado, y la
+  // carta marcaba siete productos como rotos y agotados mientras el depósito
+  // todavía venía en camino. Es la tercera vez que cometo este error hoy.
+  if (!estado.insumos.length) return [];
   return insumosHuerfanos(item, loQueHay());
 }
 
 // Por qué este producto no sale, con nombres y números en vez de una frase.
 export function porQueNoSale(item) {
+  if (!estado.insumos.length) return [];
   const nombres = new Map(estado.insumos.map((i) => [i.id, i.nombre || i.id]));
   return trabasDe(item, loQueHay()).map((t) => t.falta
     ? `«${t.insumoId}» no está en el depósito`
@@ -110,7 +116,11 @@ export function escucharDeposito() {
   onSnapshot(collection(db, 'insumos'), (snap) => {
     estado.insumos = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
-    pintarDeposito(); pintarAdmin(); pintarConteo(); sincronizarCartaConDeposito();
+    // La carta también: su renglón dice si el producto sale del depósito y
+    // cuántas quedan, así que pintada antes de que llegue esto se queda con
+    // una foto en la que no hay nada y nadie la vuelve a dibujar.
+    pintarDeposito(); pintarAdmin(); pintarConteo(); pintarCartaBar();
+    sincronizarCartaConDeposito();
   }, fallo('#deposito'));
 
 }
