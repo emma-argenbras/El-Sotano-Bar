@@ -65,7 +65,7 @@ export function bloqueClub() {
     // qué chequear a nadie, y eso no se puede descubrir con la cola afuera.
     const contados = Object.values(estado.registros || {})
       .reduce((a, r) => a + Number(r?.registrados || 0), 0);
-    if (!(estado.invitadosTodos || []).length && contados > 0) {
+    if (estado.invitadosListos && !(estado.invitadosTodos || []).length && contados > 0) {
       return `<div class="grupo-personal">Sótano Club</div>
         <div class="aviso mal" style="margin:0"><span>⛔</span><div>
           <b>Los contadores dicen ${contados} anotados y no hay ninguno guardado.</b>
@@ -189,11 +189,18 @@ export function eventoDePuerta() {
 export function escucharInvitados() {
   onSnapshot(collection(db, 'invitados'), (snap) => {
     estado.invitadosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    estado.invitadosListos = true;
     estado.invitados = estado.invitadosTodos
       .filter((i) => !eventoDePuerta() || i.eventoId === eventoDePuerta())
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
     pintarPuerta();
     pintarInvitar();   // si está abierto el diálogo de una noche, su lista también
+    // Y el calendario, que es donde vive el bloque del Club. Faltaba: el
+    // calendario lo pintan los listeners de noches y registros, que llegan
+    // antes, asi que el Club se dibujaba con la lista todavia vacia y se
+    // quedaba con esa foto para siempre. Invitaciones, que si se repinta,
+    // mostraba los 18 al lado de un Club que decia que no habia nadie.
+    pintarCalendario();
   }, (e) => {
     if (e.code === 'permission-denied') { estado.invitados = []; pintarPuerta(); return; }
     fallo('#puerta')(e);

@@ -29,12 +29,20 @@
   }
 
   // ¿Lo que corre quedó viejo? Se pregunta al servidor, no al cache.
+  //
+  // Y se guarda QUÉ dijo cada lado. Un cartel que insiste después de
+  // actualizar puede ser el cache sirviendo lo viejo o dos archivos que no
+  // coinciden entre si, y son arreglos distintos: sin los dos numeros a la
+  // vista hay que adivinar cual de los dos es.
+  let DEL_SERVIDOR = '';
+
   async function hayNueva() {
     if (!CORRIENDO) return false;
     try {
       const r = await fetch('/version.json', { cache: 'no-store' });
       if (!r.ok) return false;
-      return (await r.json()).version !== CORRIENDO;
+      DEL_SERVIDOR = (await r.json()).version || '';
+      return DEL_SERVIDOR !== CORRIENDO;
     } catch { return false; }
   }
 
@@ -62,7 +70,10 @@
       actualizar(null);
       return;
     }
-    if (aviso) aviso.classList.remove('oculto');
+    if (!aviso) return;
+    const detalle = aviso.querySelector('[data-versiones]');
+    if (detalle) detalle.textContent = `Tenés ${CORRIENDO} · hay ${DEL_SERVIDOR}`;
+    aviso.classList.remove('oculto');
   }
 
   document.querySelectorAll('[data-actualizar]').forEach((b) => {
