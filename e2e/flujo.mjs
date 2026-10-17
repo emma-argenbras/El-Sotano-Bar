@@ -12,7 +12,36 @@ const PASS_PRUEBA = 'prueba-solo-emulador-' + Date.now();
 let fallos = 0;
 const ok  = (m) => console.log(`  ✓ ${m}`);
 const mal = (m, e) => { fallos++; console.log(`  ✗ ${m}${e ? ' — ' + e : ''}`); };
+// Las páginas que hay que dejar limpias entre casos. Se llenan más abajo, a
+// medida que se abren: chequear() corre antes de que existan.
+const paginas = [];
+
+// Un <dialog> modal deja TODO lo de atrás sin poder tocarse: un caso que
+// falla con uno abierto se lleva puestos a los que siguen, y el segundo
+// fallo es un timeout pelado que no tiene nada que ver con lo que probaba.
+// Ya paso tres veces en este archivo. En vez de arreglarlo click por click,
+// cada caso arranca con la mesa limpia — y se avisa, porque dejar uno
+// abierto sigue siendo un defecto del caso anterior, no algo para esconder.
+let ultimoCaso = '(el arranque)';
+async function limpiarDialogos() {
+  for (const p of paginas) {
+    try {
+      const abiertos = await p.evaluate(() => {
+        const ds = [...document.querySelectorAll('dialog[open]')];
+        const ids = ds.map((d) => d.id || '(sin id)');
+        ds.forEach((d) => d.close());
+        return ids;
+      });
+      if (abiertos.length) {
+        console.log(`  ⚠ quedó abierto ${abiertos.join(', ')} después de "${ultimoCaso}" — lo cierro`);
+      }
+    } catch { /* la página puede estar cerrada: no es asunto de este guardia */ }
+  }
+}
+
 async function chequear(m, fn) {
+  await limpiarDialogos();
+  ultimoCaso = m;
   try { await fn(); ok(m); } catch (e) { mal(m, e.message.split('\n')[0]); }
 }
 
@@ -51,6 +80,7 @@ const errores = [];
 console.log('CLIENTE (mesa 7, anónimo)');
 const ctxCliente = await navegador.newContext({ viewport: { width: 390, height: 844 } });
 const cliente = await ctxCliente.newPage();
+paginas.push(cliente);
 cliente.on('pageerror', (e) => errores.push('cliente: ' + e.message));
 cliente.on('console', (m) => { if (m.type() === 'error') errores.push('cliente/console: ' + m.text()); });
 
@@ -129,6 +159,7 @@ await chequear('NO ve el pedido del primer cliente', async () => {
 console.log('\nBARRA');
 const ctxBarra = await navegador.newContext({ viewport: { width: 1400, height: 900 } });
 const barra = await ctxBarra.newPage();
+paginas.push(barra);
 barra.on('pageerror', (e) => errores.push('barra: ' + e.message));
 await barra.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
 
