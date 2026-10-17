@@ -140,6 +140,12 @@ export function pintarDeposito() {
   }
   const repetidos = [...porNombre.values()].filter((g) => g.length > 1);
 
+  // Cargar mercadería en el depósito NO la pone en la carta: hace falta que
+  // algún producto diga que sale de ahí. Nadie avisaba eso, y se cargaban
+  // cajones enteros esperando verlos aparecer del otro lado.
+  const huerfano = (i) => !productosQueUsan([i.id]).length;
+  const sueltos = estado.insumos.filter(huerfano);
+
   // El celular de la barra mira y nada más: no da de alta mercadería y no
   // ve la plata. Mostrarle esos botones sería ofrecerle algo que las reglas
   // le van a negar.
@@ -155,6 +161,15 @@ export function pintarDeposito() {
         ${g.map((i) => comoSeDice(i)).join(' / ')}`).join('')}
       <br><small>Dejá uno solo: pasale el stock al que usa la receta y dale de
       baja al otro.</small></div></div>` : ''}
+
+    ${sueltos.length && !soloMira ? `
+    <div class="aviso" style="margin-bottom:.9rem"><span>📋</span><div>
+      <b>${sueltos.length} ${sueltos.length === 1 ? 'insumo no sale' : 'insumos no salen'}
+      en la carta.</b> Cargar algo acá no lo pone a la venta: hace falta que un
+      producto diga que sale de ahí. Andá a <b>Carta</b> y tocale el 🧾 al
+      producto que corresponda.
+      <br><small>${esc(sueltos.map((i) => i.nombre || i.id).join(', '))}</small>
+    </div></div>` : ''}
 
     ${soloMira ? '' : `
     <button class="btn primario ancho-full" id="btnNuevoInsumo"
@@ -173,7 +188,8 @@ export function pintarDeposito() {
         <div class="cuerpo">
           <div class="nombre">${esc(i.nombre)}</div>
           <div class="desc">${comoSeDice(i)}${
-            Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}</div>
+            Number(i.medidas || 1) > 1 ? ` · ${i.medidas} medidas por ${esc(i.unidad || 'unidad')}` : ''}${
+            huerfano(i) ? ' · <b style="color:var(--naranja)">no sale en la carta</b>' : ''}</div>
         </div>
         ${soloMira ? '' : `
         <button class="btn" data-editar-insumo="${esc(i.id)}"

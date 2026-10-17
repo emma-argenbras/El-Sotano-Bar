@@ -1751,6 +1751,32 @@ await chequear('un producto que sale solo de sus marcas SÍ sale del depósito',
   }
 });
 
+// Burgos y Guille cargaban insumos creyendo que asi aparecian en la carta
+// del cliente, y nada se los avisaba. Un deposito lleno con la carta vacia
+// es trabajo tirado que no se descubre hasta la noche.
+await chequear('un insumo que ningún producto usa se marca "no sale en la carta"', async () => {
+  const solo = db.collection('insumos').doc('insumo-sin-producto');
+  await solo.set({ nombre: 'Cajón huérfano', unidad: 'cajón', medidas: 1, stock: 4 });
+  try {
+    await barra.click('#tabDeposito');
+    await barra.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('Cajón huérfano'),
+      null, { timeout: 20000 });
+    const t = await barra.textContent('#deposito');
+    if (!t.includes('no sale en la carta'))
+      throw new Error('no lo marca: ' + t.slice(0, 200));
+    if (!t.includes('no salen en la carta') && !t.includes('no sale en la carta'))
+      throw new Error('tampoco lo avisa arriba');
+    // Y el que SI usa un producto no puede quedar marcado.
+    const fila = await barra.locator('#deposito .item', { hasText: 'Fernet 750' })
+      .first().textContent().catch(() => '');
+    if (fila && fila.includes('no sale en la carta'))
+      throw new Error('marca como huérfano a uno que sí se usa');
+  } finally {
+    await solo.delete();
+  }
+});
+
 await chequear('sin Caja no se muestra ningún saldo de proveedor', async () => {
   // El admin recortado no puede leer los gastos: las reglas se los niegan.
   // Sin los pagos, un saldo diría que se debe plata que ya se pagó. Antes

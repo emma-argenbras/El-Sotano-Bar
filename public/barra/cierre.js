@@ -427,7 +427,7 @@ export function pintarCierre() {
 
       ${esHoy && !guardada?.cierre ? `
         <button class="btn primario ancho-full solo-gerente-inline" id="btnCerrarJornada">
-          Cerrar la jornada</button>
+          Cerrar los números</button>
         <p class="pie-chico">Primero vas a contar el cajón. Después se congela.</p>` : ''}
       ${guardada?.cierre && estado.dueno ? `
         <button class="btn ancho-full" id="btnReabrirJornada" style="margin-top:.6rem">
@@ -494,7 +494,7 @@ export function revisarCierre() {
     <div style="display:flex;gap:.6rem;margin-top:.9rem">
       <button class="btn" id="btnVolverCierre" style="flex:1">Volver</button>
       <button class="btn primario" id="btnConfirmarCierre" style="flex:1.4">
-        Cerrar la jornada</button>
+        Cerrar los números</button>
     </div>`;
   $('#btnVolverCierre').onclick = abrirCierre;
   $('#btnConfirmarCierre').onclick = () => cerrarJornada(Math.round(Number(contado)));
@@ -528,7 +528,7 @@ export async function cerrarJornada(contado) {
     verJornada = fecha;
     pintarCierre();
   } catch (e) {
-    btn.disabled = false; btn.textContent = 'Cerrar la jornada';
+    btn.disabled = false; btn.textContent = 'Cerrar los números';
     alert('No se pudo cerrar: ' + (e.code || e.message));
   }
 }
@@ -624,7 +624,7 @@ export function pintarCierreBarra() {
   }
 
   cont.innerHTML = `
-    <button class="btn ancho-full" id="btnCerrarBarra">💵 Cerrar la barra</button>
+    <button class="btn ancho-full" id="btnCerrarBarra">💵 Contar el cajón</button>
     <p class="pie-chico">Contás el cajón al final de la noche. Primero el
       número, después lo que la app esperaba.</p>`;
   $('#btnCerrarBarra').onclick = abrirCierreBarra;
@@ -643,7 +643,7 @@ export function abrirCierreBarra() {
     </label>
     <div id="errorBarra" class="aviso mal oculto"><span>⚠</span><div id="errorBarraTexto"></div></div>
     <button class="btn primario ancho-full" id="btnVerCierreBarra" style="margin-top:.6rem">
-      Ver el cierre de la barra</button>`;
+      Ver lo que esperaba la app</button>`;
   $('#btnVerCierreBarra').onclick = revisarCierreBarra;
   $('#dlgCerrarBarra').showModal();
   $('#inpContadoBarra').focus();
@@ -665,7 +665,7 @@ export async function revisarCierreBarra() {
   try {
     ventas = await ventasDeLaBarra(arranqueDeHoy());
   } catch (e) {
-    btn.disabled = false; btn.textContent = 'Ver el cierre de la barra';
+    btn.disabled = false; btn.textContent = 'Ver lo que esperaba la app';
     $('#errorBarraTexto').textContent = 'No pude traer las ventas: ' + (e.code || e.message);
     $('#errorBarra').classList.remove('oculto');
     return;
@@ -700,7 +700,7 @@ export async function revisarCierreBarra() {
     <div style="display:flex;gap:.6rem;margin-top:.9rem">
       <button class="btn" id="btnVolverBarra" style="flex:1">Volver</button>
       <button class="btn primario" id="btnConfirmarBarra" style="flex:1.4">
-        Cerrar la barra</button>
+        Contar el cajón</button>
     </div>`;
   $('#btnVolverBarra').onclick = abrirCierreBarra;
   $('#btnConfirmarBarra').onclick = () => cerrarBarra(contado, n);
@@ -723,7 +723,7 @@ export async function cerrarBarra(contado, n) {
     $('#dlgCerrarBarra').close();
     pintarCierreBarra();
   } catch (e) {
-    btn.disabled = false; btn.textContent = 'Cerrar la barra';
+    btn.disabled = false; btn.textContent = 'Contar el cajón';
     const texto = e.code === 'permission-denied'
       ? 'La barra de hoy ya está cerrada. Si el número quedó mal, lo corrige el gerente.'
       : 'No se pudo cerrar: ' + (e.code || e.message);

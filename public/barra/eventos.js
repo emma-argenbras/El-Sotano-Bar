@@ -194,7 +194,7 @@ export async function empezarNoche(ev) {
     alert(`No se puede arrancar "${ev.nombre}": "${abierta.nombre}" sigue abierta.\n\n`
       + 'Con dos noches abiertas, lo que se venda hoy puede entrar en la caja de '
       + 'la otra, y la asistencia que se muestra es la de ella.\n\n'
-      + `Cerrala primero: Noche → Cerrar evento y hacer la caja.`);
+      + `Cerrala primero: Noche → Terminar la noche.`);
     return;
   }
   if (!confirm(`¿Arrancar "${ev.nombre}"?\n\nDesde ahora entran pedidos y la caja cuenta.`)) return;
@@ -561,7 +561,7 @@ export function pintarEvento() {
         <tr><td>${esc(i.nombre)}</td><td class="n">${i.cantidad}</td><td class="n">${plata(i.importe)}</td></tr>`).join('')}
         </tbody></table>` : '<p style="color:var(--suave);font-size:.9rem">Todavía no se entregó nada.</p>'}
       <button class="btn peligro ancho-full solo-gerente-inline" id="btnCerrarEvento"
-              style="margin-top:1rem">Cerrar evento y hacer la caja</button>
+              style="margin-top:1rem">Terminar la noche</button>
     </div>`;
   if ($('#btnCerrarEvento')) $('#btnCerrarEvento').onclick = cerrarEvento;
   if ($('#btnTurno')) $('#btnTurno').onclick = editarTurno;

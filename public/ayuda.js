@@ -61,7 +61,7 @@
         <p><b>Arrancar</b> abre la noche: desde ese momento entran pedidos y la
         caja cuenta. El tablero mira desde ahí, no desde las 00:00 — una noche de
         bar no termina a medianoche.</p>
-        <p><b>Cerrar evento y hacer la caja</b> congela los números y la manda al
+        <p><b>Terminar la noche</b> congela los números y la manda al
         histórico. <b>No se puede reabrir.</b></p>
         <p>Antes de cerrar, fijate que no queden pedidos sin entregar: <b>no suman
         a la caja</b>. El cartel te avisa cuántos quedaron.</p>
