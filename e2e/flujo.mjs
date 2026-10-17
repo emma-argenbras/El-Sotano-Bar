@@ -1477,30 +1477,45 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
         + (await barra.textContent('#cartaBar')).slice(0, 200));
     });
 
-  // Un caso anterior lo dejó agotado: se reactiva para poder venderlo.
-  const fila = barra.locator('.item', { hasText: 'Fernet con coca' });
-  if ((await fila.locator('[data-toggle]').textContent()).includes('Activar')) {
-    await fila.locator('[data-toggle]').click();
-    await barra.waitForFunction(() => {
+  // Un caso anterior lo dejó agotado, y la receta reción guardada lo vuelve a
+  // encender sola: el corrector del depósito escribe `disponible` cuando ve
+  // que ahora hay de dónde sacarlo. Eso es una escritura que va y vuelve del
+  // servidor, y el caso seguía de largo sin esperarla: a veces llegaba antes
+  // del diálogo de venta y a veces no, y cuando no, el "+" estaba deshabilitado
+  // —el producto seguía agotado—, no se vendía nada y el fallo salía como
+  // "descontó mal". Era el intermitente. Se espera el estado, no el cartel.
+  const fernetRef = db.collection('carta').doc('fernet');
+  for (let i = 0; i < 60; i++) {
+    const d = (await fernetRef.get()).data();
+    if (d?.disponible !== false && d?.apagadoAMano !== true) break;
+    // Si quedó apagado a mano, hay que destrabarlo desde la pantalla: es un
+    // solo click, y que haga falta más de uno es el bug que arreglamos.
+    if (i === 20) {
+      await barra.locator('#cartaBar .item', { hasText: 'Fernet con coca' })
+        .locator('[data-toggle]').click();
+    }
+    if (i === 59) {
+      throw new Error('Fernet con coca quedó agotado y no se puede vender: '
+        + JSON.stringify(d)
+        + (seQuejo ? ' — la app dijo: ' + seQuejo : ' — la app no se quejó de nada'));
+    }
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  await barra.waitForFunction(() => {
+    const f = [...document.querySelectorAll('#cartaBar .item')]
+      .find((x) => x.textContent.includes('Fernet con coca'));
+    return f && !f.className.includes('agotado');
+  }, null, { timeout: 10000 }).catch(async () => {
+    const diag = await barra.evaluate(() => {
       const f = [...document.querySelectorAll('#cartaBar .item')]
         .find((x) => x.textContent.includes('Fernet con coca'));
-      return f && !f.className.includes('agotado');
-    }, null, { timeout: 10000 }).catch(async () => {
-      // Sin esto el fallo es un timeout pelado y hay que adivinar cuál de las
-      // cuatro cosas que marcan "agotado" quedó puesta.
-      const diag = await barra.evaluate(() => {
-        const f = [...document.querySelectorAll('#cartaBar .item')]
-          .find((x) => x.textContent.includes('Fernet con coca'));
-        return { clase: f?.className || '(no está la fila)',
-                 dice: (f?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
-                 boton: f?.querySelector('[data-toggle]')?.textContent.trim() };
-      });
-      // El caso ya captura las alertas de la app en seQuejo. Si el guardado
-      // se rechazo, la explicacion esta ahi y hasta ahora la tiraba.
-      throw new Error('reactivar no le sacó el agotado. ' + JSON.stringify(diag)
-        + (seQuejo ? ' — la app dijo: ' + seQuejo : ' — la app no se quejó de nada'));
+      return { clase: f?.className || '(no está la fila)',
+               dice: (f?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
+               boton: f?.querySelector('[data-toggle]')?.textContent.trim() };
     });
-  }
+    throw new Error('la carta lo sigue mostrando agotado. ' + JSON.stringify(diag)
+      + (seQuejo ? ' — la app dijo: ' + seQuejo : ' — la app no se quejó de nada'));
+  });
 
   // Y al venderlo, baja UNA MEDIDA, no una botella.
   const medidasAntes = (await db.collection('insumos').get()).docs[0].data().stock;
@@ -2255,6 +2270,68 @@ await chequear('apagado a mano le gana al depósito', async () => {
     if (i === 39) throw new Error('no se soltó: ' + JSON.stringify(x));
     await new Promise((ok) => setTimeout(ok, 250));
   }
+});
+
+await chequear('sin mercadería el botón no promete reactivar lo que no puede', async () => {
+  // El botón de un producto que sale del depósito tiene dos trabajos distintos
+  // y antes los mezclaba. Si está apagado a mano, sirve para devolverlo; si lo
+  // que falta es mercadería, devolverlo no haría nada y lo útil es poder
+  // apagarlo. Al arreglar lo primero casi rompo lo segundo: este caso lo fija.
+  const fernet = (await db.collection('carta').where('nombre', '==', 'Fernet con coca').get()).docs[0];
+  const insumo = (await db.collection('insumos').where('nombre', '==', 'Fernet 750').get()).docs[0];
+  if (!fernet || !insumo) throw new Error('falta el producto con receta o su insumo');
+
+  await barra.click('#tabCartaBar');
+
+  // Se vacía el depósito: el producto queda agotado sin que nadie lo apague.
+  await insumo.ref.update({ stock: 0 });
+  for (let i = 0; i < 60; i++) {
+    const d = (await fernet.ref.get()).data();
+    if (d.disponible === false && d.apagadoAMano !== true) break;
+    if (i === 59) throw new Error('vaciar el depósito no lo agotó: ' + JSON.stringify(d));
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+  await barra.waitForFunction(() => {
+    const f = [...document.querySelectorAll('#cartaBar .item')]
+      .find((x) => x.textContent.includes('Fernet con coca'));
+    return f && f.className.includes('agotado')
+      && !(f.querySelector('[data-toggle]')?.textContent || '').includes('Reactivar');
+  }, null, { timeout: 15000 }).catch(async () => {
+    const dice = await barra.evaluate(() => {
+      const f = [...document.querySelectorAll('#cartaBar .item')]
+        .find((x) => x.textContent.includes('Fernet con coca'));
+      return { clase: f?.className, boton: f?.querySelector('[data-toggle]')?.textContent.trim() };
+    });
+    throw new Error('sin mercadería el botón ofrece algo que no puede cumplir: '
+      + JSON.stringify(dice));
+  });
+
+  // Entra mercadería: vuelve solo, sin que nadie toque nada.
+  await insumo.ref.update({ stock: 40 });
+  for (let i = 0; i < 60; i++) {
+    const d = (await fernet.ref.get()).data();
+    if (d.disponible === true) break;
+    if (i === 59) throw new Error('con mercadería no volvió: ' + JSON.stringify(d));
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+
+  // Y el diálogo de venta lo deja sumar: ahí es donde se nota.
+  await barra.click('#tabTablero');
+  await barra.click('#btnVentaBarra');
+  await barra.waitForSelector('#dlgVenta[open]', { timeout: 10000 });
+  try {
+    const mas = barra.locator('#cuerpoVenta .item', { hasText: 'Fernet con coca' })
+      .locator('[data-venta][data-d="1"]');
+    await mas.waitFor({ state: 'visible', timeout: 10000 });
+    for (let i = 0; i < 40; i++) {
+      if (!(await mas.isDisabled())) break;
+      if (i === 39) throw new Error('el "+" sigue deshabilitado con mercadería cargada');
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+  } finally {
+    await barra.evaluate(() => document.querySelector('#dlgVenta')?.close());
+  }
+  await barra.click('#tabCartaBar');
 });
 
 await chequear('la carta se queda sin stock sola cuando el depósito se vacía', async () => {

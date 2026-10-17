@@ -636,6 +636,15 @@ export function pintarCartaBar() {
     // Con los números a la vista no hay nada que adivinar: o falta mercadería
     // de verdad, o el que tiene stock es otro insumo con el mismo nombre.
     const trabas = rinde === 0 ? porQueNoSale(i) : [];
+    // Apagado es apagado, venga de donde venga. Un producto que alguien marcó
+    // agotado ANTES de tener receta queda con `disponible:false` y sin la
+    // marca `apagadoAMano`: el botón decía "Agotar a mano" sobre algo que ya
+    // estaba apagado, y hacía falta tocarlo dos veces para volver a venderlo.
+    //
+    // Pero sólo si hay de dónde sacarlo: ofrecer "Reactivar" sobre algo sin
+    // mercadería es ofrecer un botón que no puede cumplir. Ahí lo que falta
+    // es comprar, y lo útil sigue siendo poder apagarlo a mano.
+    const apagado = i.apagadoAMano === true || (i.disponible === false && rinde > 0);
     return `
     <div class="item ${fuera || i.disponible === false || i.apagadoAMano || rinde === 0 ? 'agotado' : ''}">
       <div class="cuerpo">
@@ -665,13 +674,15 @@ export function pintarCartaBar() {
         <span class="n">${typeof i.stock === 'number' ? i.stock : '∞'}</span>
         <button data-stock="${i.id}" data-d="1" aria-label="Sumar stock" ${fuera ? 'disabled' : ''}>+</button>
       </div>`}
-      <button class="btn ${i.apagadoAMano ? 'peligro' : ''}" data-toggle="${i.id}"
+      <button class="btn ${apagado ? 'peligro' : ''}" data-toggle="${i.id}"
               style="padding:.4rem .7rem;font-size:.82rem" ${fuera ? 'disabled' : ''}
               title="${delDeposito
-                ? 'Apagarlo a mano: el depósito no lo vuelve a encender'
+                ? (apagado
+                    ? 'Volver a ofrecerlo: lo que diga el depósito manda de nuevo'
+                    : 'Apagarlo a mano: el depósito no lo vuelve a encender')
                 : 'Marcarlo agotado'}">
-        ${i.apagadoAMano ? 'Reactivar'
-          : delDeposito ? 'Agotar a mano'
+        ${delDeposito
+          ? (apagado ? 'Reactivar' : 'Agotar a mano')
           : i.disponible === false ? 'Activar' : 'Agotar'}
       </button>
       <button class="btn solo-gerente-inline" data-receta-de="${i.id}"
@@ -711,9 +722,14 @@ export function pintarCartaBar() {
   cont.querySelectorAll('[data-toggle]').forEach((b) => b.onclick = async () => {
     const i = estado.carta.find((x) => x.id === b.dataset.toggle);
     const sale = saleDelDeposito(i);
+    // Mismo criterio que el cartel: si está apagado —por la marca a mano o
+    // porque quedó `disponible:false` de antes, con mercadería para vender—
+    // el click lo reactiva.
+    const rinde = sale ? rindeDeposito(i) : 0;
+    const apagado = i.apagadoAMano === true || (i.disponible === false && rinde > 0);
     const datos = sale
-      ? (i.apagadoAMano
-        ? { apagadoAMano: false, disponible: rindeDeposito(i) > 0 }
+      ? (apagado
+        ? { apagadoAMano: false, disponible: rinde > 0 }
         : { apagadoAMano: true, disponible: false })
       : { disponible: i.disponible === false };
     try { await updateDoc(doc(db, 'carta', i.id), datos); }
