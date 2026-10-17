@@ -585,6 +585,12 @@ export function pintarCartaBar() {
                   : 'sale del depósito')
             : '<b style="color:var(--naranja)">no sale del depósito</b>'}${
           i.apagadoAMano ? ' · <b style="color:var(--rojo)">agotado a mano</b>' : ''}</div>
+        <label class="precio-carta solo-gerente">
+          <span>A cuánto se vende</span>
+          <input data-precio-carta="${i.id}" type="number" min="0" inputmode="numeric"
+                 value="${Number(i.precio || 0) || ''}" placeholder="sin precio"
+                 aria-label="Precio de ${esc(i.nombre || i.id)}">
+        </label>
       </div>
       ${delDeposito ? `
       <div class="cant" title="Lo que el depósito alcanza a dar. Para que suba, cargá mercadería.">
@@ -604,10 +610,6 @@ export function pintarCartaBar() {
           : delDeposito ? 'Agotar a mano'
           : i.disponible === false ? 'Activar' : 'Agotar'}
       </button>
-      <input class="precio-carta solo-gerente-inline" data-precio-carta="${i.id}"
-             type="number" min="0" inputmode="numeric" value="${Number(i.precio || 0) || ''}"
-             aria-label="Precio de ${esc(i.nombre || i.id)}" placeholder="$"
-             title="A cuánto se vende">
       <button class="btn solo-gerente-inline" data-receta-de="${i.id}"
               style="padding:.4rem .7rem;font-size:.82rem"
               title="De qué insumo sale">${saleDelDeposito(i) ? '🧾' : '🧾+'}</button>

@@ -331,11 +331,14 @@ dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
   font-size: .7rem; letter-spacing: .07em; text-transform: uppercase;
   color: var(--suave); font-weight: 650; text-align: left; }
 .ranking thead th.n { text-align: right; }
-/* El precio, editable en el renglón de la carta: angosto, para que entre al
-   lado de los botones sin empujarlos a otra línea. */
-body.es-gerente .precio-carta { display: inline-block !important; width: 5.2rem;
-  text-align: right; padding: .4rem .5rem; font-size: .82rem;
-  font-variant-numeric: tabular-nums; }
+/* El precio, editable en el renglón de la carta. Va DEBAJO del nombre y no
+   al lado de los botones: ahí no entra. En un teléfono el renglón se partía
+   en una palabra por línea y el número del stock se montaba sobre el nombre. */
+body.es-gerente .precio-carta { display: flex !important; align-items: center;
+  gap: .5rem; margin-top: .4rem; }
+.precio-carta span { font-size: .74rem; color: var(--suave); white-space: nowrap; }
+.precio-carta input { width: 6.5rem; text-align: right; padding: .3rem .5rem;
+  font-size: .85rem; font-variant-numeric: tabular-nums; }
 #eventosPasados .item .total { font-weight: 700; color: var(--oro); white-space: nowrap; }
 
 /* Tres niveles en el mismo panel. Lo que la barra no puede hacer, no lo ve:
