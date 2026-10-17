@@ -1473,7 +1473,10 @@ await chequear('el depósito: insumo, receta y descuento por medidas', async () 
                  dice: (f?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
                  boton: f?.querySelector('[data-toggle]')?.textContent.trim() };
       });
-      throw new Error('reactivar no le sacó el agotado. ' + JSON.stringify(diag));
+      // El caso ya captura las alertas de la app en seQuejo. Si el guardado
+      // se rechazo, la explicacion esta ahi y hasta ahora la tiraba.
+      throw new Error('reactivar no le sacó el agotado. ' + JSON.stringify(diag)
+        + (seQuejo ? ' — la app dijo: ' + seQuejo : ' — la app no se quejó de nada'));
     });
   }
 
