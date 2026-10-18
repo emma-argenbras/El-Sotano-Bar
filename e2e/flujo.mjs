@@ -82,9 +82,36 @@ async function comoEstabaLaBarra() {
         .map((b) => b.id + (b.offsetParent === null ? ':oculta' : '')),
     }));
     const ocultas = d.pestanas.filter((x) => x.endsWith(':oculta'));
+
+    // Y la pregunta que me falta hacer hace tres dias: ¿la pantalla se esta
+    // quedando quieta? Un click se cuelga sobre un elemento visible y sin
+    // nada encima cuando ese elemento se destruye y se vuelve a crear en cada
+    // cuadro, o cuando se mueve de lugar. Dos fotos separadas por 400ms lo
+    // dicen; mirar una sola vez, no.
+    const foto = () => pag.evaluate(() => {
+      const caja = (sel) => {
+        const e = document.querySelector(sel);
+        if (!e) return null;
+        const r = e.getBoundingClientRect();
+        return Math.round(r.top) + ',' + Math.round(r.left);
+      };
+      return {
+        largo: document.body.innerHTML.length,
+        dep: document.querySelector('#deposito')?.innerHTML.length ?? -1,
+        btn: caja('#btnNuevoInsumo'),
+        tab: caja('#tabCaja'),
+      };
+    });
+    const a = await foto();
+    await new Promise((ok) => setTimeout(ok, 400));
+    const b = await foto();
+    const quieta = a.largo === b.largo && a.dep === b.dep
+      && a.btn === b.btn && a.tab === b.tab;
+
     return ' · barra: ' + JSON.stringify({
       clase: d.clase, dialogos: d.dialogos,
       pestanasOcultas: ocultas.length ? ocultas : 'ninguna',
+      quieta, antes: a, despues: b,
     });
   } catch { return ''; }
 }
