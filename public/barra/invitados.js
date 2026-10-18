@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  increment,
   onSnapshot,
   query,
   serverTimestamp,
@@ -285,10 +286,23 @@ $('#btnGuardarInvitado').onclick = async () => {
         entradaMonto: cobro.monto,
       } : {}),
     });
-    // El contador también, para que el cupo siga cuadrando.
+    // El contador también, para que el cupo siga cuadrando. Lo suma el
+    // servidor, no la pantalla: dos personas anotando a la vez leían las dos
+    // el mismo número y escribían el mismo, y el contador quedaba uno abajo
+    // de la gente que hay. Uno abajo en el contador es un lugar de más que la
+    // página de inscripción le da a cualquiera.
+    //
+    // Y si no se puede escribir, se dice. Tragarse el error dejaba al
+    // invitado anotado con el cupo corrido y nadie se enteraba.
     if (estado.registros[evento]) {
-      await updateDoc(doc(db, 'registros', evento),
-        { registrados: Number(estado.registros[evento].registrados || 0) + 1 }).catch(() => {});
+      try {
+        await updateDoc(doc(db, 'registros', evento), { registrados: increment(1) });
+      } catch (err) {
+        alert(`${nombre} quedó anotado, pero no se pudo mover el contador del cupo`
+          + ` (${err.code || err.message}).\n\n`
+          + 'Avisale a la casa: hasta que se corrija, la página de inscripción '
+          + 'cree que queda un lugar más del que hay.');
+      }
     }
     await mostrarPaseNuevo(id, nombre);
   } catch (e) {
@@ -600,9 +614,10 @@ export async function sacarInvitado(inv) {
       if (libre) await deleteDoc(doc(db, 'anotados', libre.id));
     }
 
+    // Igual que al anotar: la resta la hace el servidor. Leer y escribir desde
+    // la pantalla perdía una de cada dos cuando se sacaba a dos a la vez.
     if (estado.registros[inv.eventoId]) {
-      await updateDoc(doc(db, 'registros', inv.eventoId),
-        { registrados: Math.max(0, Number(estado.registros[inv.eventoId].registrados || 0) - 1) });
+      await updateDoc(doc(db, 'registros', inv.eventoId), { registrados: increment(-1) });
     }
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
