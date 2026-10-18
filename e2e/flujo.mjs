@@ -1323,6 +1323,77 @@ await chequear('con el evento abierto, el cliente puede pedir', async () => {
   }
   if (d?.tomandoPedidos !== true) throw new Error('abrir el evento no habilitó los pedidos');
 });
+await chequear('cambiar quién está de turno no muestra ni toca el cupo', async () => {
+  // La pantalla de turno es la de agendar, prestada: decía «Agendar una noche»
+  // con la fecha, el cupo y la entrada en blanco sobre una noche que tiene
+  // cupo 50. Guardar ahí no pisa nada —solo se escriben los barmanes—, pero
+  // nadie puede saberlo mirando, y por eso la puerta entró con un usuario
+  // administrador en vez de con el suyo.
+  const q = await db.collection('barra').doc('eventos').collection('items')
+    .where('estado', '==', 'abierto').get();
+  if (q.empty) throw new Error('no hay ninguna noche abierta para probar');
+  const ref = q.docs[0].ref;
+  // Se restauran al terminar: los casos que siguen cuentan con la noche como
+  // estaba, y una entrada colada les cambia lo que la puerta pregunta.
+  const comoEstaba = q.docs[0].data();
+  await ref.update({ capacidad: 50, entrada: 7000 });
+
+  await barra.click('#tabEvento');
+  await barra.waitForSelector('#btnTurno', { timeout: 15000 });
+  await barra.click('#btnTurno');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  try {
+    const titulo = await barra.textContent('#tituloEvento');
+    if (/agendar/i.test(titulo))
+      throw new Error('sigue diciendo que se agenda una noche: "' + titulo + '"');
+
+    // Lo que no cambia, no se muestra: un campo en blanco sobre un dato
+    // cargado es una pantalla que miente.
+    for (const campo of ['#inpCapacidad', '#inpEntrada', '#inpFecha']) {
+      if (await barra.locator(campo).isVisible())
+        throw new Error('muestra ' + campo + ', que esta pantalla no cambia');
+    }
+    // Y el que elige al de turno tiene que estar.
+    if (!(await barra.locator('#elegirBarman').isVisible()))
+      throw new Error('no deja elegir quién está de turno');
+
+    await barra.click('#btnConfirmarEvento');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgEvento')?.open, null, { timeout: 10000 });
+
+    const d = (await ref.get()).data();
+    if (Number(d.capacidad) !== 50) throw new Error('le pisó el cupo: ' + d.capacidad);
+    if (Number(d.entrada) !== 7000) throw new Error('le pisó la entrada: ' + d.entrada);
+  } finally {
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((x) => x.close()));
+    await ref.update({
+      capacidad: comoEstaba.capacidad ?? 0,
+      entrada: comoEstaba.entrada ?? 0,
+    });
+  }
+
+  // Y la pantalla de agendar vuelve entera: los campos que el turno esconde
+  // tienen que estar de nuevo, o la noche siguiente se agenda sin cupo.
+  await barra.click('#tabCalendario');
+  await barra.waitForSelector('#btnAgendar', { timeout: 10000 });
+  await barra.click('#btnAgendar');
+  await barra.waitForSelector('#dlgEvento[open]', { timeout: 5000 });
+  try {
+    for (const campo of ['#inpCapacidad', '#inpEntrada', '#inpFecha']) {
+      if (!(await barra.locator(campo).isVisible()))
+        throw new Error('agendar quedó sin ' + campo + ' después de cambiar el turno');
+    }
+    if (await barra.locator('#inpEvento').isDisabled())
+      throw new Error('agendar quedó con el nombre bloqueado');
+  } finally {
+    await barra.click('#btnCancelarEvento').catch(() => {});
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((x) => x.close()));
+    await barra.click('#tabEvento');
+  }
+});
+
 await chequear('cerrar el evento congela la caja y lo manda al histórico', async () => {
   barra.once('dialog', (d) => d.accept());
   await barra.click('#btnCerrarEvento');

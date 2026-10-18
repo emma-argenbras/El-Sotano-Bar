@@ -100,6 +100,11 @@ export function abrirEvento(editando = null, cuando = null) {
   $('#inpEntrada').value = editando?.entrada || '';
   $('#tituloEvento').textContent = editando ? 'Editar la noche' : 'Agendar una noche';
   $('#btnConfirmarEvento').textContent = editando ? 'Guardar' : 'Agendar';
+  // Acá sí se agenda: los campos que «Quién está de turno» esconde vuelven,
+  // por si esa pantalla se cerró de una manera que no los devolvió.
+  [$('#inpFecha'), $('#inpCapacidad'), $('#inpEntrada')]
+    .forEach((e) => e?.closest('.campo')?.classList.remove('oculto'));
+  $('#inpEvento').disabled = false;
   pintarElegirBarman(editando?.barmanes || []);
   $('#dlgEvento').showModal();
   $('#inpEvento').focus();
@@ -388,6 +393,16 @@ export async function editarTurno() {
   $('#inpEvento').value = estado.evento.nombre;
   $('#inpEvento').disabled = true;
   $('#btnConfirmarEvento').textContent = 'Guardar';
+  // Esta pantalla es la de agendar una noche, prestada. Decía «Agendar una
+  // noche» y mostraba fecha, capacidad y entrada en blanco sobre una noche
+  // que tiene cupo 50: nadie puede saber, mirando eso, que tocar Guardar no
+  // le va a pisar el cupo. No se lo pisa —acá solo se escriben los barmanes—
+  // pero una pantalla que no se puede creer frena a quien la usa igual que
+  // una que rompe. Se muestra solo lo que esta pantalla sí cambia.
+  $('#tituloEvento').textContent = 'Quién está de turno';
+  const prestados = [$('#inpFecha'), $('#inpCapacidad'), $('#inpEntrada')]
+    .map((e) => e?.closest('.campo')).filter(Boolean);
+  prestados.forEach((c) => c.classList.add('oculto'));
   const dlg = $('#dlgEvento');
   const antes = $('#btnConfirmarEvento').onclick;
   $('#btnConfirmarEvento').onclick = async () => {
@@ -402,6 +417,8 @@ export async function editarTurno() {
     $('#inpEvento').disabled = false;
     $('#btnConfirmarEvento').textContent = 'Abrir';
     $('#btnConfirmarEvento').onclick = antes;
+    $('#tituloEvento').textContent = 'Agendar una noche';
+    prestados.forEach((c) => c.classList.remove('oculto'));
   }, { once: true });
   dlg.showModal();
 }
