@@ -24,6 +24,9 @@ import { insumosHuerfanos, opcionesDe, productosQueUsan, rindeCon, rindeOpcion, 
 export const unidadesDe = (ins) => Math.floor(Number(ins.stock || 0) / Math.max(1, Number(ins.medidas || 1)));
 export const sueltasDe = (ins) => Number(ins.stock || 0) % Math.max(1, Number(ins.medidas || 1));
 
+// Lo ultimo que se dibujo en el deposito, para no volver a escribir lo mismo.
+let ultimoDeposito = '';
+
 export function comoSeDice(ins) {
   const m = Math.max(1, Number(ins.medidas || 1));
   const u = unidadesDe(ins), sueltas = sueltasDe(ins);
@@ -167,7 +170,15 @@ export function pintarDeposito() {
   // le van a negar.
   const soloMira = estado.esAparato;
 
-  cont.innerHTML = `
+  // El boton va ANTES de los avisos. Los avisos aparecen y desaparecen a
+  // medida que llegan el deposito y la carta, y cada vez que uno aparecia le
+  // corria el boton hacia abajo al que lo estaba por tocar: en el celular eso
+  // es apretar "Editar" de otra cosa. La accion principal no se mueve.
+  const html = `
+    ${soloMira ? '' : `
+    <button class="btn primario ancho-full" id="btnNuevoInsumo"
+            style="margin-bottom:.9rem">+ Insumo</button>`}
+
     ${repetidos.length ? `
     <div class="aviso mal" style="margin-bottom:.9rem"><span>⛔</span><div>
       <b>Hay nombres repetidos en el depósito.</b> La receta apunta a uno solo,
@@ -188,10 +199,6 @@ export function pintarDeposito() {
               style="margin-top:.6rem;padding:.45rem .8rem;font-size:.86rem">
         Ponerles precio${sueltos.length > 1 ? ' a todos' : ''}</button>
     </div></div>` : ''}
-
-    ${soloMira ? '' : `
-    <button class="btn primario ancho-full" id="btnNuevoInsumo"
-            style="margin-bottom:.9rem">+ Insumo</button>`}
 
     ${soloMira ? `<p style="color:var(--suave);font-size:.86rem;margin:0 0 .9rem">
       Lo que hay guardado, para saber qué se puede hacer. Lo carga la casa.</p>` : ''}
@@ -222,6 +229,16 @@ export function pintarDeposito() {
       : `<div class="vacio">El depósito está vacío.<br>
          <small>Cargá los insumos y después, en <b>Administración → Mercadería</b>,
          lo que compraste.</small></div>`}`;
+
+  // Cuatro escuchas distintos piden repintar el deposito, y la mayoria de las
+  // veces lo que sale es identico a lo que ya esta. Volver a escribirlo
+  // destruye los botones y los vuelve a crear: el que tenia el dedo apoyado
+  // termina tocando un boton que ya no existe.
+  // Salvo que algo haya vaciado el contenedor por detras —un error de la
+  // escucha escribe ahi—: entonces se vuelve a dibujar aunque sea lo mismo.
+  if (html === ultimoDeposito && cont.children.length) return;
+  ultimoDeposito = html;
+  cont.innerHTML = html;
 
   if ($('#btnNuevoInsumo')) $('#btnNuevoInsumo').onclick = () => abrirInsumo(null);
   if ($('#btnPonerPrecios')) $('#btnPonerPrecios').onclick = () => abrirPrecios(sueltos);
