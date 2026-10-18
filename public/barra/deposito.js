@@ -330,7 +330,7 @@ const PARTES = [
   [/cerveza|lata|porr[oó]n|ipa|lager|heineken|quilmes|brahma|corona|stella|grunbauch|grünbauch/i, 'Cervezas'],
   [/vino|malbec|cabernet|tinto|blanco|rosado|trumpeter|catena|moulin/i, 'Vinos'],
   [/champ|espumante|chandon|baron/i, 'Espumantes'],
-  [/gin|vodka|whisk|ron |ron$|tequila|aperol|campari|fernet|licor|aperitivo/i, 'Destilados'],
+  [/gin|vodka|whisk|ron |ron$|tequila|aperol|campari|fernet|licor|aperitivo|gancia|cynar|vermut|vermouth|martini|branca/i, 'Destilados'],
   [/gaseosa|coca|sprite|fanta|agua|jugo|tonica|tónica|red bull|energizante/i, 'Sin alcohol'],
   [/papa|picada|tabla|mani|maní|snack|empanada/i, 'Para picar'],
 ];

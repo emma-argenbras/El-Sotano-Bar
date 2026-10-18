@@ -19,6 +19,7 @@ import { irA } from './pantallas.js';
 import { ESTADO_LOCAL, EVENTOS, TURNO, app, db, fallo } from './conexion.js';
 import { bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoche, hora, pintarPuerta, plegable } from './invitados.js';
 import { escucharPedidos, pintarCaja, ticket } from './pedidos.js';
+import { pintarCierre } from './cierre.js';
 
 export async function marcarTurno(eventoId, barmanes) {
   await setDoc(TURNO(), { eventoId, barmanes, cambiadoEn: serverTimestamp() });
@@ -51,6 +52,10 @@ export function escucharEvento() {
     pintarEvento();
     pintarCaja();
     pintarCalendario();
+    // Y el cierre de la jornada, que avisa si hay una noche todavía abierta.
+    // Es la quinta vez que una pantalla depende de un dato y nadie la vuelve
+    // a dibujar cuando ese dato llega: el cartel no aparecía nunca.
+    pintarCierre();
   }, fallo('#evento'));
 
   // El puntero del link viejo (/registro.html sin noche): a qué noche manda.

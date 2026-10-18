@@ -2266,12 +2266,17 @@ await chequear('ponerles precio a todos de una pasada los deja a la venta', asyn
 });
 
 await chequear('sin precio no guarda nada y lo dice', async () => {
+  // El insumo lo crea el caso: despues de la tanda anterior puede no quedar
+  // ninguno suelto, y un caso que no corre no protege nada.
+  const ref = db.collection('insumos').doc('insumo-sin-precio');
+  await ref.set({ nombre: 'Algo sin precio', unidad: 'botella', medidas: 1,
+                  stock: 2, costo: 500, minimo: 0 });
   let dijo = '';
   const oir = async (d) => { dijo = d.message(); await d.accept(); };
   barra.on('dialog', oir);
   try {
     await barra.click('#tabDeposito');
-    if (!(await barra.locator('#btnPonerPrecios').count())) return; // ya no quedan sueltos
+    await barra.waitForSelector('#btnPonerPrecios', { timeout: 15000 });
     await barra.click('#btnPonerPrecios');
     await barra.waitForSelector('#dlgPrecios[open]', { timeout: 5000 });
     await barra.click('#btnGuardarPrecios');
@@ -2280,10 +2285,14 @@ await chequear('sin precio no guarda nada y lo dice', async () => {
       throw new Error('guardó sin precio, o no explicó: "' + dijo + '"');
     if (!(await barra.locator('#dlgPrecios[open]').count()))
       throw new Error('cerró la pantalla y se perdió lo cargado');
+    if ((await db.collection('carta').doc('insumo-sin-precio').get()).exists)
+      throw new Error('lo puso en la carta igual, sin precio');
   } finally {
     barra.removeListener('dialog', oir);
     await barra.evaluate(() =>
       document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+    await ref.delete();
+    await db.collection('carta').doc('insumo-sin-precio').delete().catch(() => {});
   }
 });
 
