@@ -2210,6 +2210,83 @@ await chequear('poner al día el depósito le abre la cuenta a cada proveedor', 
   }
 });
 
+await chequear('ponerles precio a todos de una pasada los deja a la venta', async () => {
+  // Cincuenta y tres insumos sin precio no los carga nadie de a uno. Esta
+  // pantalla los junta: precio, parte de la carta —propuesta por el nombre— y
+  // si se vende la unidad entera o una medida. Lo que queda sin precio no se
+  // toca, así se puede hacer de a tandas.
+  let dijo = '';
+  const oir = async (d) => { dijo = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#tabDeposito');
+    await barra.waitForSelector('#btnPonerPrecios', { timeout: 15000 }).catch(async () => {
+      throw new Error('no ofrece ponerles precio. Dice: '
+        + (await barra.textContent('#deposito')).slice(0, 220));
+    });
+    await barra.click('#btnPonerPrecios');
+    await barra.waitForSelector('#dlgPrecios[open]', { timeout: 5000 });
+
+    const g = (await db.collection('insumos').where('nombre', '==', 'Gancia 950').get()).docs[0];
+    const fila = barra.locator('#cuerpoPrecios [data-fila-precio]', { hasText: 'Gancia 950' });
+    await fila.waitFor({ state: 'visible', timeout: 10000 });
+
+    // La parte de la carta viene propuesta por el nombre, no en blanco.
+    if (!(await fila.locator('[data-parte]').inputValue()))
+      throw new Error('no propuso en qué parte de la carta va');
+
+    await fila.locator('[data-precio]').fill('7000');
+    await fila.locator('[data-parte]').fill('Aperitivos');
+    // Da 5 medidas por botella: se vende la medida, no la botella entera.
+    await fila.locator('[data-vende]').selectOption('medida');
+    await barra.click('#btnGuardarPrecios');
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgPrecios')?.open, null, { timeout: 15000 });
+
+    let c;
+    for (let i = 0; i < 40; i++) {
+      c = (await db.collection('carta').doc(g.id).get()).data();
+      if (c) break;
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    if (!c) throw new Error('no quedó en la carta' + (dijo ? ' — la app dijo: ' + dijo : ''));
+    if (Number(c.precio) !== 7000) throw new Error('guardó otro precio: ' + c.precio);
+    if (c.categoria !== 'Aperitivos') throw new Error('guardó otra parte: ' + c.categoria);
+    if (c.enCarta === false) throw new Error('lo dejó fuera de la carta');
+    // Lo que de verdad importa: que descuente UNA medida, no la botella.
+    if (Number(c.receta?.[0]?.medidas) !== 1)
+      throw new Error('no descuenta una medida: ' + JSON.stringify(c.receta));
+    if (c.receta?.[0]?.insumoId !== g.id)
+      throw new Error('la receta no apunta a su insumo: ' + JSON.stringify(c.receta));
+  } finally {
+    barra.removeListener('dialog', oir);
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+  }
+});
+
+await chequear('sin precio no guarda nada y lo dice', async () => {
+  let dijo = '';
+  const oir = async (d) => { dijo = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#tabDeposito');
+    if (!(await barra.locator('#btnPonerPrecios').count())) return; // ya no quedan sueltos
+    await barra.click('#btnPonerPrecios');
+    await barra.waitForSelector('#dlgPrecios[open]', { timeout: 5000 });
+    await barra.click('#btnGuardarPrecios');
+    await barra.waitForTimeout(800);
+    if (!/precio/i.test(dijo))
+      throw new Error('guardó sin precio, o no explicó: "' + dijo + '"');
+    if (!(await barra.locator('#dlgPrecios[open]').count()))
+      throw new Error('cerró la pantalla y se perdió lo cargado');
+  } finally {
+    barra.removeListener('dialog', oir);
+    await barra.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+  }
+});
+
 await chequear('la venta deja la carta al día en la misma operación', async () => {
   // Lo que importa no es solo que el número baje: es que `disponible` quede
   // escrito por la misma operación que movió el stock, sin que nadie tenga
@@ -3626,6 +3703,49 @@ await chequear('el tablero muestra los cinco números de la noche', async () => 
   }
   if (!t.includes('Jornada en curso'))
     throw new Error('no avisa que la jornada está abierta y los números se mueven');
+});
+
+await chequear('con una noche abierta, cerrar los números avisa antes', async () => {
+  // Lo que pasó con Cumple Edwin: se cerró la jornada con la noche todavía en
+  // curso, y lo que se vendió después quedó afuera. Hubo que reabrirla. La
+  // pantalla tiene que decirlo antes, y preguntar antes de empezar el cierre.
+  //
+  // La noche se crea directo en la base y sin `abiertoEn`: así no se corre la
+  // ventana de la caja y los casos que siguen cuentan lo mismo que antes.
+  const ref = await db.collection('barra').doc('eventos').collection('items').add({
+    nombre: 'Noche que sigue abierta', fecha: new Date(),
+    estado: 'abierto', abiertoEn: null, cerradoEn: null, cierre: null,
+  });
+  let pregunto = '';
+  const oir = async (d) => { pregunto = d.message(); await d.dismiss(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#tabCaja');
+    await barra.waitForFunction(() =>
+      (document.querySelector('#cierre')?.textContent || '')
+        .includes('Noche que sigue abierta'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('el cierre no avisa que hay una noche abierta: '
+          + (await barra.textContent('#cierre')).slice(0, 300));
+      });
+
+    // Y al tocar el botón, pregunta antes de abrir el cierre.
+    await barra.click('#btnCerrarJornada');
+    await barra.waitForTimeout(800);
+    if (!/sigue abierta/i.test(pregunto))
+      throw new Error('no preguntó nada antes de cerrar: "' + pregunto + '"');
+    if (await barra.locator('#dlgCerrarJornada[open]').count())
+      throw new Error('abrió el cierre igual después de decirle que no');
+  } finally {
+    barra.removeListener('dialog', oir);
+    await ref.delete();
+    // Y que la noche se haya ido antes de seguir: los casos que vienen cierran
+    // la jornada de verdad y no tienen que toparse con el cartel.
+    await barra.waitForFunction(() =>
+      !(document.querySelector('#cierre')?.textContent || '')
+        .includes('Noche que sigue abierta'),
+      null, { timeout: 15000 }).catch(() => {});
+  }
 });
 
 await chequear('sin contar el cajón no se cierra nada', async () => {

@@ -181,10 +181,12 @@ export function pintarDeposito() {
     ${sueltos.length && !soloMira ? `
     <div class="aviso" style="margin-bottom:.9rem"><span>📋</span><div>
       <b>${sueltos.length} ${sueltos.length === 1 ? 'insumo no sale' : 'insumos no salen'}
-      en la carta.</b> Cargar algo acá no lo pone a la venta: hace falta que un
-      producto diga que sale de ahí. Andá a <b>Carta</b> y tocale el 🧾 al
-      producto que corresponda.
+      en la carta.</b> Cargar algo acá no lo pone a la venta: hace falta decir
+      a cuánto se vende y en qué parte de la carta va.
       <br><small>${esc(sueltos.map((i) => i.nombre || i.id).join(', '))}</small>
+      <button class="btn primario" id="btnPonerPrecios"
+              style="margin-top:.6rem;padding:.45rem .8rem;font-size:.86rem">
+        Ponerles precio${sueltos.length > 1 ? ' a todos' : ''}</button>
     </div></div>` : ''}
 
     ${soloMira ? '' : `
@@ -222,6 +224,7 @@ export function pintarDeposito() {
          lo que compraste.</small></div>`}`;
 
   if ($('#btnNuevoInsumo')) $('#btnNuevoInsumo').onclick = () => abrirInsumo(null);
+  if ($('#btnPonerPrecios')) $('#btnPonerPrecios').onclick = () => abrirPrecios(sueltos);
   cont.querySelectorAll('[data-baja-insumo]').forEach((b) => b.onclick = () =>
     abrirBaja(estado.insumos.find((i) => i.id === b.dataset.bajaInsumo)));
   cont.querySelectorAll('[data-editar-insumo]').forEach((b) => b.onclick = () =>
@@ -487,4 +490,128 @@ export async function guardarInsumo() {
     }
     $('#dlgInsumo').close();
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+}
+
+// ---------- ponerles precio a todos de una pasada ----------
+//
+// Cargar mercadería no la pone a la venta: falta decir a cuánto se vende y en
+// qué parte de la carta va. Eso se hacía de a uno, entrando y saliendo del
+// diálogo del insumo, y con cincuenta y tres pendientes nadie lo termina: la
+// mercadería queda en el depósito y la barra no la puede vender.
+//
+// Acá están todos juntos, con la parte de la carta ya propuesta por el nombre.
+// Se guarda lo que tenga precio y parte; lo demás queda igual, así se puede
+// hacer de a tandas sin perder lo cargado.
+let pendientesPrecio = [];
+
+export function abrirPrecios(sueltos) {
+  pendientesPrecio = sueltos || [];
+  $('#listaCategorias').innerHTML = [...new Set((estado.carta || [])
+    .map((c) => c.categoria).filter(Boolean))]
+    .map((c) => `<option value="${esc(c)}">`).join('');
+
+  $('#cuerpoPrecios').innerHTML = pendientesPrecio.map((i) => {
+    const m = Math.max(1, Number(i.medidas || 1));
+    return `
+    <div class="item" data-fila-precio="${esc(i.id)}" style="flex-wrap:wrap">
+      <div class="cuerpo" style="min-width:100%">
+        <div class="nombre">${esc(i.nombre || i.id)}</div>
+        <div class="desc">${comoSeDice(i)}${
+          m > 1 ? ` · ${m} medidas por ${esc(i.unidad || 'unidad')}` : ''}</div>
+      </div>
+      <label class="campo" style="flex:1;min-width:8rem">
+        <span>A cuánto se vende</span>
+        <input data-precio="${esc(i.id)}" type="number" min="0" inputmode="numeric"
+               placeholder="sin precio" aria-label="Precio de ${esc(i.nombre || i.id)}">
+      </label>
+      <label class="campo" style="flex:1;min-width:8rem">
+        <span>En qué parte</span>
+        <input data-parte="${esc(i.id)}" maxlength="30" autocomplete="off"
+               list="listaCategorias" value="${esc(parteQueSugiere(i.nombre))}"
+               placeholder="Cervezas, Vinos…" aria-label="Parte de la carta de ${esc(i.nombre || i.id)}">
+      </label>
+      ${m > 1 ? `
+      <label class="campo" style="flex:1;min-width:10rem">
+        <span>Qué se vende</span>
+        <select data-vende="${esc(i.id)}">
+          <option value="unidad">${esc(i.unidad || 'la unidad')} entera</option>
+          <option value="medida">una medida</option>
+        </select>
+      </label>` : ''}
+    </div>`;
+  }).join('');
+  $('#dlgPrecios').showModal();
+  $('#cuerpoPrecios').querySelector('[data-precio]')?.focus();
+}
+
+export async function guardarPrecios() {
+  const btn = $('#btnGuardarPrecios');
+  // Lo que se llama igual que algo que ya está en la carta no entra: dos
+  // renglones con el mismo nombre no se distinguen desde el celular.
+  const yaEnCarta = new Set((estado.carta || [])
+    .filter((c) => c.enCarta !== false)
+    .map((c) => (c.nombre || '').trim().toLowerCase()));
+
+  const listos = [];
+  const sinParte = [];
+  const repetidos = [];
+  for (const i of pendientesPrecio) {
+    const precio = Math.max(0, Number($(`[data-precio="${CSS.escape(i.id)}"]`)?.value) || 0);
+    if (!precio) continue;
+    const parte = ($(`[data-parte="${CSS.escape(i.id)}"]`)?.value || '').trim();
+    if (!parte) { sinParte.push(i.nombre || i.id); continue; }
+    if (yaEnCarta.has((i.nombre || '').trim().toLowerCase())) {
+      repetidos.push(i.nombre || i.id);
+      continue;
+    }
+    const m = Math.max(1, Number(i.medidas || 1));
+    const comoSeVende = $(`[data-vende="${CSS.escape(i.id)}"]`)?.value || 'unidad';
+    listos.push({ ins: i, precio, parte, lleva: comoSeVende === 'medida' ? 1 : m });
+  }
+
+  if (sinParte.length) {
+    alert('Falta decir en qué parte de la carta va:\n\n• ' + sinParte.join('\n• ')
+      + '\n\nLo demás se puede guardar igual.');
+    return;
+  }
+  if (repetidos.length) {
+    alert('Ya hay un producto con ese nombre en la carta:\n\n• ' + repetidos.join('\n• ')
+      + '\n\nPonele otro nombre al insumo, o sacá el que ya está.');
+    return;
+  }
+  if (!listos.length) {
+    alert('Todavía no pusiste ningún precio.');
+    return;
+  }
+
+  btn.disabled = true;
+  const antes = btn.textContent;
+  btn.textContent = '…';
+  try {
+    // De a uno y esperando: si una escritura se cae, se sabe cuántas entraron
+    // y las que entraron quedan. Son unas decenas, no miles.
+    let entraron = 0;
+    for (const x of listos) {
+      await setDoc(doc(db, 'carta', x.ins.id), {
+        nombre: x.ins.nombre,
+        categoria: x.parte,
+        precio: x.precio,
+        receta: [{ insumoId: x.ins.id, medidas: x.lleva }],
+        enCarta: true,
+        orden: 50,
+        disponible: true,
+      }, { merge: true });
+      entraron += 1;
+    }
+    const faltan = pendientesPrecio.length - entraron;
+    $('#dlgPrecios').close();
+    alert(`Listo: ${entraron} ${entraron === 1 ? 'producto sale' : 'productos salen'} en la carta.`
+      + (faltan > 0 ? `\n\nQuedan ${faltan} sin precio. Podés seguir cuando quieras.` : ''));
+  } catch (e) {
+    alert('No se pudo guardar todo: ' + (e.code || e.message)
+      + '\n\nLo que llegó a entrar quedó guardado.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = antes;
+  }
 }

@@ -344,6 +344,21 @@
   </div>
 </dialog>
 
+<!-- Ponerle precio a todo lo que todavía no sale en la carta, de una sola
+     pasada. Hacerlo de a uno son cincuenta y tres viajes al diálogo del
+     insumo, y por eso quedaba sin hacer. -->
+<dialog id="dlgPrecios">
+  <h2 style="margin-top:0">Ponerles precio</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin:.2rem 0 1rem">
+    Lo que tiene precio y parte de la carta sale a la venta al guardar. Lo que
+    dejes en blanco queda como está: podés hacerlo de a tandas.</p>
+  <div id="cuerpoPrecios"></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarPrecios" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnGuardarPrecios" style="flex:1.4">Guardar</button>
+  </div>
+</dialog>
+
 <!-- Un ingreso de mercadería: suma stock, y plata si se pagó. -->
 <dialog id="dlgCompra">
   <h2 style="margin-top:0" id="tituloCompra">Ingreso de mercadería</h2>

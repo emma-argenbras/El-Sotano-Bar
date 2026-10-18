@@ -426,6 +426,11 @@ export function pintarCierre() {
       ${tarjetaTop(n)}
 
       ${esHoy && !guardada?.cierre ? `
+        ${nocheEnCurso() ? `<div class="aviso mal" style="margin-top:.9rem"><span>⚠</span><div>
+          <b>«${esc(nocheEnCurso())}» sigue abierta.</b> Si cerrás los números
+          ahora, lo que se venda después de este momento queda afuera de la
+          noche. Primero terminá la noche en <b>Noche</b>, y después cerrá.
+        </div></div>` : ''}
         <button class="btn primario ancho-full solo-gerente-inline" id="btnCerrarJornada">
           Cerrar los números</button>
         <p class="pie-chico">Primero vas a contar el cajón. Después se congela.</p>` : ''}
@@ -451,7 +456,21 @@ function engancharCierre(cont) {
 //
 // Contar el cajón ANTES de ver lo esperado. Si se ve primero, se copia: el
 // número deja de ser un conteo y pasa a ser una confirmación.
+// La noche que todavía está abierta, si la hay. Cerrar los números con una
+// noche en curso deja afuera todo lo que se venda después: pasó con Cumple
+// Edwin, y hubo que reabrir la jornada para recuperarla.
+function nocheEnCurso() {
+  const ev = estado.evento;
+  return ev?.id ? (ev.nombre || 'La noche') : '';
+}
+
 export function abrirCierre() {
+  const noche = nocheEnCurso();
+  if (noche && !confirm(
+    `«${noche}» sigue abierta.\n\n`
+    + 'Si cerrás los números ahora, lo que se venda después queda afuera de '
+    + 'esta noche y hay que reabrir la jornada para recuperarlo.\n\n'
+    + '¿Cerrar igual?')) return;
   $('#cuerpoCerrarJornada').innerHTML = `
     <p style="color:var(--suave);font-size:.9rem;margin:.2rem 0 1rem">
       Contá la plata que hay en el cajón y escribila. Recién después vas a ver
