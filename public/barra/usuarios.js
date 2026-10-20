@@ -15,11 +15,12 @@ import {
 import { escucharPlataDeposito, pintarAdmin } from './administracion.js';
 import { $, CFG, aMail, esc, estado, plata } from './base.js';
 import { dondeRepartir } from '/corte.js';
+import { pintarCierre } from './cierre.js';
 import { irA } from './pantallas.js';
 import { pintarCartaBar } from './carta.js';
 import { EMULADOR, app, auth, db, esElDueno, fallo } from './conexion.js';
 import { pintarDeposito } from './deposito.js';
-import { noches } from './eventos.js';
+import { noches, pintarEvento } from './eventos.js';
 import { pintarQuienAtiende } from './pedidos.js';
 
 // ---------- usuarios: quién es quién y qué ve ----------
@@ -253,6 +254,12 @@ export function aplicarRol() {
   pintarDeposito();
   pintarAdmin();
   pintarCartaBar();
+  // La Noche dice quién está de turno y qué puede tocar cada uno; el cierre
+  // ofrece reabrir la jornada solo al dueño. Las dos leen el rol y ninguna
+  // estaba en esta lista: dibujadas antes de que llegara el permiso, se
+  // quedaban con la versión de menos y nadie las volvía a dibujar.
+  pintarEvento();
+  pintarCierre();
 }
 
 export function vigilarMiAcceso(uid) {

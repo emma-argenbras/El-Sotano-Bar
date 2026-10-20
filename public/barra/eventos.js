@@ -13,6 +13,7 @@ import {
   where,
 } from '/vendor/firebase.js';
 import { pintarAdminEntradas } from './administracion.js';
+import { pintarUsuarios } from './usuarios.js';
 import { $, esc, estado, plata } from './base.js';
 import { dondeRepartir } from '/corte.js';
 import { irA } from './pantallas.js';
@@ -56,6 +57,10 @@ export function escucharEvento() {
     // Es la quinta vez que una pantalla depende de un dato y nadie la vuelve
     // a dibujar cuando ese dato llega: el cartel no aparecía nunca.
     pintarCierre();
+    // Las entradas de Administración y la pantalla de Usuarios también miran
+    // cuál es la noche abierta: una para cobrar, la otra para el turno.
+    pintarAdminEntradas();
+    pintarUsuarios();
   }, fallo('#evento'));
 
   // El puntero del link viejo (/registro.html sin noche): a qué noche manda.
@@ -69,6 +74,8 @@ export function escucharEvento() {
     estado.registros = {};
     snap.docs.forEach((d) => { estado.registros[d.id] = d.data(); });
     pintarInvitar(); pintarPuerta(); pintarEvento(); pintarCalendario();
+    // El precio de la entrada vive acá: Administración lo lee para cobrarla.
+    pintarAdminEntradas();
   }, () => {});
 
   onSnapshot(ESTADO_LOCAL(), (d) => {

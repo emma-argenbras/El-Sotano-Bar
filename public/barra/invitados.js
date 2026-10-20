@@ -15,7 +15,7 @@ import { claveAnotado, digitosTel, porQueNoVale, telValido } from '/tel.js';
 import { $, esc, estado, plata } from './base.js';
 import { dondeRepartir } from '/corte.js';
 import { app, db, fallo } from './conexion.js';
-import { abrirEvento, abrirInvitar, borrarAgendado, empezarNoche, noches, pintarCalendario, pintarInvitar } from './eventos.js';
+import { abrirEvento, abrirInvitar, borrarAgendado, empezarNoche, noches, pintarCalendario, pintarEvento, pintarInvitar } from './eventos.js';
 import { quienAtiende } from './pedidos.js';
 
 // ---------- Sótano Club ----------
@@ -209,6 +209,9 @@ export function escucharInvitados() {
     // quedaba con esa foto para siempre. Invitaciones, que si se repinta,
     // mostraba los 18 al lado de un Club que decia que no habia nadie.
     pintarCalendario();
+    // Y la Noche, que cuenta cuántos se anotaron y cuántos entraron. Mismo
+    // caso que el Club: la dibujan escuchas que llegan antes que la lista.
+    pintarEvento();
   }, (e) => {
     if (e.code === 'permission-denied') { estado.invitados = []; pintarPuerta(); return; }
     fallo('#puerta')(e);
