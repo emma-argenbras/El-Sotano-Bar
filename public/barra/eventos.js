@@ -131,7 +131,7 @@ export function pintarElegirBarman(marcados = []) {
   // El celular de la barra no hace turno: es el aparato del local y entra
   // siempre. Listarlo acá era ofrecer asignar un mueble a una noche.
   const equipo = estado.accesos.filter((a) =>
-    a.activo && a.rol !== 'admin' && a.rol !== 'barra');
+    a.activo && !['admin', 'sadmin', 'barra'].includes(a.rol));
   $('#elegirBarman').innerHTML = equipo.length
     ? equipo.map((b) => `<label><input type="checkbox" value="${esc(b.uid)}"
         ${marcados.includes(b.uid) ? 'checked' : ''}> ${esc(b.usuario)}
@@ -498,7 +498,9 @@ export async function cerrarEvento() {
 export function pintarEvento() {
   const cont = $('#evento');
   if (!estado.evento) {
-    if (!estado.dueno && estado.rol !== 'admin') {
+    // Un superadministrador administra como un admin: también arranca la
+    // noche. Antes se lo trataba como barman y no veía Arrancar.
+    if (!estado.dueno && !['admin', 'sadmin'].includes(estado.rol)) {
       cont.innerHTML = `<div class="aviso"><span>🎪</span><div>
         <b>No hay ninguna noche abierta.</b><br>
         ${estado.tomandoPedidos

@@ -15,12 +15,13 @@
 // historia, no una consulta que se vuelve a correr.
 import {
   Timestamp, collection, doc, getDocs, onSnapshot, orderBy, query,
-  serverTimestamp, setDoc, updateDoc, where,
+  serverTimestamp, setDoc, updateDoc, where, writeBatch,
 } from '/vendor/firebase.js';
 import { $, esc, estado, plata } from './base.js';
 import { db } from './conexion.js';
 import { arranqueDeHoy, fechaDeHoy, horaCorte } from './jornada.js';
 import { quienAtiende } from './pedidos.js';
+import { pedirMotivo, registrar } from './registro.js';
 
 export const JORNADA_DE = (fecha) => doc(db, 'jornadas', fecha);
 
@@ -434,7 +435,7 @@ export function pintarCierre() {
         <button class="btn primario ancho-full solo-gerente-inline" id="btnCerrarJornada">
           Cerrar los números</button>
         <p class="pie-chico">Primero vas a contar el cajón. Después se congela.</p>` : ''}
-      ${guardada?.cierre && estado.dueno ? `
+      ${guardada?.cierre && estado.sadmin ? `
         <button class="btn ancho-full" id="btnReabrirJornada" style="margin-top:.6rem">
           Reabrir esta jornada</button>` : ''}`}`;
 
@@ -554,18 +555,30 @@ export async function cerrarJornada(contado) {
 
 // Reabrir deja marca. Una jornada que se reabrió tres veces lo dice en la
 // pantalla: el rastro es el punto.
+//
+// La reabre el dueño o un superadministrador, con motivo: el motivo y quién
+// quedan en el registro de cambios, y el dueño lo ve en su campanita.
 export async function reabrirJornada() {
   const fecha = verJornada || fechaDeHoy();
-  if (!confirm(`¿Reabrir la jornada del ${fecha}?\n\n`
-    + 'Sus números dejan de estar congelados y queda anotado que se reabrió.')) return;
+  const guardada = (estado.jornadas || []).find((j) => j.fecha === fecha);
+  const n = Number(guardada?.vecesReabierta || 0) + 1;
+  const motivo = await pedirMotivo({
+    titulo: `Reabrir la jornada del ${fecha}`,
+    texto: 'Sus números dejan de estar congelados hasta que la vuelvas a cerrar. '
+      + 'Queda anotado quién la reabrió, cuándo y por qué.',
+    boton: 'Reabrir',
+  });
+  if (!motivo) return;
   try {
-    await updateDoc(JORNADA_DE(fecha), {
+    const lote = writeBatch(db);
+    registrar(lote, `reabrir-jornada-${fecha}-${n}`, 'reabrir-jornada', motivo, { fecha });
+    lote.update(JORNADA_DE(fecha), {
       cierre: null,
       reabiertaEn: serverTimestamp(),
       reabiertaPor: quienAtiende() || estado.usuario || 'la casa',
-      vecesReabierta: Number((estado.jornadas || [])
-        .find((j) => j.fecha === fecha)?.vecesReabierta || 0) + 1,
+      vecesReabierta: n,
     });
+    await lote.commit();
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 

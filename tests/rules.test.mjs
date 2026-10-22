@@ -10,7 +10,7 @@ import {
 import { readFileSync } from 'node:fs';
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc,
-  collection, query, where, getDocs, serverTimestamp,
+  collection, query, where, getDocs, serverTimestamp, writeBatch,
 } from 'firebase/firestore';
 
 let env;
@@ -478,7 +478,13 @@ describe('la plata que sale', () => {
 
   it('la casa puede corregirlo y borrarlo', async () => {
     await assertSucceeds(updateDoc(doc(gerente(), 'egresos/egreso-1'), { monto: 13000 }));
-    await assertSucceeds(deleteDoc(doc(gerente(), 'egresos/egreso-2')));
+    // Borrarlo saca plata de la caja: superadministrador, con motivo y registro.
+    const db = sadmin();
+    const b = writeBatch(db);
+    b.set(doc(db, 'registro/borrar-gasto-egreso-2'), { que: 'borrar-gasto', motivo: 'cargado dos veces',
+      quien: 'guille', cuando: serverTimestamp(), detalle: {} });
+    b.delete(doc(db, 'egresos/egreso-2'));
+    await assertSucceeds(b.commit());
   });
 });
 
@@ -1647,6 +1653,11 @@ describe('el barman entra solo la noche que trabaja', () => {
 
 describe('tres niveles: dueño, administrador y barman', () => {
   it('la barra mueve un pedido de estado', async () => {
+    // Un caso de arriba lo dejó entregado, y sacarlo de entregado ya no es de
+    // la barra (ver "registro de cambios"): se lo devuelve a la cola.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'pedidos/pedido-de-ana'), { estado: 'nuevo' });
+    });
     await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/pedido-de-ana'), { estado: 'listo' }));
   });
 
@@ -1932,6 +1943,9 @@ describe('personal de barra por turno', () => {
   });
 
   it('con el acceso prendido PUEDE mover un pedido de estado', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'pedidos/pedido-de-ana'), { estado: 'nuevo' });
+    });
     await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/pedido-de-ana'), { estado: 'en_preparacion' }));
   });
 
@@ -2260,6 +2274,90 @@ describe('pedidos — transferencia', () => {
     await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/p-ef-1'),
       { estado: 'entregado', vendidoPor: 'nico', pago: 'efectivo',
         cobradoEn: serverTimestamp(), cobradoPor: 'nico' }));
+  });
+});
+
+// Lo que saca plata de la caja o descongela números lo hace un
+// superadministrador sin el dueño, pero con motivo y dejando el registro en
+// la misma escritura.
+describe('registro de cambios: anular, borrar gasto, reabrir', () => {
+  const entrada = (que, extra = {}) => ({ que, motivo: 'me equivoqué de mesa', quien: 'carli',
+    cuando: serverTimestamp(), detalle: {}, ...extra });
+  const sembrar = (ruta, datos) => env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), ruta), datos);
+  });
+  const entregado = (id) => sembrar(`pedidos/${id}`, {
+    clienteId: 'cliente-anon-1', estado: 'entregado', pago: 'efectivo', vendidoPor: 'nico',
+    items: [{ id: 'fernet', nombre: 'Fernet con coca', precio: 4500, cantidad: 1 }],
+    total: 4500, creadoEn: new Date(),
+  });
+
+  it('un superadministrador anula un entregado con motivo y registro; sin registro, no', async () => {
+    await entregado('p-anular-1');
+    const db = sadmin();
+    await assertFails(updateDoc(doc(db, 'pedidos/p-anular-1'), { estado: 'cancelado', vecesCorregido: 1 }));
+    const b = writeBatch(db);
+    b.set(doc(db, 'registro/anular-pedido-p-anular-1-1'), entrada('anular-pedido'));
+    b.update(doc(db, 'pedidos/p-anular-1'), { estado: 'cancelado', vecesCorregido: 1 });
+    await assertSucceeds(b.commit());
+  });
+
+  it('un barman ni un admin común sacan un pedido de entregado', async () => {
+    await entregado('p-anular-2');
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-anular-2'), { estado: 'cancelado' }));
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-anular-2'), { estado: 'listo' }));
+    const db = gerente();
+    const b = writeBatch(db);
+    b.set(doc(db, 'registro/anular-pedido-p-anular-2-1'), entrada('anular-pedido'));
+    b.update(doc(db, 'pedidos/p-anular-2'), { estado: 'cancelado', vecesCorregido: 1 });
+    await assertFails(b.commit());
+  });
+
+  it('el registro pide motivo, la hora del servidor, y nadie lo edita', async () => {
+    const db = sadmin();
+    await assertFails(setDoc(doc(db, 'registro/x-1'), entrada('anular-pedido', { motivo: '' })));
+    await assertFails(setDoc(doc(db, 'registro/x-2'), entrada('anular-pedido', { cuando: new Date('2020-01-01') })));
+    await assertFails(setDoc(doc(db, 'registro/x-3'), entrada('regalar-todo')));
+    await assertSucceeds(setDoc(doc(db, 'registro/x-4'), entrada('anular-pedido')));
+    await assertFails(updateDoc(doc(db, 'registro/x-4'), { motivo: 'otro' }));
+    await assertFails(deleteDoc(doc(db, 'registro/x-4')));
+    await assertFails(setDoc(doc(turnoOk(), 'registro/x-5'), entrada('anular-pedido')));
+    await assertSucceeds(getDoc(doc(gerente(), 'registro/x-4')));
+    await assertFails(getDoc(doc(turnoOk(), 'registro/x-4')));
+  });
+
+  it('borrar un gasto: superadministrador con registro; sin registro o siendo admin común, no', async () => {
+    const gasto = { concepto: 'Hielo', categoria: 'insumos', monto: 5000, pago: 'efectivo', fecha: new Date() };
+    await sembrar('egresos/g-borrar-1', gasto);
+    await assertFails(deleteDoc(doc(sadmin(), 'egresos/g-borrar-1')));
+    let db = gerente();
+    let b = writeBatch(db);
+    b.set(doc(db, 'registro/borrar-gasto-g-borrar-1'), entrada('borrar-gasto'));
+    b.delete(doc(db, 'egresos/g-borrar-1'));
+    await assertFails(b.commit());
+    db = sadmin();
+    b = writeBatch(db);
+    b.set(doc(db, 'registro/borrar-gasto-g-borrar-1'), entrada('borrar-gasto'));
+    b.delete(doc(db, 'egresos/g-borrar-1'));
+    await assertSucceeds(b.commit());
+  });
+
+  it('reabrir una jornada cerrada: superadministrador con registro; admin común no', async () => {
+    const fecha = '2026-10-20';
+    await sembrar(`jornadas/${fecha}`, { fecha, desde: new Date(), hasta: new Date(),
+      cierre: { ventas: 1000 }, cerradaEn: new Date(), cerradaPor: 'carli', vecesReabierta: 0 });
+    const reabrir = { cierre: null, reabiertaEn: serverTimestamp(), reabiertaPor: 'carli', vecesReabierta: 1 };
+    await assertFails(updateDoc(doc(sadmin(), `jornadas/${fecha}`), reabrir));
+    let db = gerente();
+    let b = writeBatch(db);
+    b.set(doc(db, `registro/reabrir-jornada-${fecha}-1`), entrada('reabrir-jornada'));
+    b.update(doc(db, `jornadas/${fecha}`), reabrir);
+    await assertFails(b.commit());
+    db = sadmin();
+    b = writeBatch(db);
+    b.set(doc(db, `registro/reabrir-jornada-${fecha}-1`), entrada('reabrir-jornada'));
+    b.update(doc(db, `jornadas/${fecha}`), reabrir);
+    await assertSucceeds(b.commit());
   });
 });
 

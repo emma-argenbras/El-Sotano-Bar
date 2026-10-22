@@ -12,6 +12,7 @@
 import { $, esc, estado, plata } from './base.js';
 import { eventoDePuerta, hora, marcarCobrado } from './invitados.js';
 import { avisar, confirmarCobroPedido, quienPidio } from './pedidos.js';
+import { QUE_HIZO } from './registro.js';
 
 // ---------- avisarle a la casa ----------
 //
@@ -87,6 +88,49 @@ export function cambioDeAlias() {
   return p;
 }
 
+// ---------- lo que se corrigió con motivo ----------
+// Reabrir una jornada, anular un pedido entregado o borrar un gasto lo hace
+// Carli sin el dueño, pero con motivo y registro (ver registro.js). Al dueño
+// le queda en la campanita hasta que toca Visto, y le llega un aviso si el
+// panel está abierto. Lo propio no se avisa.
+const REGISTRO_VISTO = 'sotano:registro-visto';
+const registroVisto = () => { try { return Number(localStorage.getItem(REGISTRO_VISTO) || 0); } catch { return 0; } };
+
+export function correccionesNuevas() {
+  if (!estado.dueno) return [];
+  const desde = registroVisto();
+  return (estado.bitacora || []).filter((r) =>
+    (r.cuando?.toMillis?.() || 0) > desde && r.quien !== estado.usuario);
+}
+
+function queFue(r) {
+  const d = r.detalle || {};
+  if (r.que === 'anular-pedido') return `${d.a === 'listo' ? 'volvió a Listo' : 'anuló'} el pedido de ${esc(d.quien || '—')} · ${plata(d.total)}`;
+  if (r.que === 'borrar-gasto') return `borró el gasto «${esc(d.concepto || '—')}» · ${plata(d.monto)}`;
+  if (r.que === 'reabrir-jornada') return `reabrió la jornada del ${esc(d.fecha || '—')}`;
+  return esc(QUE_HIZO[r.que] || r.que);
+}
+
+let registroAvisado = null;
+function avisarCorrecciones() {
+  const ahora = correccionesNuevas();
+  if (registroAvisado !== null) {
+    for (const r of ahora) {
+      if (registroAvisado.has(r.id)) continue;
+      avisarCasa(`${r.quien} ${QUE_HIZO[r.que] || r.que}`, `Motivo: ${r.motivo}`, 'sotano-registro-' + r.id);
+    }
+  }
+  if (estado.bitacora) registroAvisado = new Set(ahora.map((r) => r.id));
+}
+
+function filaRegistro(r) {
+  return `<div class="item"><div class="cuerpo">
+    <div class="nombre" style="font-size:.88rem">${esc(r.quien)} ${queFue(r)}</div>
+    <div class="desc">${r.cuando?.toDate ? r.cuando.toDate().toLocaleString('es-AR',
+      { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : ''} · «${esc(r.motivo)}»</div>
+  </div></div>`;
+}
+
 // ---------- este teléfono ----------
 // En qué está el permiso de avisar, y qué hacer en cada caso. El permiso lo
 // da el navegador, una vez por teléfono, y solo si se pide desde un toque:
@@ -136,7 +180,9 @@ export function pintarAvisos() {
   const pedidos = pedidosPorConfirmar();
   const entradas = entradasPorConfirmar();
   const alias = cambioDeAlias();
-  const n = pedidos.length + entradas.length + (alias ? 1 : 0);
+  const correcciones = correccionesNuevas();
+  avisarCorrecciones();
+  const n = pedidos.length + entradas.length + (alias ? 1 : 0) + correcciones.length;
 
   const globo = $('#globoAvisos');
   globo.hidden = n === 0;
@@ -146,7 +192,13 @@ export function pintarAvisos() {
 
   const noche = (id) => estado.registros?.[id]?.nombre || '';
   const deLaPuerta = eventoDePuerta();
-  const html = n ? `
+  const html = (n ? `
+    ${correcciones.length ? `
+      <div class="item aviso-pendiente" style="flex-direction:column;align-items:stretch">
+        <div class="nombre">📝 Correcciones con motivo</div>
+        ${correcciones.map(filaRegistro).join('')}
+        <button class="btn" data-registro-visto style="margin-top:.4rem">Visto</button>
+      </div>` : ''}
     ${alias ? `
       <div class="item aviso-pendiente">
         <div class="cuerpo">
@@ -184,13 +236,25 @@ export function pintarAvisos() {
       </div>`).join('')}`
     : `<div class="vacio">Nada por confirmar.<br>
         <small>Cuando alguien toque "Ya transferí" aparece acá, con un número
-        arriba de la campana, hasta que lo confirmes.</small></div>`;
+        arriba de la campana, hasta que lo confirmes.</small></div>`)
+    // El registro entero, para quien puede corregir: lo que se hizo, quién y
+    // por qué. No suma al número de la campana: es para consultar.
+    + (estado.sadmin && (estado.bitacora || []).length ? `
+      <details style="margin-top:.8rem"><summary style="cursor:pointer;color:var(--suave);font-size:.85rem">
+        Registro de cambios (${estado.bitacora.length})</summary>
+        ${estado.bitacora.map(filaRegistro).join('')}</details>` : '');
 
   pintarTelefono();
   if (html === ultimoAvisos) return;
   ultimoAvisos = html;
   const cuerpo = $('#cuerpoAvisos');
   cuerpo.innerHTML = html;
+  const vistoRegistro = cuerpo.querySelector('[data-registro-visto]');
+  if (vistoRegistro) vistoRegistro.onclick = () => {
+    const ultimo = Math.max(...(estado.bitacora || []).map((r) => r.cuando?.toMillis?.() || 0), 0);
+    try { localStorage.setItem(REGISTRO_VISTO, String(ultimo || Date.now())); } catch {}
+    pintarAvisos();
+  };
   const visto = cuerpo.querySelector('[data-alias-visto]');
   if (visto) visto.onclick = () => {
     try { localStorage.setItem(ALIAS_VISTO, String(estado.pagos?.cambiadoEn?.toMillis?.() || Date.now())); } catch {}

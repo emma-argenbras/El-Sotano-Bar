@@ -3001,8 +3001,16 @@ await chequear('un entregado por error se puede corregir', async () => {
   // preguntar una vez, cuando "ya tiene pago" se tomó por "ya está
   // confirmado", y lo encontró una revisión antes de publicar.
   const quien = (await barra.locator('.ticket.entregado').first().locator('.mesa').textContent()).trim();
+  const motivo = async (texto) => {
+    await barra.waitForSelector('#dlgMotivo[open]', { timeout: 10000 })
+      .catch(() => { throw new Error('no pidió el motivo'); });
+    await barra.fill('#inpMotivo', texto);
+    await barra.click('#btnConfirmarMotivo');
+    await barra.waitForSelector('#dlgMotivo[open]', { state: 'detached', timeout: 10000 });
+  };
   barra.once('dialog', (d) => d.accept('2'));
   await barra.locator('.ticket.entregado [data-corregir]').first().click();
+  await motivo('lo cobré como virtual y era efectivo');
   const enListo = barra.locator('.ticket.listo', { hasText: quien }).first();
   await enListo.waitFor({ timeout: 10000 });
   await enListo.locator('[data-avanzar]').click();
@@ -3012,11 +3020,20 @@ await chequear('un entregado por error se puede corregir', async () => {
   await barra.waitForSelector('#dlgCobro[open]', { state: 'detached', timeout: 10000 });
   await barra.locator('.ticket.entregado', { hasText: quien }).first().waitFor({ timeout: 10000 });
 
-  // Y cancelarlo lo saca de la caja.
+  // Y anularlo lo saca de la caja.
   barra.once('dialog', (d) => d.accept('1'));
   await barra.locator('.ticket.entregado [data-corregir]').first().click();
+  await motivo('el cliente se fue sin tomarlo');
   await barra.waitForFunction((t) =>
     document.querySelector('#chipCaja')?.textContent !== t, antes, { timeout: 10000 });
+
+  // Las dos correcciones quedaron en el registro, con su motivo.
+  for (let i = 0; i < 40; i++) {
+    const r = (await db.collection('registro').where('que', '==', 'anular-pedido').get()).docs.map((d) => d.data());
+    if (r.some((x) => x.motivo === 'el cliente se fue sin tomarlo') && r.some((x) => x.motivo.startsWith('lo cobré'))) break;
+    if (i === 39) throw new Error('las correcciones no quedaron en el registro: ' + JSON.stringify(r));
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
 });
 
 await chequear('cerrado el evento, el cliente ve la carta pero no puede pedir', async () => {
@@ -4197,6 +4214,37 @@ await chequear('comparar jornadas no inventa lo que no hay', async () => {
   await barra.locator('#cierre [data-vista="una"]').click();
 });
 
+await chequear('reabrir la jornada pide motivo y queda en el registro', async () => {
+  const cerrada = (await db.collection('jornadas').get()).docs.find((d) => d.data().cierre);
+  if (!cerrada) throw new Error('no hay ninguna jornada cerrada para probar');
+  const antes = cerrada.data();
+  try {
+    await barra.waitForSelector('#btnReabrirJornada', { timeout: 10000 })
+      .catch(() => { throw new Error('no ofrece reabrir la jornada'); });
+    await barra.click('#btnReabrirJornada');
+    await barra.waitForSelector('#dlgMotivo[open]', { timeout: 10000 })
+      .catch(() => { throw new Error('no pidió el motivo'); });
+    // Sin motivo no se reabre.
+    await barra.click('#btnConfirmarMotivo');
+    if (await barra.locator('#errorMotivo').evaluate((e) => e.classList.contains('oculto')))
+      throw new Error('dejó seguir sin motivo');
+    await barra.fill('#inpMotivo', 'contamos mal el cajón');
+    await barra.click('#btnConfirmarMotivo');
+    const n = Number(antes.vecesReabierta || 0) + 1;
+    for (let i = 0; i < 40; i++) {
+      const j = (await cerrada.ref.get()).data();
+      const r = (await db.doc(`registro/reabrir-jornada-${cerrada.id}-${n}`).get()).data();
+      if (!j.cierre && j.vecesReabierta === n && r?.motivo === 'contamos mal el cajón') break;
+      if (i === 39) throw new Error('no quedó reabierta con su registro: ' + JSON.stringify({ cierre: !!j.cierre, n: j.vecesReabierta, r }));
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+  } finally {
+    // Se deja como estaba: lo que sigue cuenta con la jornada cerrada.
+    await barra.evaluate(() => document.querySelectorAll('dialog[open]').forEach((d) => d.close())).catch(() => {});
+    await cerrada.ref.set(antes);
+  }
+});
+
 // ---------- la hora a la que corta el día del bar ----------
 // La noche no termina a medianoche. Qué plata es de qué noche depende de
 // este número, así que se mira que se vea, que se pueda mover y —sobre
@@ -4440,6 +4488,33 @@ await chequear('la campanita activa los avisos del teléfono y le cuenta al due�
       try { localStorage.removeItem('sotano:alias-visto'); } catch {}
     }).catch(() => {});
     await db.doc('publico/pagos').set({ alias: 'sotano.prueba.mp', titular: 'Sotano Prueba' });
+  }
+});
+
+await chequear('al dueño le queda en la campanita lo que otro corrigió con motivo', async () => {
+  await barra.evaluate(() => { try { localStorage.removeItem('sotano:registro-visto'); } catch {} });
+  const ref = db.doc('registro/borrar-gasto-de-prueba-campanita');
+  await ref.set({ que: 'borrar-gasto', motivo: 'estaba cargado dos veces', quien: 'carli',
+    cuando: new Date(), detalle: { concepto: 'Hielo', monto: 5000, pago: 'efectivo' } });
+  try {
+    await barra.click('#btnSonido');
+    await barra.waitForSelector('#dlgAvisos[open]', { timeout: 10000 });
+    await barra.waitForFunction(() =>
+      (document.querySelector('#cuerpoAvisos')?.textContent || '').includes('estaba cargado dos veces'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('la campanita no muestra la corrección: ' + (await barra.textContent('#cuerpoAvisos')).slice(0, 300));
+      });
+    const t = await barra.textContent('#cuerpoAvisos');
+    if (!t.includes('carli') || !t.includes('Hielo')) throw new Error('no dice quién ni qué: ' + t.slice(0, 300));
+    await barra.click('[data-registro-visto]');
+    await barra.waitForFunction(() => !document.querySelector('[data-registro-visto]'), null, { timeout: 5000 })
+      .catch(() => { throw new Error('"Visto" no lo saca de la campanita'); });
+  } finally {
+    await barra.evaluate(() => {
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+      try { localStorage.removeItem('sotano:registro-visto'); } catch {}
+    }).catch(() => {});
+    await ref.delete();
   }
 });
 

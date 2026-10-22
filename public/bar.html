@@ -504,6 +504,20 @@
   <button class="btn primario ancho-full" id="btnCerrarAvisos" style="margin-top:.5rem">Cerrar</button>
 </dialog>
 
+<dialog id="dlgMotivo">
+  <h2 style="margin-top:0" id="tituloMotivo"></h2>
+  <p style="color:var(--suave);font-size:.9rem;margin:.2rem 0 .9rem;white-space:pre-line" id="textoMotivo"></p>
+  <label class="campo">
+    <span>Motivo <small>(queda en el registro y le avisa al dueño)</small></span>
+    <textarea id="inpMotivo" maxlength="300" placeholder="Ej: lo cargué dos veces"></textarea>
+  </label>
+  <div class="aviso mal oculto" id="errorMotivo"><span>⚠</span><div>Escribí el motivo: queda anotado.</div></div>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarMotivo" style="flex:1">Volver</button>
+    <button class="btn peligro" id="btnConfirmarMotivo" style="flex:1.4">Confirmar</button>
+  </div>
+</dialog>
+
 <dialog id="dlgCobro">
   <h2 style="margin-top:0" id="tituloCobro">¿Cómo pagó?</h2>
   <p style="color:var(--suave);margin:.2rem 0 1rem" id="detalleCobro"></p>

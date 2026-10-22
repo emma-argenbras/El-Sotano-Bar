@@ -9,6 +9,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from '/vendor/firebase.js';
 import { $, COLUMNAS, DEMORA_MS, esc, estado, plata } from './base.js';
 import { costoDeItems, moverInsumos, opcionesDe, recetaCompleta } from './stock.js';
@@ -18,6 +19,7 @@ import { preciosDe } from './cartas.js';
 import { desdeCuando, pintarEvento, resumirCaja } from './eventos.js';
 import { avisarCasa, pedidosPorConfirmar, pintarAvisos } from './avisos.js';
 import { hora } from './invitados.js';
+import { pedirMotivo, registrar } from './registro.js';
 
 // ---------- pedidos ----------
 export let dejarDeEscucharPedidos = null;
@@ -85,17 +87,41 @@ export function pintarTablero() {
   cont.querySelectorAll('[data-cobrar-pedido]').forEach((b) =>
     b.onclick = () => confirmarCobroPedido(b.dataset.cobrarPedido, b));
   // Entregado por error: sin esto la caja queda mal para siempre.
-  cont.querySelectorAll('[data-corregir]').forEach((b) => b.onclick = () => {
-    const p = estado.pedidos.find((x) => x.id === b.dataset.corregir);
-    const r = prompt(`Corregir el pedido de ${p?.mesa ? 'mesa ' + p.mesa : 'sin mesa'} · ${plata(p?.total)}\n\n`
-      + '1 = cancelarlo (sale de la caja)\n'
-      + '2 = volverlo a Listo\n\n'
-      + 'Dejalo vacío para no tocar nada.', '');
-    if (r !== '1' && r !== '2') return;
-    // Sacarlo de entregado devuelve lo que se había descontado.
-    if (p.estado === 'entregado') moverStock(p, +1);
-    cambiarEstado(p.id, r === '1' ? 'cancelado' : 'listo');
+  cont.querySelectorAll('[data-corregir]').forEach((b) => b.onclick = () =>
+    corregirEntregado(estado.pedidos.find((x) => x.id === b.dataset.corregir)));
+}
+
+// Sacar un pedido de entregado saca plata de la caja: anularlo, o volverlo
+// a Listo para cobrarlo de nuevo. Lo hace un superadministrador, con motivo,
+// y en la misma escritura queda la entrada del registro (las reglas la
+// piden). El dueño lo ve en su campanita. Después se devuelve el stock.
+export async function corregirEntregado(p) {
+  if (!p) return;
+  const r = prompt(`Corregir el pedido de ${quienPidio(p)} · ${plata(p.total)}\n\n`
+    + '1 = anularlo (sale de la caja)\n'
+    + '2 = volverlo a Listo, para cobrarlo de nuevo\n\n'
+    + 'Dejalo vacío para no tocar nada.', '');
+  if (r !== '1' && r !== '2') return;
+  const nuevo = r === '1' ? 'cancelado' : 'listo';
+  const motivo = await pedirMotivo({
+    titulo: r === '1' ? 'Anular un pedido entregado' : 'Volver a Listo un pedido entregado',
+    texto: `${quienPidio(p)} · ${plata(p.total)}${p.pago ? ' · cobrado en ' + p.pago : ''}\n`
+      + (r === '1' ? 'Sale de la caja y se devuelve el stock.' : 'Se devuelve el stock y al entregarlo se vuelve a cobrar.'),
+    boton: r === '1' ? 'Anular' : 'Volver a Listo',
   });
+  if (!motivo) return;
+  const n = Number(p.vecesCorregido || 0) + 1;
+  try {
+    const lote = writeBatch(db);
+    registrar(lote, `anular-pedido-${p.id}-${n}`, 'anular-pedido', motivo, {
+      pedidoId: p.id, quien: quienPidio(p), total: Number(p.total || 0),
+      pago: p.pago || '', de: p.estado, a: nuevo,
+    });
+    lote.update(doc(db, 'pedidos', p.id), { estado: nuevo, vecesCorregido: n });
+    await lote.commit();
+    // Sacarlo de entregado devuelve lo que se había descontado.
+    if (p.estado === 'entregado') await moverStock(p, +1);
+  } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 
 // Quién pidió. El nombre del invitado manda sobre lo que haya escrito a mano:
@@ -194,7 +220,7 @@ export function ticket(p, col) {
       ${botonAvanzar(p, col)}
       ${col.clave !== 'entregado'
         ? `<button class="btn peligro" data-cancelar="${p.id}" title="Cancelar">✕</button>`
-        : `<button class="btn solo-gerente-inline" data-corregir="${p.id}" title="Corregir">↩</button>`}
+        : `<button class="btn solo-sadmin" data-corregir="${p.id}" title="Corregir">↩</button>`}
     </div>
   </div>`;
 }

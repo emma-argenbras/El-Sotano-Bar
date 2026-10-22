@@ -39,7 +39,7 @@ export const PANTALLAS = [
 ];
 
 export const QUE_ES_EL_ROL = {
-  sadmin: 'Hace todo, y además elige qué ve cada uno.',
+  sadmin: 'Hace todo: elige qué ve cada uno, reabre jornadas y corrige cobros, con motivo.',
   admin: 'Administra todo salvo borrar y repartir permisos.',
   barman: 'Mueve pedidos y cobra, la noche que está asignado.',
   puerta: 'Escanea pases, la noche que está asignada.',
@@ -73,6 +73,9 @@ export function pintarUsuarios() {
                   ? ' · trabaja esta noche' : ' · sin turno asignado')
               : ''}</div>
         </div>
+        ${!esYo && estado.sadmin && a.rol === 'admin' && a.activo ? `<button class="btn"
+          data-ascender="${esc(a.uid)}" title="Que también reparta pantallas, reabra jornadas y corrija cobros"
+          style="padding:.4rem .7rem;font-size:.82rem">Subir a superadmin</button>` : ''}
         ${esYo ? '' : `<button class="btn ${a.activo ? 'peligro' : 'primario'}"
           data-acceso="${esc(a.uid)}" style="padding:.4rem .7rem;font-size:.82rem">
           ${a.activo ? 'Dar de baja' : 'Reactivar'}</button>`}
@@ -136,11 +139,32 @@ export function pintarUsuarios() {
   });
   cont.querySelectorAll('[data-acceso]').forEach((b) =>
     b.onclick = () => alternarAcceso(b.dataset.acceso));
+  cont.querySelectorAll('[data-ascender]').forEach((b) =>
+    b.onclick = () => ascender(b.dataset.ascender, b));
   if ($('#btnAltaSadmin')) $('#btnAltaSadmin').onclick = () => altaPersona('sadmin');
   $('#btnAltaAdmin').onclick = () => altaPersona('admin');
   $('#btnAltaBarman').onclick = () => altaPersona('barman');
   $('#btnAltaAparato').onclick = () => altaPersona('barra');
   $('#btnAltaPuerta').onclick = () => altaPersona('puerta');
+}
+
+// Un administrador pasa a superadministrador: reparte las pantallas de
+// cada uno, nombra a otros, reabre jornadas y corrige cobros —esto último
+// con motivo y registro—. Lo hace solo otro superadministrador o el dueño.
+export async function ascender(uid, boton) {
+  const a = estado.accesos.find((x) => x.uid === uid);
+  if (!a || !confirm(`¿Subir a "${a.usuario}" a superadministrador?\n\n`
+    + 'Va a poder repartir las pantallas de cada uno, nombrar a otros superadministradores, '
+    + 'reabrir jornadas y corregir pedidos y gastos (con motivo, que te avisa a vos).')) return;
+  if (boton) boton.disabled = true;
+  try {
+    await updateDoc(doc(db, 'accesosBarra', uid), {
+      usuario: a.usuario, rol: 'sadmin', activo: a.activo !== false,
+    });
+  } catch (e) {
+    if (boton) boton.disabled = false;
+    alert('No se pudo: ' + (e.code || e.message));
+  }
 }
 
 export async function guardarPermiso(uid, que, valor, caja) {

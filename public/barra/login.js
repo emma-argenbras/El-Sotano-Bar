@@ -12,6 +12,7 @@ import { escucharCarta } from './carta.js';
 import { auth, pintarConexion } from './conexion.js';
 import { escucharDeposito } from './deposito.js';
 import { escucharAlias } from './administracion.js';
+import { escucharRegistro } from './registro.js';
 import { escucharEvento } from './eventos.js';
 import { escucharInvitados } from './invitados.js';
 import { escucharCartas } from './cartas.js';
@@ -148,4 +149,5 @@ onAuthStateChanged(auth, async (u) => {
   // los insumos, no de la carta, para los productos que tienen receta.
   escucharDeposito();
   escucharAlias();
+  escucharRegistro();
 });

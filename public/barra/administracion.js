@@ -2,7 +2,6 @@ import {
   Timestamp,
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDocs,
   onSnapshot,
@@ -24,6 +23,7 @@ import { CORTE, alCambiarElCorte, arranqueDeHoy, corteValido, horaCorte } from '
 import { pintarCierre } from './cierre.js';
 import { preciosDe } from './cartas.js';
 import { pintarAvisos } from './avisos.js';
+import { pedirMotivo, registrar } from './registro.js';
 import { fechaDeHoy } from './jornada.js';
 
 // ---------- la caja de Sótano ----------
@@ -203,8 +203,8 @@ export function pintarCajaGeneral() {
             ${e.cargadoPor ? ' · ' + esc(e.cargadoPor) : ''}</div>
         </div>
         <div class="total">−${plata(e.monto)}</div>
-        <button class="btn peligro" data-borrar-egreso="${esc(e.id)}"
-                style="padding:.3rem .6rem;font-size:.78rem">✕</button>
+        <button class="btn peligro solo-sadmin" data-borrar-egreso="${esc(e.id)}"
+                title="Borrar este gasto (con motivo)" style="padding:.3rem .6rem;font-size:.78rem">✕</button>
       </div>`).join('')
       : '<p style="color:var(--suave);font-size:.9rem">Sin gastos cargados en este período.</p>'}
 
@@ -245,12 +245,28 @@ export function pintarCajaGeneral() {
       alert('No se pudo: ' + (err.code || err.message));
     }
   };
-  cont.querySelectorAll('[data-borrar-egreso]').forEach((b) => b.onclick = async () => {
-    const e = estado.egresos.find((x) => x.id === b.dataset.borrarEgreso);
-    if (!e || !confirm(`¿Borrar el gasto "${e.concepto}" de ${plata(e.monto)}?`)) return;
-    try { await deleteDoc(doc(db, 'egresos', e.id)); }
-    catch (err) { alert('No se pudo: ' + (err.code || err.message)); }
+  cont.querySelectorAll('[data-borrar-egreso]').forEach((b) => b.onclick = () =>
+    borrarGasto(estado.egresos.find((x) => x.id === b.dataset.borrarEgreso)));
+}
+
+// Borrar un gasto le devuelve plata a la caja: superadministrador, con
+// motivo, y la entrada del registro en la misma escritura.
+export async function borrarGasto(e) {
+  if (!e) return;
+  const motivo = await pedirMotivo({
+    titulo: 'Borrar un gasto',
+    texto: `${e.concepto} · ${plata(e.monto)} · ${e.pago === 'efectivo' ? 'efectivo' : 'virtual'}\n`
+      + 'Sale de la caja y del cierre de esa noche.',
+    boton: 'Borrar',
   });
+  if (!motivo) return;
+  try {
+    const lote = writeBatch(db);
+    registrar(lote, `borrar-gasto-${e.id}`, 'borrar-gasto', motivo,
+      { concepto: e.concepto || '', monto: Number(e.monto || 0), pago: e.pago || '' });
+    lote.delete(doc(db, 'egresos', e.id));
+    await lote.commit();
+  } catch (err) { alert('No se pudo: ' + (err.code || err.message)); }
 }
 
 // Mover el corte con la jornada empezada le cambia el día a ventas que ya
@@ -908,9 +924,26 @@ export async function borrarCompra(c) {
     + (c.condicion === 'cuenta' && Number(c.total || 0) > 0
       ? ` y de la deuda con el proveedor.` : '.')
     + (gasto ? `\n\nTambién se borra el gasto de ${plata(gasto.monto)} que dejó en la caja.` : ''))) return;
+  // Si dejó un gasto en la caja, borrarlo es borrar un gasto: con motivo y
+  // registro, como desde la lista de gastos.
+  let motivo = '';
+  if (gasto) {
+    motivo = await pedirMotivo({
+      titulo: 'Borrar un ingreso pagado',
+      texto: `Se borra también el gasto de ${plata(gasto.monto)} que dejó en la caja.`,
+      boton: 'Borrar',
+    });
+    if (!motivo) return;
+  }
   try {
-    if (gasto) await deleteDoc(doc(db, 'egresos', gasto.id));
-    await deleteDoc(doc(db, 'compras', c.id));
+    const lote = writeBatch(db);
+    if (gasto) {
+      registrar(lote, `borrar-gasto-${gasto.id}`, 'borrar-gasto', motivo,
+        { concepto: gasto.concepto || quien, monto: Number(gasto.monto || 0), pago: gasto.pago || '', compraId: c.id });
+      lote.delete(doc(db, 'egresos', gasto.id));
+    }
+    lote.delete(doc(db, 'compras', c.id));
+    await lote.commit();
   } catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
 }
 

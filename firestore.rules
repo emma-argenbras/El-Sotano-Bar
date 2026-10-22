@@ -231,7 +231,7 @@ service cloud.firestore {
     // el total: eso quedó fijado cuando se hizo.
     function soloCobro() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['estado', 'pago', 'vendidoPor', 'cobradoEn', 'cobradoPor']);
+        .hasOnly(['estado', 'pago', 'vendidoPor', 'cobradoEn', 'cobradoPor', 'vecesCorregido']);
     }
 
     // Lo que se escribe al cobrar tiene que ser un cobro: una forma de pago
@@ -399,9 +399,52 @@ service cloud.firestore {
         && request.resource.data.creadoEn == resource.data.creadoEn
         && (esElDueno() || soloCobro() || soloCosto())
         && cobroValido()
-        && transferenciaRespetada();
+        && transferenciaRespetada()
+        && entregadoSeCorrigeConMotivo(pedidoId);
 
       // Borrar es del dueño y de nadie más.
+      allow delete: if esElDueno();
+    }
+
+    // Sacar un pedido de "entregado" —anularlo, o volverlo a Listo para
+    // cobrarlo de nuevo— saca plata de la caja. Lo hace un superadministrador,
+    // con motivo, y queda en el registro: el dueño se entera en su campanita.
+    // Antes lo podía hacer cualquier barman de turno, sin rastro.
+    function entregadoSeCorrigeConMotivo(pedidoId) {
+      let antes = resource.data.estado;
+      let despues = request.resource.data.estado;
+      let n = request.resource.data.get('vecesCorregido', 0);
+      return antes != 'entregado' || despues == 'entregado' || esElDueno()
+        || (esSuperAdmin()
+            && n == resource.data.get('vecesCorregido', 0) + 1
+            && conRegistro('anular-pedido-' + pedidoId + '-' + string(n)));
+    }
+
+    // ---------- el registro de cambios ----------
+    //
+    // Lo que saca plata de la caja o descongela números —anular un pedido
+    // entregado, borrar un gasto, reabrir una jornada— lo puede hacer un
+    // superadministrador sin depender del dueño, pero no en silencio: en la
+    // misma escritura deja una entrada acá, con su motivo y la hora del
+    // servidor. Las reglas de cada una de esas cosas piden que la entrada
+    // exista (existsAfter), así que no hay forma de hacerlo sin dejarla.
+    // Nadie la edita, y solo el dueño la borra.
+    function conRegistro(id) {
+      return existsAfter(/databases/$(database)/documents/registro/$(id));
+    }
+
+    function registroValido(d) {
+      return d.keys().hasOnly(['que', 'motivo', 'quien', 'cuando', 'detalle'])
+        && d.que in ['anular-pedido', 'borrar-gasto', 'reabrir-jornada']
+        && d.motivo is string && d.motivo.size() >= 3 && d.motivo.size() <= 300
+        && d.quien is string && d.quien.size() <= 60
+        && d.cuando == request.time
+        && (!('detalle' in d.keys()) || d.detalle is map);
+    }
+
+    match /registro/{id} {
+      allow read: if esAdmin();
+      allow create: if esSuperAdmin() && registroValido(request.resource.data);
       allow delete: if esElDueno();
     }
 
@@ -743,6 +786,18 @@ service cloud.firestore {
     // calcularlos: si después cambia un precio o entra una compra atrasada,
     // el cierre de esa noche no se mueve. Por eso una jornada cerrada solo
     // la reabre el dueño, y reabrirla deja marca.
+    // Reabrir es dejar el cierre en null, contar una reapertura más, con la
+    // hora del servidor, y dejar la entrada del registro con ese número.
+    function reaperturaConMotivo(fecha) {
+      let d = request.resource.data;
+      let n = d.get('vecesReabierta', 0);
+      return esSuperAdmin()
+        && d.get('cierre', null) == null
+        && n == resource.data.get('vecesReabierta', 0) + 1
+        && d.get('reabiertaEn', null) == request.time
+        && conRegistro('reabrir-jornada-' + fecha + '-' + string(n));
+    }
+
     function jornadaValida() {
       return request.resource.data.keys().hasOnly(
           ['fecha', 'desde', 'hasta', 'horaCorte', 'nombre', 'eventoId',
@@ -801,12 +856,12 @@ service cloud.firestore {
         && request.resource.data.cierre != null;
 
       // Cerrar una jornada que ya estaba cerrada seria pisar los numeros
-      // congelados sin dejar rastro. Para eso hay que reabrirla primero, y
-      // eso es del dueño.
+      // congelados sin dejar rastro. Para eso hay que reabrirla primero: el
+      // dueño, o un superadministrador con motivo y registro.
       allow update: if esAdmin() && puedo('caja')
         && jornadaValida()
         && request.resource.data.fecha == resource.data.fecha
-        && (resource.data.get('cierre', null) == null || esElDueno());
+        && (resource.data.get('cierre', null) == null || esElDueno() || reaperturaConMotivo(fecha));
 
       allow delete: if esElDueno();
     }
@@ -915,7 +970,9 @@ service cloud.firestore {
       allow read: if esAdmin() && puedo('caja');
       allow create: if esAdmin() && puedo('caja') && egresoValido(request.resource.data);
       allow update: if esAdmin() && puedo('caja') && egresoValido(request.resource.data);
-      allow delete: if esAdmin() && puedo('caja');
+      // Borrar un gasto mueve la caja: superadministrador, con motivo y
+      // registro (ver conRegistro).
+      allow delete: if esElDueno() || (esSuperAdmin() && conRegistro('borrar-gasto-' + id));
     }
 
     // ---------- el padrón: quién puede entrar al panel ----------
