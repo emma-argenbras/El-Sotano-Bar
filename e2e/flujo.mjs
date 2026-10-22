@@ -1428,6 +1428,11 @@ await chequear('al arrancar otra noche, "adentro" no arrastra a los de la anteri
     .where('estado', '==', 'abierto').get();
   if (q.empty) throw new Error('no hay ninguna noche abierta para probar');
   const abierta = q.docs[0];
+  // La línea "N de M anotados · K adentro" se dibuja solo si la noche tiene
+  // cupo. La noche de la corrida no lo tiene: se le pone uno mientras dura el
+  // caso y se le saca al final.
+  const cupoDeAntes = abierta.data().capacidad ?? 0;
+  await abierta.ref.update({ capacidad: 10 });
 
   // Un invitado que ENTRÓ a otra noche, cualquiera, cargado directo.
   const otraNoche = 'noche-de-la-semana-pasada';
@@ -1459,7 +1464,7 @@ await chequear('al arrancar otra noche, "adentro" no arrastra a los de la anteri
       });
   } finally {
     await ref.delete();
-    await abierta.ref.update({ estado: 'abierto' }).catch(() => {});
+    await abierta.ref.update({ estado: 'abierto', capacidad: cupoDeAntes }).catch(() => {});
   }
 });
 
