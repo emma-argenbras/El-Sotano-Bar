@@ -1193,6 +1193,54 @@ await chequear('la ayuda del barman habla de lo suyo y no de la caja', async () 
   await turno.click('#btnCerrarAyuda');
 });
 
+await chequear('la barra corrige el stock de un insumo sin pedirle permiso a nadie', async () => {
+  // Lo que pasó en una noche de prueba: Guille vio un stock mal cargado y no
+  // tenía cómo arreglarlo. Las reglas SÍ le dejan tocar `stock` —y nada más—,
+  // pero el único camino de la pantalla era "Editar", que manda el nombre, la
+  // unidad, las medidas y el costo junto con el stock. Ese guardado le rebota
+  // entero. El permiso estaba; faltaba por dónde.
+  const ref = db.collection('insumos').doc('insumo-que-la-barra-corrige');
+  await ref.set({ nombre: 'Lata mal contada', unidad: 'lata', medidas: 1,
+                  stock: 99, costo: 1200, minimo: 0 });
+  try {
+    await turno.click('#tabDeposito');
+    await turno.waitForFunction(() =>
+      document.querySelector('#deposito')?.textContent.includes('Lata mal contada'),
+      null, { timeout: 15000 });
+
+    const fila = turno.locator('#deposito .item', { hasText: 'Lata mal contada' });
+    // Editar es de gerente y no tiene que ofrecérselo: sería un botón que
+    // termina en permission-denied.
+    if (await fila.locator('[data-editar-insumo]').isVisible())
+      throw new Error('le ofrece Editar, que las reglas le van a rebotar');
+
+    await fila.locator('[data-stock-insumo]').click();
+    await turno.waitForSelector('#dlgStock[open]', { timeout: 5000 });
+    // Una lata es una medida: no se le pregunta por medidas sueltas.
+    if (await turno.locator('#campoSueltas').isVisible())
+      throw new Error('le pregunta por medidas sueltas en algo que viene de a una');
+    await turno.fill('#inpStockUnidades', '12');
+    await turno.click('#btnGuardarStock');
+    await turno.waitForFunction(() =>
+      !document.querySelector('#dlgStock')?.open, null, { timeout: 10000 });
+
+    for (let i = 0; i < 40; i++) {
+      const d = (await ref.get()).data();
+      if (Number(d.stock) === 12) break;
+      if (i === 39) throw new Error('no le dejó corregirlo: quedó en ' + d.stock);
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    // Y lo demás del insumo quedó intacto: corregir el stock no es editar.
+    const d = (await ref.get()).data();
+    if (d.nombre !== 'Lata mal contada' || Number(d.costo) !== 1200)
+      throw new Error('le cambió algo más que el stock: ' + JSON.stringify(d));
+  } finally {
+    await turno.evaluate(() =>
+      document.querySelectorAll('dialog[open]').forEach((x) => x.close()));
+    await ref.delete();
+  }
+});
+
 await chequear('el de la barra ve lo suyo y nada mas', async () => {
   await turno.click('#tabEvento');
   await turno.waitForTimeout(800);

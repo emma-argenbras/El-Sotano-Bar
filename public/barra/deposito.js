@@ -220,7 +220,9 @@ export function pintarDeposito() {
                   esc(productosQueUsan([i.id]).map((c) => c.nombre || c.id).join(', '))}</span>`}</div>
         </div>
         ${soloMira ? '' : `
-        <button class="btn" data-editar-insumo="${esc(i.id)}"
+        <button class="btn" data-stock-insumo="${esc(i.id)}"
+                title="Corregir cuánto hay" style="padding:.3rem .6rem;font-size:.78rem">Stock</button>
+        <button class="btn solo-gerente-inline" data-editar-insumo="${esc(i.id)}"
                 style="padding:.3rem .6rem;font-size:.78rem">Editar</button>
         <button class="btn peligro solo-gerente-inline" data-baja-insumo="${esc(i.id)}"
                 title="Darlo de baja" style="padding:.3rem .55rem;font-size:.78rem">✕</button>`}
@@ -246,6 +248,55 @@ export function pintarDeposito() {
     abrirBaja(estado.insumos.find((i) => i.id === b.dataset.bajaInsumo)));
   cont.querySelectorAll('[data-editar-insumo]').forEach((b) => b.onclick = () =>
     abrirInsumo(estado.insumos.find((i) => i.id === b.dataset.editarInsumo)));
+  cont.querySelectorAll('[data-stock-insumo]').forEach((b) => b.onclick = () =>
+    abrirStock(estado.insumos.find((i) => i.id === b.dataset.stockInsumo)));
+}
+
+// ---------- corregir cuánto hay ----------
+//
+// La barra cuenta y el número no coincide: se rompió una botella, se cargó mal
+// una compra, alguien sirvió sin pasarlo. Corregirlo tiene que poder hacerlo
+// quien está en la barra, que es el que está mirando el estante.
+//
+// Hasta ahora el único camino era "Editar", que manda el nombre, la unidad,
+// las medidas y el costo junto con el stock. Las reglas le dejan a la barra
+// tocar el stock Y NADA MÁS, así que ese guardado le rebotaba entero y el
+// número quedaba mal. El permiso estaba; faltaba por dónde.
+let corrigiendo = null;
+
+export function abrirStock(ins) {
+  if (!ins) return;
+  corrigiendo = ins;
+  const m = Math.max(1, Number(ins.medidas || 1));
+  $('#tituloStock').textContent = ins.nombre || ins.id;
+  $('#pistaStock').textContent = `Ahora la app dice que hay ${comoSeDice(ins)}.`;
+  $('#campoSueltas').classList.toggle('oculto', m === 1);
+  $('#inpStockUnidades').value = unidadesDe(ins);
+  $('#inpStockSueltas').value = sueltasDe(ins);
+  $('#etiqStockUnidades').textContent = `Cuántas ${esc(ins.unidad || 'unidad')} hay`;
+  $('#etiqStockSueltas').textContent = `Y cuántas medidas sueltas (de 0 a ${m - 1})`;
+  $('#dlgStock').showModal();
+  $('#inpStockUnidades').focus();
+  $('#inpStockUnidades').select();
+}
+
+export async function guardarStock() {
+  const ins = corrigiendo;
+  if (!ins) return;
+  const m = Math.max(1, Number(ins.medidas || 1));
+  const unidades = Math.max(0, Math.floor(Number($('#inpStockUnidades').value) || 0));
+  const sueltas = Math.min(m - 1, Math.max(0, Math.floor(Number($('#inpStockSueltas').value) || 0)));
+  const total = unidades * m + sueltas;
+  const btn = $('#btnGuardarStock');
+  btn.disabled = true;
+  try {
+    // Solo `stock`: es lo único que las reglas le dejan tocar a la barra, y
+    // mandar un campo de más haría rebotar todo el guardado.
+    await updateDoc(doc(db, 'insumos', ins.id), { stock: total });
+    $('#dlgStock').close();
+  } catch (e) {
+    alert('No se pudo corregir el stock: ' + (e.code || e.message));
+  } finally { btn.disabled = false; }
 }
 
 // ---------- dar de baja un insumo ----------

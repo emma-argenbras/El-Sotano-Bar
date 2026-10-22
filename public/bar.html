@@ -344,6 +344,25 @@
   </div>
 </dialog>
 
+<!-- Corregir cuánto hay, sin tocar nada más. Es lo único que las reglas le
+     dejan hacer a la barra sobre un insumo, y hasta ahora no tenía por dónde. -->
+<dialog id="dlgStock">
+  <h2 style="margin-top:0" id="tituloStock">Corregir el stock</h2>
+  <p style="color:var(--suave);font-size:.9rem;margin:.2rem 0 1rem" id="pistaStock"></p>
+  <label class="campo">
+    <span id="etiqStockUnidades">Cuántas hay</span>
+    <input id="inpStockUnidades" type="number" min="0" inputmode="numeric">
+  </label>
+  <label class="campo oculto" id="campoSueltas">
+    <span id="etiqStockSueltas">Y cuántas medidas sueltas</span>
+    <input id="inpStockSueltas" type="number" min="0" inputmode="numeric">
+  </label>
+  <div style="display:flex;gap:.6rem;margin-top:1rem">
+    <button class="btn" id="btnCancelarStock" style="flex:1">Volver</button>
+    <button class="btn primario" id="btnGuardarStock" style="flex:1.4">Guardar</button>
+  </div>
+</dialog>
+
 <!-- Ponerle precio a todo lo que todavía no sale en la carta, de una sola
      pasada. Hacerlo de a uno son cincuenta y tres viajes al diálogo del
      insumo, y por eso quedaba sin hacer. -->
