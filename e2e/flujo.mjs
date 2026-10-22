@@ -4228,6 +4228,146 @@ await chequear('cambiarlo mueve la ventana de la caja sin recargar', async () =>
     document.querySelector('#inpCorte')?.value === '6', null, { timeout: 10000 });
 });
 
+// ---------- el trago por transferencia ----------
+// El cliente elige transferir desde la carta. El pedido entra cuando toca
+// "Ya transferí", la casa lo confirma desde la campanita y recién ahí la
+// barra lo entrega, sin que le pregunten cómo pagó.
+console.log('\nEL TRAGO POR TRANSFERENCIA');
+
+await chequear('el trago por transferencia: entra con "Ya transferí", lo confirma la casa y recién ahí se entrega', async () => {
+  // El circuito entero: el cliente elige transferir, ve el alias, toca "Ya
+  // transferí" y recién ahí el pedido entra a la barra, marcado. Al panel le
+  // llega el aviso y la campanita lo cuenta; la casa lo confirma de un toque
+  // desde ahí; y el barman lo entrega sin que nadie le pregunte cómo pagó.
+  await db.doc('publico/pagos').set({ alias: 'sotano.prueba.mp', titular: 'Sotano Prueba' });
+  // La notificación del panel, anotada en vez de mostrada.
+  await barra.evaluate(() => {
+    window.__avisos = [];
+    window.Notification = { permission: 'granted', requestPermission: () => Promise.resolve('granted') };
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { ready: Promise.resolve({ showNotification: (t, o) => { window.__avisos.push({ t, o }); return Promise.resolve(); } }) },
+    });
+  });
+  const pedidoDe = () => db.collection('pedidos').where('nombreCliente', '==', 'Transfiere Trago').get();
+  try {
+    if ((await cliente.getAttribute('#tabCarta', 'aria-selected')) !== 'true') await cliente.click('#tabCarta');
+    await cliente.waitForSelector('[data-mas="fernet"]', { timeout: 15000 });
+    await cliente.click('[data-mas="fernet"]');
+    await cliente.waitForSelector('#carrito.visible', { timeout: 10000 });
+    await cliente.click('#btnConfirmar');
+    await cliente.waitForSelector('#dlgConfirmar[open]', { timeout: 10000 });
+    // Con alias cargado, se ofrece transferir.
+    await cliente.waitForFunction(() => document.querySelector('#campoPago')?.hidden === false,
+      null, { timeout: 10000 }).catch(() => { throw new Error('no ofrece elegir cómo pagar'); });
+    await cliente.locator('#campoPago label', { hasText: 'Transferencia' }).click();
+    if ((await cliente.textContent('#btnEnviar')).includes('Mandar'))
+      throw new Error('eligió transferir y el botón sigue diciendo Mandar: el pedido no entra todavía');
+    await cliente.fill('#inpNombre', 'Transfiere Trago');
+    await cliente.click('#btnEnviar');
+
+    // Adónde y cuánto, y todavía ningún pedido.
+    await cliente.waitForFunction(() => document.querySelector('#pasoTransferencia')?.hidden === false,
+      null, { timeout: 10000 });
+    const paso = await cliente.textContent('#pasoTransferencia');
+    if (!paso.includes('sotano.prueba.mp')) throw new Error('no muestra el alias: ' + paso.slice(0, 200));
+    if (!paso.includes('4.500')) throw new Error('no dice cuánto: ' + paso.slice(0, 200));
+    if (!(await pedidoDe()).empty) throw new Error('el pedido entró antes de que dijera que transfirió');
+
+    // "Ya transferí": ahí entra, con la hora del aviso y sin cobro.
+    await cliente.click('#btnYaTransferi');
+    await cliente.waitForSelector('#dlgConfirmar[open]', { state: 'detached', timeout: 15000 });
+    let ped;
+    for (let i = 0; i < 40 && !ped; i++) {
+      const q = await pedidoDe();
+      if (!q.empty) ped = q.docs[0];
+      else await new Promise((ok) => setTimeout(ok, 250));
+    }
+    if (!ped) throw new Error('el pedido nunca llegó');
+    const d0 = ped.data();
+    if (d0.pagoElegido !== 'virtual' || !d0.avisoPagoEn)
+      throw new Error('no guardó que transfirió: ' + JSON.stringify(d0));
+    if (d0.pago) throw new Error('entró cobrado sin que nadie confirmara');
+    await cliente.waitForFunction(() =>
+      (document.querySelector('#misPedidos')?.textContent || '').includes('Avisaste que transferiste'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('Mis pedidos no dice que avisó: ' + (await cliente.textContent('#misPedidos')).slice(0, 200));
+      });
+
+    // Al panel le llega el aviso, y la campanita lo cuenta.
+    await barra.waitForFunction(() => (window.__avisos || []).some((a) => a.t.includes('Transfiere Trago')),
+      null, { timeout: 15000 }).catch(() => { throw new Error('al panel no le llegó la notificación del pedido'); });
+    await barra.waitForFunction(() => {
+      const g = document.querySelector('#globoAvisos');
+      return g && !g.hidden && Number(g.textContent) >= 1;
+    }, null, { timeout: 15000 }).catch(() => { throw new Error('la campanita no marca nada por confirmar'); });
+
+    // El ticket dice que falta la casa. Preparar y Listo se tocan igual —la
+    // plata no frena la coctelera—, pero en Listo no deja entregar.
+    if ((await barra.getAttribute('#tabTablero', 'aria-selected')) !== 'true') await barra.click('#tabTablero');
+    const ticket = barra.locator('.ticket', { hasText: 'Transfiere Trago' });
+    await ticket.waitFor({ timeout: 15000 });
+    if (!(await ticket.textContent()).includes('falta que la casa'))
+      throw new Error('el ticket no dice que falta confirmar: ' + (await ticket.textContent()).slice(0, 200));
+    await barra.locator('.ticket.nuevo', { hasText: 'Transfiere Trago' }).locator('[data-avanzar]').click();
+    await barra.locator('.ticket.en_preparacion', { hasText: 'Transfiere Trago' }).locator('[data-avanzar]')
+      .click({ timeout: 10000 });
+    const enListo = barra.locator('.ticket.listo', { hasText: 'Transfiere Trago' });
+    await enListo.waitFor({ timeout: 10000 });
+    if (!(await enListo.textContent()).includes('Sin confirmar'))
+      throw new Error('en Listo no avisa que está sin confirmar');
+    // Entregar queda solo para la casa: un barman no ve el botón.
+    const clase = await enListo.locator('[data-avanzar]').getAttribute('class');
+    if (!clase.includes('solo-gerente'))
+      throw new Error('entregar sin confirmar está al alcance de cualquiera: ' + clase);
+
+    // La casa abre la campanita y confirma desde ahí, sin moverse de pestaña.
+    await barra.click('#btnSonido');
+    await barra.waitForSelector('#dlgAvisos[open]', { timeout: 10000 });
+    const lista = await barra.textContent('#cuerpoAvisos');
+    if (!lista.includes('Transfiere Trago')) throw new Error('la campanita no lista el pedido: ' + lista.slice(0, 200));
+    await barra.locator('#cuerpoAvisos [data-cobrar-pedido]').first().click();
+    for (let i = 0; i < 40; i++) {
+      const d = (await ped.ref.get()).data();
+      if (d.pago === 'virtual' && d.cobradoEn && d.cobradoPor) break;
+      if (i === 39) throw new Error('no quedó confirmada: ' + JSON.stringify(d));
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    // Confirmada, sale de la lista.
+    await barra.waitForFunction(() =>
+      !(document.querySelector('#cuerpoAvisos')?.textContent || '').includes('Transfiere Trago'),
+      null, { timeout: 10000 });
+    await barra.click('#btnCerrarAvisos');
+    await barra.waitForSelector('#dlgAvisos[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+
+    // El ticket dice confirmada, y se entrega sin preguntar cómo pagó.
+    await barra.waitForFunction(() => [...document.querySelectorAll('.ticket.listo')]
+      .some((t) => t.textContent.includes('Transfiere Trago') && t.textContent.includes('confirmada')),
+      null, { timeout: 10000 }).catch(() => { throw new Error('el ticket no dice que la transferencia está confirmada'); });
+    const avanzar = enListo.locator('[data-avanzar]');
+    if ((await avanzar.getAttribute('class')).includes('solo-gerente'))
+      throw new Error('confirmada, entregar sigue siendo solo de la casa');
+    await avanzar.click();
+    await barra.waitForFunction(() => [...document.querySelectorAll('.ticket.entregado')]
+      .some((t) => t.textContent.includes('Transfiere Trago')), null, { timeout: 15000 })
+      .catch(async () => {
+        throw new Error('no pasó a entregado' + (await barra.locator('#dlgCobro[open]').count()
+          ? ': preguntó cómo pagó, con la plata ya confirmada' : ''));
+      });
+    const fin = (await ped.ref.get()).data();
+    if (fin.estado !== 'entregado' || fin.pago !== 'virtual' || !fin.vendidoPor)
+      throw new Error('quedó mal cerrado: ' + JSON.stringify(fin));
+    // Y el cliente lo ve confirmado.
+    await cliente.waitForFunction(() =>
+      (document.querySelector('#misPedidos')?.textContent || '').includes('Transferencia confirmada'),
+      null, { timeout: 15000 });
+  } finally {
+    await barra.evaluate(() => { delete window.__avisos; }).catch(() => {});
+    await barra.evaluate(() => document.querySelectorAll('dialog[open]').forEach((d) => d.close())).catch(() => {});
+    await cliente.evaluate(() => document.querySelectorAll('dialog[open]').forEach((d) => d.close())).catch(() => {});
+  }
+});
+
 // ---------- la marca la elige el cliente ----------
 // Una cerveza en lata son cuatro latas al mismo precio, cada una de su
 // propia caja. El cliente dice cuál, y esa caja es la que baja.

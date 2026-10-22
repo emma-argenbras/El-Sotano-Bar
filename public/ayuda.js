@@ -257,6 +257,13 @@
         <p>Al pasar un pedido a <b>Entregado</b> pregunta cómo pagó:
         <b>Efectivo</b> o <b>Virtual</b>. Un toque, y no se puede saltear: esa
         es toda la contabilidad del bar.</p>
+        <p>Si el cliente eligió <b>transferencia</b> desde la carta, el pedido
+        entra cuando toca <b>Ya transferí</b> y el ticket lo dice en naranja:
+        <i>falta que la casa la confirme</i>. Se prepara igual, pero no se
+        entrega hasta que un administrador la ve en el banco y toca
+        <b>Cobrado</b> —en el ticket o en la <b>🔔 campanita</b> de arriba, que
+        cuenta cuántas hay por confirmar—. Confirmada, Entregado no pregunta
+        nada: la plata ya está.</p>
         <p>El que compra en el mostrador no usa la app. Para eso está
         <b>+ Venta en la barra</b>, arriba de los pedidos: tocás los productos,
         ves el total y cobrás. Entra a la caja como cualquier venta.</p>

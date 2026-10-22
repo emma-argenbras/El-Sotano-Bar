@@ -20,6 +20,7 @@ import { irA } from './pantallas.js';
 import { ESTADO_LOCAL, EVENTOS, TURNO, app, db, fallo } from './conexion.js';
 import { bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoche, filtrarInvitados, hora, pintarPuerta, plegable } from './invitados.js';
 import { escucharPedidos, pintarCaja, ticket } from './pedidos.js';
+import { pintarAvisos } from './avisos.js';
 import { pintarCierre } from './cierre.js';
 
 export async function marcarTurno(eventoId, barmanes) {
@@ -42,6 +43,9 @@ export function escucharEvento() {
   onSnapshot(query(EVENTOS(), where('estado', '==', 'agendado'), orderBy('fecha', 'asc')), (snap) => {
     estado.agenda = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     pintarEvento(); pintarCalendario(); pintarAdminEntradas();
+    // La campanita cuenta las entradas sin confirmar de las noches que
+    // vienen: cuáles son esas noches sale de acá.
+    pintarAvisos();
   }, fallo('#evento'));
 
   onSnapshot(query(EVENTOS(), where('estado', '==', 'abierto'), limit(1)), (snap) => {
@@ -64,6 +68,7 @@ export function escucharEvento() {
     // cuál es la noche abierta: una para cobrar, la otra para el turno.
     pintarAdminEntradas();
     pintarUsuarios();
+    pintarAvisos();
   }, fallo('#evento'));
 
   // El puntero del link viejo (/registro.html sin noche): a qué noche manda.
@@ -79,6 +84,8 @@ export function escucharEvento() {
     pintarInvitar(); pintarPuerta(); pintarEvento(); pintarCalendario();
     // El precio de la entrada vive acá: Administración lo lee para cobrarla.
     pintarAdminEntradas();
+    // Y el nombre de cada noche, que la campanita pone al lado de la entrada.
+    pintarAvisos();
   }, () => {});
 
   onSnapshot(ESTADO_LOCAL(), (d) => {

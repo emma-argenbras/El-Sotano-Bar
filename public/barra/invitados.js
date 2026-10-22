@@ -17,6 +17,7 @@ import { dondeRepartir } from '/corte.js';
 import { app, db, fallo } from './conexion.js';
 import { abrirEvento, abrirInvitar, borrarAgendado, empezarNoche, noches, pintarCalendario, pintarEvento, pintarInvitar } from './eventos.js';
 import { quienAtiende } from './pedidos.js';
+import { avisarCasa, pintarAvisos } from './avisos.js';
 
 // ---------- Sótano Club ----------
 // No hay una base de clientes aparte: anotarse a una noche YA es el alta. La
@@ -209,26 +210,8 @@ export function filtrarInvitados() {
 }
 
 // ---------- avisarle a la casa ----------
-//
-// "Le avisa a Carli" sin servidor es esto: el panel ya escucha la lista en
-// vivo; cuando aparece un aviso nuevo, el navegador muestra una notificación
-// y vibra. Funciona mientras el panel esté abierto —en el celular, instalada,
-// también con la pantalla apagada un rato—. Con el panel cerrado no llega
-// nada: para eso hace falta un servidor (plan Blaze), y eso es otra decisión.
-// Mismo mecanismo que "tu pedido está listo" del lado del cliente (app.js).
-export function pedirPermisoAviso() {
-  if (!('Notification' in window) || Notification.permission !== 'default') return;
-  Notification.requestPermission().catch(() => {});
-}
-
-export function avisarCasa(titulo, cuerpo, tag) {
-  if (navigator.vibrate) navigator.vibrate([120, 80, 120]);
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  navigator.serviceWorker?.ready.then((reg) => reg.showNotification(titulo, {
-    body: cuerpo, tag, renotify: true, vibrate: [120, 80, 120],
-    icon: '/iconos/icono-barra-192.png',
-  })).catch(() => {});
-}
+// La notificación y la campanita viven en avisos.js. Acá queda solo la
+// cuenta de qué invitado avisó y todavía no se le confirmó.
 
 // Los avisos de transferencia que ya se vieron, para avisar solo los nuevos.
 // null hasta la primera foto: lo que ya estaba al abrir no es novedad.
@@ -254,6 +237,7 @@ export function escucharInvitados() {
     estado.invitadosListos = true;
     filtrarInvitados();
     avisarTransferenciasNuevas();
+    pintarAvisos();
     pintarPuerta();
     pintarInvitar();   // si está abierto el diálogo de una noche, su lista también
     // Y el calendario, que es donde vive el bloque del Club. Faltaba: el
@@ -810,5 +794,8 @@ export function consumoDe(id) {
     .reduce((s, p) => s + Number(p.total || 0), 0);
 }
 
+// h23 y no hour12:false: en algunos Safari es-AR salía "p. m." —y el punto
+// final de "p. m." pegado al punto de la frase, "p. m.."— y con hour12:false
+// la medianoche puede salir como 24.
 export const hora = (t) => (t?.toDate ? t.toDate().toLocaleTimeString('es-AR',
-  { hour: '2-digit', minute: '2-digit' }) : '');
+  { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '');

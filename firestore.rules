@@ -187,7 +187,8 @@ service cloud.firestore {
       return d.keys().hasAll(['clienteId', 'estado', 'items', 'total', 'creadoEn'])
         && d.keys().hasOnly(['clienteId', 'estado', 'items', 'total', 'mesa', 'nota',
                              'nombreCliente', 'invitadoId', 'creadoEn',
-                             'cajaId', 'origen', 'pago', 'vendidoPor', 'cobradoEn'])
+                             'cajaId', 'origen', 'pago', 'vendidoPor', 'cobradoEn',
+                             'pagoElegido', 'avisoPagoEn'])
         && d.clienteId is string
         && d.estado is string
         && d.items is list
@@ -208,7 +209,21 @@ service cloud.firestore {
         && (!('origen' in d.keys()) || d.origen in ['cliente', 'barra'])
         && (!('pago' in d.keys()) || d.pago in ['efectivo', 'virtual'])
         && (!('vendidoPor' in d.keys()) || (d.vendidoPor is string && d.vendidoPor.size() <= 40))
-        && (!('cobradoEn' in d.keys()) || d.cobradoEn == request.time);
+        && (!('cobradoEn' in d.keys()) || d.cobradoEn == request.time)
+        // Cómo DIJO que paga, que no es cómo pagó: eso lo escribe la casa en
+        // 'pago' cuando ve la plata. Si dijo transferencia, el pedido entra
+        // recién cuando toca "Ya transferí", y esa hora viaja con él: es a
+        // quién y desde cuándo buscar en el banco.
+        && (!('pagoElegido' in d.keys()) || d.pagoElegido in ['efectivo', 'virtual'])
+        && (d.get('pagoElegido', '') == 'virtual'
+              ? d.get('avisoPagoEn', null) == request.time
+              : !('avisoPagoEn' in d.keys()));
+    }
+
+    // Un pedido nace sin cobrar. El que lo manda desde la mesa no puede
+    // traerlo "pagado": cómo pagó lo escribe la casa, nunca el cliente.
+    function sinCobro(d) {
+      return !d.keys().hasAny(['pago', 'cobradoEn', 'vendidoPor']);
     }
 
     // Lo que la barra puede tocar de un pedido ya hecho: moverlo de columna y,
@@ -216,7 +231,32 @@ service cloud.firestore {
     // el total: eso quedó fijado cuando se hizo.
     function soloCobro() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['estado', 'pago', 'vendidoPor', 'cobradoEn']);
+        .hasOnly(['estado', 'pago', 'vendidoPor', 'cobradoEn', 'cobradoPor']);
+    }
+
+    // Lo que se escribe al cobrar tiene que ser un cobro: una forma de pago
+    // que exista y la hora del servidor. Sacárselo —"no había llegado"— es
+    // de la casa, y nunca de un pedido ya entregado: ese se corrige con ↩,
+    // que además devuelve el stock.
+    function cobroValido() {
+      let d = request.resource.data;
+      let toca = d.diff(resource.data).affectedKeys();
+      return (!('pago' in toca) || d.get('pago', null) == null || d.pago in ['efectivo', 'virtual'])
+        && (!('cobradoEn' in toca) || d.get('cobradoEn', null) == null || d.cobradoEn == request.time)
+        && (!('pago' in toca) || d.get('pago', null) != null
+            || (esAdmin() && d.estado != 'entregado'));
+    }
+
+    // Un pedido que el cliente dijo que paga por transferencia. La plata la
+    // confirma quien mira el banco —la casa—, no quien está en la barra; y
+    // hasta que alguien la confirme, el pedido no se entrega. Si un barman
+    // pudiera entregarlo igual, la confirmación no serviría para nada.
+    function transferenciaRespetada() {
+      let d = request.resource.data;
+      let toca = d.diff(resource.data).affectedKeys();
+      return resource.data.get('pagoElegido', '') != 'virtual'
+        || ((!('pago' in toca) || esAdmin())
+            && (d.estado != 'entregado' || d.get('pago', null) != null));
     }
 
     // El costo de la mercadería, congelado al entregar. Lo escribe el mismo
@@ -341,7 +381,7 @@ service cloud.firestore {
           // El cliente, desde su celular: arranca en "nuevo" y solo si el local
           // está tomando pedidos.
           (request.resource.data.estado == 'nuevo'
-            && (esBarra() || tomandoPedidos()))
+            && (esBarra() || (tomandoPedidos() && sinCobro(request.resource.data))))
           // O la barra cargando una venta de mostrador, que nace cobrada.
           || (esBarra() && ventaDeBarra(request.resource.data))
         );
@@ -354,7 +394,9 @@ service cloud.firestore {
         && request.resource.data.estado in estadosValidos()
         && request.resource.data.clienteId == resource.data.clienteId
         && request.resource.data.creadoEn == resource.data.creadoEn
-        && (esElDueno() || soloCobro() || soloCosto());
+        && (esElDueno() || soloCobro() || soloCosto())
+        && cobroValido()
+        && transferenciaRespetada();
 
       // Borrar es del dueño y de nadie más.
       allow delete: if esElDueno();

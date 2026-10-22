@@ -9,7 +9,7 @@ import { $, estado } from './barra/base.js';
 import { abrirConteo, abrirNuevoProducto, guardarNuevoProducto, guardarReceta } from './barra/carta.js';
 import { abrirCartaDeFecha } from './barra/cartas.js';
 import './barra/cierre.js';
-import { pedirPermisoAviso } from './barra/invitados.js';
+import { pedirPermisoAviso } from './barra/avisos.js';
 import { guardarInsumo, guardarPrecios, guardarStock, pintarDeposito } from './barra/deposito.js';
 import { abrirVenta, cancelarCobro, cerrarCobro, elegirQuienAtiende, pintarTablero } from './barra/pedidos.js';
 import { crearPersona, limpiarUsuario, pintarUsuarios, pistaPersona } from './barra/usuarios.js';

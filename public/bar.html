@@ -79,7 +79,9 @@
     <span class="chip" id="chipCaja">—</span>
     <button class="btn solo-aparato" id="btnQuienAtiende" hidden
             title="Quién está atendiendo" style="padding:.35rem .7rem">👤 <span id="quienAtiende">Elegir</span></button>
-    <button class="btn" id="btnSonido" title="Aviso sonoro al entrar un pedido" style="padding:.35rem .7rem">🔔</button>
+    <!-- La campanita: lo que espera a la casa. El número es cuánta plata
+         hay por buscar en el banco; tocarla abre la lista. -->
+    <button class="btn" id="btnSonido" title="Avisos" style="padding:.35rem .7rem"><span id="iconoCampana">🔔</span><span class="globo" id="globoAvisos" hidden></span></button>
     <button class="btn" data-instalar-btn hidden title="Instalar la app"
             style="padding:.35rem .7rem">⬇<span class="solo-ancho"> Instalar</span></button>
     <button class="btn" data-actualizar style="padding:.35rem .7rem">↻<span class="solo-ancho"> Actualizar</span></button>
@@ -487,6 +489,17 @@
 </dialog>
 
 <!-- Cómo pagó: un toque, al entregar. -->
+<dialog id="dlgAvisos">
+  <h2 style="margin-top:0">Avisos</h2>
+  <p style="color:var(--suave);font-size:.88rem;margin:.2rem 0 .9rem">
+    Quien avisó que transfirió —una entrada o un pedido— y espera que la
+    casa lo busque en el banco. Confirmalo de un toque desde acá.
+  </p>
+  <div id="cuerpoAvisos"></div>
+  <button class="btn ancho-full" id="btnSonidoToggle" style="margin-top:1rem"></button>
+  <button class="btn primario ancho-full" id="btnCerrarAvisos" style="margin-top:.5rem">Cerrar</button>
+</dialog>
+
 <dialog id="dlgCobro">
   <h2 style="margin-top:0" id="tituloCobro">¿Cómo pagó?</h2>
   <p style="color:var(--suave);margin:.2rem 0 1rem" id="detalleCobro"></p>

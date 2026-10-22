@@ -643,3 +643,32 @@ body:not(.es-sadmin) .solo-sadmin { display: none !important; }
 .cierre table.comparar td { padding: .45rem .3rem; border-top: 1px solid var(--borde);
                             text-align: right; font-variant-numeric: tabular-nums; }
 .cierre table.comparar td:first-child { text-align: left; }
+
+/* ---------- la campanita ----------
+   El número es cuánta plata hay por buscar en el banco. Late para que se
+   vea desde cualquier pestaña: es lo que antes no se veía hasta entrar. */
+#btnSonido { position: relative; }
+.globo {
+  position: absolute; top: -.4rem; right: -.4rem;
+  min-width: 1.3rem; height: 1.3rem; padding: 0 .3rem; border-radius: 999px;
+  background: var(--rojo); color: #fff; font-size: .72rem; font-weight: 800;
+  line-height: 1.3rem; text-align: center; font-variant-numeric: tabular-nums;
+  animation: latirGlobo 1.6s ease-in-out infinite;
+}
+@keyframes latirGlobo { 0%,100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+@media (prefers-reduced-motion: reduce) { .globo { animation: none; } }
+#cuerpoAvisos .item { align-items: center; }
+#cuerpoAvisos .item .nombre { font-size: .95rem; }
+
+/* Cómo se paga, en el ticket y en "Mis pedidos". Naranja mientras la casa no
+   confirmó la transferencia; verde cuando sí. */
+.ticket .pago {
+  margin-top: .45rem; font-size: .8rem; color: var(--suave);
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+}
+.ticket .pago.espera { color: var(--naranja); }
+.ticket .pago.ok     { color: var(--verde); }
+.ticket .pago .btn   { padding: .3rem .6rem; font-size: .78rem; margin-left: auto; }
+.pedido .pago { margin-top: .5rem; font-size: .84rem; color: var(--suave); line-height: 1.4; }
+.pedido .pago.espera { color: var(--naranja); }
+.pedido .pago.ok     { color: var(--verde); }

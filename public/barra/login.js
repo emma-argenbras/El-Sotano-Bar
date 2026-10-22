@@ -16,7 +16,7 @@ import { escucharInvitados } from './invitados.js';
 import { escucharCartas } from './cartas.js';
 import { escucharCierresBarra, escucharJornadas } from './cierre.js';
 import { escucharCorte } from './jornada.js';
-import { pintarSonido } from './pedidos.js';
+import { pintarSonido } from './avisos.js';
 import { escucharAccesos, vigilarMiAcceso } from './usuarios.js';
 
 // ---------- login ----------

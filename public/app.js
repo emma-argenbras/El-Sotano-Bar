@@ -48,6 +48,7 @@ const estado = {
   categoria: null,
   carrito: new Map(),      // itemId -> cantidad
   pedidos: [],
+  pagos: {},               // adónde transferir, si la casa lo cargó
 };
 
 // Quién pide. No hay mesas: cada pedido es de una persona, y se retira en la
@@ -180,6 +181,13 @@ function escucharEstadoLocal() {
     estado.horaCorte = d.exists() ? d.data().horaCorte : undefined;
     escucharCartaDeLaNoche();
   }, () => { escucharCartaDeLaNoche(); });
+
+  // Adónde se transfiere, si el cliente elige pagar así. Lo carga la casa
+  // en Administración; si está vacío, solo se ofrece efectivo.
+  onSnapshot(doc(db, 'publico', 'pagos'), (d) => {
+    estado.pagos = d.exists() ? d.data() : {};
+    pintarFormaDePago();
+  }, () => {});
 }
 
 // La carta de esta noche, si la hay.
@@ -423,43 +431,95 @@ $('#btnAgregarOpcion').onclick = () => {
   $('#dlgOpcion').close();
 };
 
+// ---------- cómo paga ----------
+// Efectivo al retirar, o transferencia al alias de la casa. La transferencia
+// se ofrece solo si la casa cargó adónde; y el pedido con transferencia no
+// se manda al elegirla: se manda cuando el cliente toca "Ya transferí", que
+// es cuando la barra tiene algo que preparar y la casa algo que buscar en
+// el banco. Hasta que la casa confirme que la plata llegó, no se entrega.
+const hayAlias = () => !!String(estado.pagos?.alias || '').trim();
+const formaDePago = () => (hayAlias()
+  && document.querySelector('input[name="pagoPedido"]:checked')?.value === 'virtual'
+  ? 'virtual' : 'efectivo');
+
+function pintarFormaDePago() {
+  $('#campoPago').hidden = !hayAlias();
+  $('#btnEnviar').textContent = formaDePago() === 'virtual' ? 'Seguir →' : 'Mandar pedido';
+}
+document.querySelectorAll('input[name="pagoPedido"]').forEach((r) => r.onchange = pintarFormaDePago);
+
+function mostrarPaso(cual) {
+  $('#pasoPedido').hidden = cual !== 'pedido';
+  $('#pasoTransferencia').hidden = cual !== 'transferencia';
+}
+
 $('#btnConfirmar').onclick = () => {
   if (!estado.tomandoPedidos) {
     alert('Por ahora no se están tomando pedidos. Acercate a la barra.');
     return;
   }
-  $('#inpNombre').value = $('#inpNombre').value || quienSoy;
   $('#resumenPedido').innerHTML = lineas().map((l) =>
     `<div style="display:flex;gap:.5rem"><span style="flex:1">${l.cantidad}× ${esc(l.nombre)}${
        l.opcionNombre ? ' · ' + esc(l.opcionNombre) : ''}</span>
      <b>${plata(l.precio * l.cantidad)}</b></div>`).join('')
     + `<div style="display:flex;gap:.5rem;margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--borde)">
        <span style="flex:1">Total</span><b style="color:var(--oro)">${plata(totalCarrito())}</b></div>`;
-  $('#inpNombre').value = localStorage.getItem('sotano:nombre') || '';
+  $('#inpNombre').value = localStorage.getItem('sotano:nombre') || quienSoy || '';
   $('#errorPedido').classList.add('oculto');
+  $('#errorTransferencia').classList.add('oculto');
+  mostrarPaso('pedido');
+  // Cada pedido arranca en efectivo: transferir se elige a propósito, cada
+  // vez. Si quedara lo de la vez anterior, "Mandar pedido" sería "Seguir →"
+  // sin que nadie lo haya tocado.
+  const efectivo = document.querySelector('input[name="pagoPedido"][value="efectivo"]');
+  if (efectivo) efectivo.checked = true;
+  pintarFormaDePago();
   $('#dlgConfirmar').showModal();
 };
 
 $('#btnCancelarDlg').onclick = () => $('#dlgConfirmar').close();
+$('#btnVolverPago').onclick = () => mostrarPaso('pedido');
 
-$('#btnEnviar').onclick = async () => {
-  const btn = $('#btnEnviar');
+// Sin nombre no hay a quién llamar: no hay mesa donde dejarlo.
+function nombreValido() {
+  const nombre = $('#inpNombre').value.trim();
+  if (nombre.length >= 2) return nombre;
+  $('#errorPedidoTexto').textContent = 'Poné tu nombre: te llamamos por ahí cuando esté listo.';
+  $('#errorPedido').classList.remove('oculto');
+  $('#inpNombre').focus();
+  return '';
+}
+
+$('#btnEnviar').onclick = () => {
+  if (!lineas().length || !nombreValido()) return;
+  if (formaDePago() !== 'virtual') return mandarPedido('efectivo', $('#btnEnviar'));
+  // Transferencia: primero adónde y cuánto. El pedido todavía no se manda.
+  $('#montoTransferir').textContent = plata(totalCarrito());
+  $('#aliasTransferir').textContent = estado.pagos.alias;
+  $('#titularTransferir').textContent = estado.pagos.titular ? `A nombre de ${estado.pagos.titular}` : '';
+  $('#btnCopiarAliasPedido').textContent = 'Copiar el alias';
+  mostrarPaso('transferencia');
+};
+
+$('#btnCopiarAliasPedido').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(estado.pagos.alias);
+    $('#btnCopiarAliasPedido').textContent = 'Alias copiado ✓';
+  } catch { $('#btnCopiarAliasPedido').textContent = estado.pagos.alias; }
+};
+
+$('#btnYaTransferi').onclick = () => mandarPedido('virtual', $('#btnYaTransferi'));
+
+async function mandarPedido(forma, btn) {
   const items = lineas();
   if (!items.length) return;
-
+  const nombre = $('#inpNombre').value.trim();
+  const nota = $('#inpNota').value.trim();
+  const decia = btn.textContent;
+  const error = forma === 'virtual' ? '#errorTransferencia' : '#errorPedido';
   btn.disabled = true;
   btn.textContent = 'Mandando…';
   try {
-    const nombre = $('#inpNombre').value.trim();
-    const nota = $('#inpNota').value.trim();
-    // Sin nombre no hay a quién llamar: no hay mesa donde dejarlo.
-    if (nombre.length < 2) {
-      btn.disabled = false; btn.textContent = 'Mandar pedido';
-      $('#errorPedidoTexto').textContent = 'Poné tu nombre: te llamamos por ahí cuando esté listo.';
-      $('#errorPedido').classList.remove('oculto');
-      $('#inpNombre').focus();
-      return;
-    }
     quienSoy = nombre;
     localStorage.setItem('sotano:nombre', nombre);
     pintarChipMesa();
@@ -472,6 +532,8 @@ $('#btnEnviar').onclick = async () => {
       items,
       total: totalCarrito(),
       origen: 'cliente',
+      // Cómo DIJO que paga. Cómo pagó lo escribe la casa cuando ve la plata.
+      pagoElegido: forma,
       // La noche de bar cruza la medianoche: el día corta a las 6 de la mañana.
       cajaId: estado.eventoId || cajaDelDia(),
       creadoEn: serverTimestamp(),
@@ -479,6 +541,9 @@ $('#btnEnviar').onclick = async () => {
     if (nombre) pedido.nombreCliente = nombre;
     if (invitadoId) pedido.invitadoId = invitadoId;
     if (nota) pedido.nota = nota;
+    // "Ya transferí": la hora del aviso viaja con el pedido. Es a quién y
+    // desde cuándo buscar en el banco.
+    if (forma === 'virtual') pedido.avisoPagoEn = serverTimestamp();
 
     // Con cache persistente, addDoc resuelve local y sincroniza al volver la señal.
     await addDoc(collection(db, 'pedidos'), pedido);
@@ -490,14 +555,14 @@ $('#btnEnviar').onclick = async () => {
     if (navigator.vibrate) navigator.vibrate([18, 60, 18]);
     irA('pedidos');
   } catch (e) {
-    $('#errorPedidoTexto').innerHTML =
+    $(error + 'Texto').innerHTML =
       `No se pudo mandar el pedido.<br><small>${esc(e.code || e.message)}</small>`;
-    $('#errorPedido').classList.remove('oculto');
+    $(error).classList.remove('oculto');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Mandar pedido';
+    btn.textContent = decia;
   }
-};
+}
 
 // ---------- mis pedidos ----------
 function escucharMisPedidos() {
@@ -508,14 +573,14 @@ function escucharMisPedidos() {
     orderBy('creadoEn', 'desc'),
   );
   onSnapshot(q, (snap) => {
-    const antes = new Map(estado.pedidos.map((p) => [p.id, p.estado]));
+    const antes = new Map(estado.pedidos.map((p) => [p.id, retirable(p)]));
     const primeraVuelta = !estado.vioPedidos;
     estado.vioPedidos = true;
     estado.pedidos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    // El que recién pasó a listo. En la primera carga no se avisa nada:
+    // El que recién quedó para retirar. En la primera carga no se avisa nada:
     // si no, al abrir la app suena por algo que ya te entregaron.
     const reciénListos = primeraVuelta ? [] : estado.pedidos.filter(
-      (p) => p.estado === 'listo' && antes.get(p.id) && antes.get(p.id) !== 'listo');
+      (p) => retirable(p) && antes.has(p.id) && !antes.get(p.id));
     if (reciénListos.length) avisarListo(reciénListos);
     pintarMisPedidos();
   }, (e) => {
@@ -528,6 +593,34 @@ const ETIQUETA = {
   nuevo: 'Tomado', en_preparacion: 'Preparando',
   listo: 'Listo, retiralo en la barra', entregado: 'Entregado', cancelado: 'Cancelado',
 };
+
+// Dijo que transfiere y la casa todavía no vio la plata: el pedido puede
+// estar hecho, pero no se entrega. "Listo" para el cliente es listo para
+// retirar, y eso recién pasa cuando la casa confirma.
+const esperaConfirmacion = (p) => p.pagoElegido === 'virtual' && !p.pago;
+const retirable = (p) => p.estado === 'listo' && !esperaConfirmacion(p);
+
+function etiquetaDe(p) {
+  if (p.estado === 'listo' && esperaConfirmacion(p)) return 'Hecho · esperando que confirmen tu pago';
+  return ETIQUETA[p.estado] || p.estado;
+}
+
+// Cómo se paga, debajo de cada pedido. Para el que transfirió, en qué está
+// la confirmación: es lo único que le importa mientras espera.
+function lineaPago(p) {
+  if (p.estado === 'cancelado') return '';
+  if (p.pagoElegido === 'virtual') {
+    if (p.pago) return '<div class="pago ok">✓ Transferencia confirmada por la casa</div>';
+    if (p.estado === 'entregado') return '';
+    return `<div class="pago espera">📲 Avisaste que transferiste${
+      p.avisoPagoEn?.toDate ? ' a las ' + hora(p.avisoPagoEn) : ''}. La casa la revisa en el
+      banco y te lo entrega ni bien la confirme.</div>`;
+  }
+  if (p.estado === 'entregado') {
+    return p.pago ? `<div class="pago">${p.pago === 'virtual' ? '📲 Pagado por transferencia' : '💵 Pagado en efectivo'}</div>` : '';
+  }
+  return '<div class="pago">💵 Se paga al retirarlo en la barra</div>';
+}
 
 // ---------- aviso de "tu pedido está listo" ----------
 // Tres caminos, porque ninguno solo alcanza: el cartel y el badge para quien
@@ -577,7 +670,7 @@ function pedirPermisoAviso() {
 
 function pintarMisPedidos() {
   const activos = estado.pedidos.filter((p) => !['entregado','cancelado'].includes(p.estado)).length;
-  const listos = estado.pedidos.filter((p) => p.estado === 'listo').length;
+  const listos = estado.pedidos.filter(retirable).length;
   $('#cuentaPedidos').textContent = listos ? '🔔' : (activos ? `(${activos})` : '');
   $('#cuentaPedidos').classList.toggle('listo', listos > 0);
   if (!listos) { estado.hayListo = false; $('#avisoListo').classList.add('oculto'); }
@@ -590,7 +683,7 @@ function pintarMisPedidos() {
   $('#misPedidos').innerHTML = estado.pedidos.map((p) => `
     <div class="pedido">
       <div class="fila">
-        <span class="estado ${p.estado}">${ETIQUETA[p.estado] || p.estado}</span>
+        <span class="estado ${p.estado}">${etiquetaDe(p)}</span>
         <span class="relleno"></span>
         <small style="color:var(--suave)">${hora(p.creadoEn)}</small>
       </div>
@@ -600,6 +693,7 @@ function pintarMisPedidos() {
         <b style="color:var(--oro)">${plata(p.total)}</b>
       </div>
       ${p.nota ? `<div class="nota" style="font-size:.83rem;color:var(--suave)">“${esc(p.nota)}”</div>` : ''}
+      ${lineaPago(p)}
     </div>`).join('');
 }
 
@@ -622,7 +716,9 @@ function esc(s) {
 }
 function hora(ts) {
   const d = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
-  return d ? d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : 'ahora';
+  // h23 y no hour12:false: en algunos Safari es-AR con hour12:false sale
+  // "p. m." igual, y la medianoche puede salir como 24.
+  return d ? d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : 'ahora';
 }
 
 // ---------- service worker ----------

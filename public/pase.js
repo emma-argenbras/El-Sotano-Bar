@@ -87,7 +87,9 @@ function cuando(f) {
 // Todavía no confirmamos su pago: en vez del QR, adónde transferir y qué va a
 // pasar después. Esta pantalla se actualiza sola cuando la casa confirma —está
 // escuchando el documento—, así que el QR le aparece sin hacer nada.
-const horaDe = (t) => t.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+// h23: en algunos Safari es-AR salía "p. m." y quedaba "p. m.." contra el
+// punto de la frase.
+const horaDe = (t) => t.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 function pintarEsperandoPago(inv, noche, fecha, entrada, al) {
   $('#pase').innerHTML = `

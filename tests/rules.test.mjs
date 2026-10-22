@@ -2043,6 +2043,45 @@ describe('pedidos — crear', () => {
     const db = sinLoguear();
     await assertFails(setDoc(doc(db, 'pedidos/p-sin-auth'), pedidoDe('cualquiera')));
   });
+
+  // Cómo va a pagar lo dice el cliente; cómo pagó lo escribe la casa. Un
+  // pedido que llega "ya cobrado" desde la mesa se come la caja.
+  it('el cliente NO se marca el pedido como cobrado al crearlo', async () => {
+    const db = anon();
+    await assertFails(setDoc(doc(db, 'pedidos/p-autocobrado'),
+      pedidoDe('cliente-anon-1', { pago: 'virtual' })));
+    await assertFails(setDoc(doc(db, 'pedidos/p-autocobrado-2'),
+      pedidoDe('cliente-anon-1', { cobradoEn: serverTimestamp() })));
+    await assertFails(setDoc(doc(db, 'pedidos/p-autocobrado-3'),
+      pedidoDe('cliente-anon-1', { vendidoPor: 'nico' })));
+  });
+
+  it('el cliente PUEDE decir que paga en efectivo, y nada más que eso', async () => {
+    const db = anon();
+    await assertSucceeds(setDoc(doc(db, 'pedidos/p-efectivo'),
+      pedidoDe('cliente-anon-1', { pagoElegido: 'efectivo' })));
+    await assertFails(setDoc(doc(db, 'pedidos/p-fiado'),
+      pedidoDe('cliente-anon-1', { pagoElegido: 'fiado' })));
+    // Dijo efectivo: no hay transferencia que avisar.
+    await assertFails(setDoc(doc(db, 'pedidos/p-efectivo-avisa'),
+      pedidoDe('cliente-anon-1', { pagoElegido: 'efectivo', avisoPagoEn: serverTimestamp() })));
+  });
+
+  it('si dice que transfirió, el pedido entra con la hora del aviso y sin cobro', async () => {
+    const db = anon();
+    await assertSucceeds(setDoc(doc(db, 'pedidos/p-transfiere'),
+      pedidoDe('cliente-anon-1', { pagoElegido: 'virtual', avisoPagoEn: serverTimestamp() })));
+    // Sin tocar "Ya transferí" el pedido no entra: la barra no prepara lo
+    // que nadie dijo que pagó.
+    await assertFails(setDoc(doc(db, 'pedidos/p-transfiere-sin-aviso'),
+      pedidoDe('cliente-anon-1', { pagoElegido: 'virtual' })));
+    // Ni con una hora inventada: la del aviso es la del servidor.
+    await assertFails(setDoc(doc(db, 'pedidos/p-transfiere-antedatado'),
+      pedidoDe('cliente-anon-1', { pagoElegido: 'virtual', avisoPagoEn: new Date('2020-01-01') })));
+    // Ni diciendo que transfirió y, de paso, que ya está cobrado.
+    await assertFails(setDoc(doc(db, 'pedidos/p-transfiere-cobrado'),
+      pedidoDe('cliente-anon-1', { pagoElegido: 'virtual', avisoPagoEn: serverTimestamp(), pago: 'virtual' })));
+  });
 });
 
 describe('pedidos — leer', () => {
@@ -2110,6 +2149,82 @@ describe('pedidos — cambiar estado', () => {
 
   it('la barra NO puede reasignar el pedido a otro cliente', async () => {
     await assertFails(updateDoc(doc(barra(), 'pedidos/p-mio'), { clienteId: 'otro' }));
+  });
+});
+
+// El pedido que el cliente dijo que paga por transferencia. El circuito es:
+// el cliente toca "Ya transferí" y el pedido entra; la barra lo prepara; la
+// casa lo ve en el banco y confirma; recién ahí se entrega.
+describe('pedidos — transferencia', () => {
+  const sembrar = (id, datos) => env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `pedidos/${id}`), {
+      clienteId: 'cliente-anon-1', estado: 'listo',
+      items: [{ id: 'fernet', nombre: 'Fernet con coca', precio: 4500, cantidad: 1 }],
+      total: 4500, creadoEn: new Date(), ...datos,
+    });
+  });
+  const transferido = (id, extra = {}) =>
+    sembrar(id, { pagoElegido: 'virtual', avisoPagoEn: new Date(), ...extra });
+  const cobro = { pago: 'virtual', cobradoEn: serverTimestamp(), cobradoPor: 'carli' };
+
+  it('el barman NO entrega un pedido cuya transferencia nadie confirmó', async () => {
+    await transferido('p-tr-1');
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-tr-1'),
+      { estado: 'entregado', vendidoPor: 'nico' }));
+    // Ni confirmándola él: el que mira el banco es la casa.
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-tr-1'),
+      { estado: 'entregado', vendidoPor: 'nico', ...cobro, cobradoPor: 'nico' }));
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-tr-1'), { ...cobro, cobradoPor: 'nico' }));
+    // El celular de la barra tampoco.
+    await assertFails(updateDoc(doc(aparato(), 'pedidos/p-tr-1'), { ...cobro, cobradoPor: 'barra' }));
+    // Prepararlo mientras tanto, sí: la plata no frena la coctelera.
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/p-tr-1'), { estado: 'en_preparacion' }));
+  });
+
+  it('el cliente NO se confirma la transferencia solo', async () => {
+    await transferido('p-tr-2');
+    await assertFails(updateDoc(doc(anon(), 'pedidos/p-tr-2'),
+      { pago: 'virtual', cobradoEn: serverTimestamp() }));
+  });
+
+  it('la casa confirma que la plata llegó, con la hora del servidor', async () => {
+    await transferido('p-tr-3');
+    await assertFails(updateDoc(doc(gerente(), 'pedidos/p-tr-3'),
+      { ...cobro, cobradoEn: new Date('2020-01-01') }));
+    await assertFails(updateDoc(doc(gerente(), 'pedidos/p-tr-3'), { ...cobro, pago: 'fiado' }));
+    await assertSucceeds(updateDoc(doc(gerente(), 'pedidos/p-tr-3'), cobro));
+  });
+
+  it('confirmada, el barman la entrega sin tocar el cobro', async () => {
+    await transferido('p-tr-4', { pago: 'virtual', cobradoEn: new Date(), cobradoPor: 'carli' });
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/p-tr-4'),
+      { estado: 'entregado', vendidoPor: 'nico' }));
+  });
+
+  it('la casa puede deshacer la confirmación mientras no se entregó; el barman no', async () => {
+    const deshacer = { pago: null, cobradoEn: null, cobradoPor: null };
+    await transferido('p-tr-5', { pago: 'virtual', cobradoEn: new Date(), cobradoPor: 'carli' });
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-tr-5'), deshacer));
+    await assertSucceeds(updateDoc(doc(gerente(), 'pedidos/p-tr-5'), deshacer));
+    // Entregado, ya no: eso se corrige con ↩, que devuelve el stock.
+    await transferido('p-tr-6', { estado: 'entregado', vendidoPor: 'nico',
+      pago: 'virtual', cobradoEn: new Date(), cobradoPor: 'carli' });
+    await assertFails(updateDoc(doc(gerente(), 'pedidos/p-tr-6'), deshacer));
+  });
+
+  it('la casa entrega y confirma de una, desde "¿Cómo pagó?"', async () => {
+    await transferido('p-tr-7');
+    await assertSucceeds(updateDoc(doc(gerente(), 'pedidos/p-tr-7'),
+      { estado: 'entregado', vendidoPor: 'carli', ...cobro }));
+  });
+
+  it('en efectivo se cobra al entregar, como siempre, con una forma de pago que exista', async () => {
+    await sembrar('p-ef-1', { pagoElegido: 'efectivo' });
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-ef-1'),
+      { estado: 'entregado', vendidoPor: 'nico', pago: 'fiado' }));
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/p-ef-1'),
+      { estado: 'entregado', vendidoPor: 'nico', pago: 'efectivo',
+        cobradoEn: serverTimestamp(), cobradoPor: 'nico' }));
   });
 });
 

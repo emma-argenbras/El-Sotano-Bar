@@ -16,6 +16,8 @@ import { app, auth, db, pintarConexion } from './conexion.js';
 import { cajaDeHoy, fechaDeHoy } from './jornada.js';
 import { preciosDe } from './cartas.js';
 import { desdeCuando, pintarEvento, resumirCaja } from './eventos.js';
+import { avisarCasa, pedidosPorConfirmar, pintarAvisos } from './avisos.js';
+import { hora } from './invitados.js';
 
 // ---------- pedidos ----------
 export let dejarDeEscucharPedidos = null;
@@ -27,6 +29,7 @@ export function escucharPedidos() {
   if (dejarDeEscucharPedidos) dejarDeEscucharPedidos();
   desdeActual = desde;
   estado.vistos.clear();
+  transferenciasVistas = null;
   const q = query(
     collection(db, 'pedidos'),
     where('creadoEn', '>=', Timestamp.fromDate(desde)),
@@ -45,6 +48,9 @@ export function escucharPedidos() {
     pintarTablero();
     pintarCaja();
     pintarEvento();
+    // La campanita cuenta los pedidos con transferencia sin confirmar.
+    pintarAvisos();
+    avisarPedidosConTransferencia();
     // No sonar en la carga inicial, solo cuando entra algo nuevo estando ya abierto.
     if (antes && nuevos.some((id) => estado.pedidos.find((p) => p.id === id)?.estado === 'nuevo')) avisar();
   }, (e) => {
@@ -69,6 +75,8 @@ export function pintarTablero() {
     b.onclick = () => cambiarEstado(b.dataset.avanzar, b.dataset.a));
   cont.querySelectorAll('[data-cancelar]').forEach((b) =>
     b.onclick = () => { if (confirm('¿Cancelar este pedido?')) cambiarEstado(b.dataset.cancelar, 'cancelado'); });
+  cont.querySelectorAll('[data-cobrar-pedido]').forEach((b) =>
+    b.onclick = () => confirmarCobroPedido(b.dataset.cobrarPedido, b));
   // Entregado por error: sin esto la caja queda mal para siempre.
   cont.querySelectorAll('[data-corregir]').forEach((b) => b.onclick = () => {
     const p = estado.pedidos.find((x) => x.id === b.dataset.corregir);
@@ -89,6 +97,41 @@ export function quienPidio(p) {
   return estado.invitados.find((i) => i.id === p.invitadoId)?.nombre
     || p.nombreCliente
     || (p.mesa ? 'Mesa ' + p.mesa : 'Sin nombre');
+}
+
+// Dijo que transfiere y la casa todavía no vio la plata.
+export const esperaConfirmacion = (p) => p.pagoElegido === 'virtual' && !p.pago;
+
+// Cómo se paga, en el ticket. Para la transferencia, en qué está: es lo que
+// decide si el pedido se puede entregar o no.
+function lineaPago(p, col) {
+  const quien = (campo) => (p[campo] ? ' · ' + esc(p[campo]) : '');
+  if (col.clave === 'entregado') {
+    if (!p.pago) return '';
+    return `<div class="pago">${p.pago === 'virtual' ? '📲 Transferencia' : '💵 Efectivo'}${
+      p.pagoElegido === 'virtual' ? quien('cobradoPor') : ''}</div>`;
+  }
+  if (p.pagoElegido === 'virtual') {
+    return esperaConfirmacion(p)
+      ? `<div class="pago espera">📲 Dice que transfirió ${hora(p.avisoPagoEn)} · <b>falta que la casa la confirme</b>
+           <button class="btn primario solo-gerente-inline" data-cobrar-pedido="${p.id}"
+                   title="Confirmar que llegó la transferencia">Cobrado</button></div>`
+      : `<div class="pago ok">📲 Transferencia confirmada${quien('cobradoPor')} ${hora(p.cobradoEn)}
+           <button class="btn solo-gerente-inline" data-cobrar-pedido="${p.id}"
+                   title="Deshacer: no había llegado">Sin cobrar</button></div>`;
+  }
+  if (p.pagoElegido === 'efectivo') return '<div class="pago">💵 Paga en la barra</div>';
+  return '';
+}
+
+// El botón que lo mueve de columna. Entregar un pedido con transferencia sin
+// confirmar no es del barman: lo que ve es que falta la casa. Quien puede
+// confirmar —la casa— sí lo puede entregar, y de paso la confirma.
+function botonAvanzar(p, col) {
+  if (!col.siguiente) return '';
+  const frena = col.siguiente === 'entregado' && esperaConfirmacion(p);
+  return `${frena ? '<span class="chip alerta" title="Hasta que la casa confirme la transferencia, no se entrega">⏳ Sin confirmar</span>' : ''}
+    <button class="btn primario ${frena ? 'solo-gerente-inline' : ''}" data-avanzar="${p.id}" data-a="${col.siguiente}">${col.accion}</button>`;
 }
 
 export function ticket(p, col) {
@@ -132,9 +175,10 @@ export function ticket(p, col) {
         i.opcionNombre ? ` · <b style="color:var(--oro)">${esc(i.opcionNombre)}</b>` : ''}</li>`).join('')}</ul>
     ${p.nota ? `<div class="nota">📝 ${esc(p.nota)}</div>` : ''}
     ${desfasado ? `<div class="sospecha">${aviso}</div>` : ''}
+    ${lineaPago(p, col)}
     <div class="pie">
       <span class="total">${plata(desfasado && !intrusos.length ? esperado : p.total)}</span>
-      ${col.siguiente ? `<button class="btn primario" data-avanzar="${p.id}" data-a="${col.siguiente}">${col.accion}</button>` : ''}
+      ${botonAvanzar(p, col)}
       ${col.clave !== 'entregado'
         ? `<button class="btn peligro" data-cancelar="${p.id}" title="Cancelar">✕</button>`
         : `<button class="btn solo-gerente-inline" data-corregir="${p.id}" title="Corregir">↩</button>`}
@@ -413,8 +457,13 @@ export function cancelarCobro() {
 }
 export function pedirPago(pedido) {
   cobrando = pedido;
+  // Qué dijo el cliente, para que el que cobra no adivine. Con transferencia
+  // sin confirmar, 📲 es confirmarla: solo si se la vio en el banco.
+  const dijo = pedido.pagoElegido === 'virtual'
+    ? ` · dijo que transfirió${pedido.avisoPagoEn ? ' a las ' + hora(pedido.avisoPagoEn) : ''}: 📲 solo si la viste en el banco`
+    : pedido.pagoElegido === 'efectivo' ? ' · dijo que paga en efectivo' : '';
   $('#detalleCobro').textContent =
-    `${quienPidio(pedido)} · ${plata(pedido.total)}`;
+    `${quienPidio(pedido)} · ${plata(pedido.total)}${dijo}`;
   $('#dlgCobro').showModal();
 }
 
@@ -423,9 +472,13 @@ export async function cerrarCobro(pago) {
   cobrando = null;
   $('#dlgCobro').close();
   if (!p) return;
+  const quien = quienAtiende() || estado.usuario || 'casa';
   try {
     await updateDoc(doc(db, 'pedidos', p.id), {
-      estado: 'entregado', pago, vendidoPor: quienAtiende() || estado.usuario || 'casa',
+      estado: 'entregado', pago, vendidoPor: quien,
+      // Quién vio la plata y cuándo. Para el efectivo es el mismo que
+      // entrega; para una transferencia, es la confirmación que faltaba.
+      cobradoEn: serverTimestamp(), cobradoPor: quien,
     });
     // Recién acá sale de la barra: ahora sí baja el stock.
     if (p.estado !== 'entregado') await moverStock(p, -1);
@@ -433,10 +486,66 @@ export async function cerrarCobro(pago) {
   } catch (e) { alert('No se pudo cobrar: ' + (e.code || e.message)); }
 }
 
+// Con la plata ya confirmada no hay nada que preguntar: se entrega y se
+// anota quién. Es el caso del pedido con transferencia que la casa confirmó.
+async function entregarCobrado(p) {
+  try {
+    await updateDoc(doc(db, 'pedidos', p.id), {
+      estado: 'entregado', vendidoPor: quienAtiende() || estado.usuario || 'casa',
+    });
+    if (p.estado !== 'entregado') await moverStock(p, -1);
+    if (navigator.vibrate) navigator.vibrate(12);
+  } catch (e) { alert('No se pudo entregar: ' + (e.code || e.message)); }
+}
+
+// La casa vio la transferencia en el banco. Un campo, una hora del servidor
+// y quién lo confirmó; el pedido queda listo para que la barra lo entregue
+// sin preguntar nada. Se puede deshacer, por si se confundió de pedido:
+// vuelve a esperar, y no se entrega hasta confirmarlo de nuevo.
+export async function confirmarCobroPedido(id, boton) {
+  const p = estado.pedidos.find((x) => x.id === id);
+  if (!p) return;
+  const yaCobrado = !!p.pago;
+  if (yaCobrado && !confirm(`¿Marcar el pedido de ${quienPidio(p)} como NO cobrado?\n\n`
+    + 'Vuelve a esperar la transferencia: hasta que la confirmes de nuevo, no se entrega.')) return;
+  if (boton) boton.disabled = true;
+  try {
+    await updateDoc(doc(db, 'pedidos', id), yaCobrado
+      ? { pago: null, cobradoEn: null, cobradoPor: null }
+      : { pago: 'virtual', cobradoEn: serverTimestamp(),
+          cobradoPor: quienAtiende() || estado.usuario || 'la casa' });
+    if (navigator.vibrate) navigator.vibrate(12);
+  } catch (e) {
+    alert('No se pudo: ' + (e.code || e.message));
+  } finally {
+    if (boton) boton.disabled = false;
+  }
+}
+
+// Los pedidos con transferencia que ya se vieron, para avisar solo los
+// nuevos. null hasta la primera foto: lo que ya estaba al abrir no es
+// novedad. Mismo mecanismo que el de las entradas, en invitados.js.
+let transferenciasVistas = null;
+
+function avisarPedidosConTransferencia() {
+  const ahora = new Set(pedidosPorConfirmar().map((p) => p.id));
+  if (transferenciasVistas !== null) {
+    for (const p of estado.pedidos) {
+      if (!ahora.has(p.id) || transferenciasVistas.has(p.id)) continue;
+      avisarCasa(`${quienPidio(p)} pidió y dice que transfirió`,
+        `${plata(p.total)} · ${hora(p.avisoPagoEn)} · revisá el banco y tocá Cobrado`,
+        'sotano-transferencia-pedido-' + p.id);
+    }
+  }
+  transferenciasVistas = ahora;
+}
+
 export async function cambiarEstado(id, nuevo) {
   // Entregar es cobrar: no se pasa de largo.
   if (nuevo === 'entregado') {
     const p = estado.pedidos.find((x) => x.id === id);
+    // Salvo que la plata ya esté confirmada: ahí no hay nada que preguntar.
+    if (p && p.pago) return entregarCobrado(p);
     if (p) return pedirPago(p);
   }
   try {
@@ -478,13 +587,5 @@ export function avisar() {
   } catch {}
 }
 
-export function pintarSonido() {
-  $('#btnSonido').textContent = estado.sonido ? '🔔' : '🔕';
-  $('#btnSonido').title = estado.sonido ? 'Aviso sonoro activado' : 'Aviso sonoro silenciado';
-}
-$('#btnSonido').onclick = () => {
-  estado.sonido = !estado.sonido;
-  localStorage.setItem('sotano:sonido', estado.sonido ? 'si' : 'no');
-  pintarSonido();
-  if (estado.sonido) avisar();   // también desbloquea el audio en móviles
-};
+// El interruptor del sonido vive en avisos.js, adentro de la campanita:
+// tocar la campana abre los avisos, no silencia.
