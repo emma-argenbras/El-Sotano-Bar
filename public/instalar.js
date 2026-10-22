@@ -13,8 +13,25 @@ const cerrar = () => {
 // Instalada, la app abre a pantalla completa y sin barra del navegador, y
 // arranca donde dice su manifest: la barra en el tablero, el club en el pase.
 let pedidoDeInstalar = null;
-const yaInstalada = () =>
+const enLaApp = () =>
   matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+// El que ya la tiene instalada igual compra la entrada desde el navegador: el
+// link le llega por WhatsApp y WhatsApp abre el navegador, no la app. Ahí
+// `display-mode: standalone` es false y le ofreciamos instalar algo que ya
+// tiene. Pasó en una noche de prueba, con gente comprando.
+//
+// Dos maneras de saberlo, las dos del lado de él y sin preguntarle a nadie:
+// que alguna vez haya abierto esta página DENTRO de la app, o que nos lo haya
+// dicho tocando "Ya la tengo".
+const RECUERDO = 'sotano:app-instalada';
+const recordar = () => { try { localStorage.setItem(RECUERDO, '1'); } catch { /* modo privado */ } };
+const laTiene = () => { try { return localStorage.getItem(RECUERDO) === '1'; } catch { return false; } };
+const yaInstalada = () => enLaApp() || laTiene();
+
+// Abrir desde la app instalada es la prueba más firme que hay. Se anota una
+// vez y alcanza para todas las veces que vuelva por el navegador.
+if (enLaApp()) recordar();
 
 // Qué aparato es, para poder explicar el camino correcto. Chrome y Edge
 // disparan beforeinstallprompt; Safari y Firefox no, y hay que hacerlo a mano.
@@ -72,6 +89,7 @@ addEventListener('beforeinstallprompt', (e) => {
 });
 addEventListener('appinstalled', () => {
   pedidoDeInstalar = null;
+  recordar();
   cerrar();
   pintarInstalar();
 });
@@ -95,6 +113,12 @@ async function lanzarInstalacion() {
 }
 
 document.querySelectorAll('[data-instalar-btn]').forEach((b) => b.onclick = lanzarInstalacion);
+// "Ya la tengo": el que lo toca no lo vuelve a ver. Es lo único que el
+// navegador no puede averiguar solo, así que se lo preguntamos una vez.
+document.querySelectorAll('[data-ya-la-tengo]').forEach((b) => b.onclick = () => {
+  recordar();
+  pintarInstalar();
+});
 const btnCerrar = document.querySelector('#btnCerrarInstalar');
 if (btnCerrar) btnCerrar.onclick = cerrar;
 pintarInstalar();
