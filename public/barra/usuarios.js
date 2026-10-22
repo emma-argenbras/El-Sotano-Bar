@@ -221,7 +221,13 @@ export function aplicarRol() {
   // El depósito también lo ve el celular de la barra: necesita saber qué hay
   // para no prometer un trago que no se puede hacer. Lo ve de mirar nada más
   // —adentro no hay ningún botón suyo—, y las reglas lo frenan igual.
-  $('#tabDeposito').hidden = !((gerente || estado.esAparato) && puedoVer('deposito'));
+  // Y el barman de turno también: es el que está mirando el estante, y las
+  // reglas ya le dejan corregir cuánto hay. Sin la pestaña, el permiso no
+  // servía para nada —Guille vio un stock mal cargado y no tenía por dónde—.
+  // Lo que NO puede hacer (cargar mercadería, ponerle precio) no se le ofrece.
+  estado.veDepositoSoloStock = !gerente && !estado.esAparato && estado.rol === 'barman';
+  $('#tabDeposito').hidden = !((gerente || estado.esAparato || estado.veDepositoSoloStock)
+                               && puedoVer('deposito'));
   $('#tabCalendario').hidden = !(gerente && puedoVer('calendario'));
   // Todo lo de cuentas vive acá. La ve quien administra —un admin tiene que
   // poder dar de alta un barman—; los interruptores, solo el sadmin.

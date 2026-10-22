@@ -169,17 +169,21 @@ export function pintarDeposito() {
   // ve la plata. Mostrarle esos botones sería ofrecerle algo que las reglas
   // le van a negar.
   const soloMira = estado.esAparato;
+  // El barman de turno ve la lista y corrige cuánto hay, nada más. Cargar
+  // mercadería y ponerle precio es de quien administra: ofrecérselo sería
+  // un botón que termina en permission-denied.
+  const soloStock = estado.veDepositoSoloStock === true;
 
   // El boton va ANTES de los avisos. Los avisos aparecen y desaparecen a
   // medida que llegan el deposito y la carta, y cada vez que uno aparecia le
   // corria el boton hacia abajo al que lo estaba por tocar: en el celular eso
   // es apretar "Editar" de otra cosa. La accion principal no se mueve.
   const html = `
-    ${soloMira ? '' : `
+    ${soloMira || soloStock ? '' : `
     <button class="btn primario ancho-full" id="btnNuevoInsumo"
             style="margin-bottom:.9rem">+ Insumo</button>`}
 
-    ${repetidos.length ? `
+    ${repetidos.length && !soloStock ? `
     <div class="aviso mal" style="margin-bottom:.9rem"><span>⛔</span><div>
       <b>Hay nombres repetidos en el depósito.</b> La receta apunta a uno solo,
       así que la mercadería que entra en el otro no la ve nadie y el producto
@@ -189,7 +193,7 @@ export function pintarDeposito() {
       <br><small>Dejá uno solo: pasale el stock al que usa la receta y dale de
       baja al otro.</small></div></div>` : ''}
 
-    ${sueltos.length && !soloMira ? `
+    ${sueltos.length && !soloMira && !soloStock ? `
     <div class="aviso" style="margin-bottom:.9rem"><span>📋</span><div>
       <b>${sueltos.length} ${sueltos.length === 1 ? 'insumo no sale' : 'insumos no salen'}
       en la carta.</b> Cargar algo acá no lo pone a la venta: hace falta decir
