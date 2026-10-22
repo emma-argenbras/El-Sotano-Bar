@@ -1468,6 +1468,55 @@ await chequear('al arrancar otra noche, "adentro" no arrastra a los de la anteri
   }
 });
 
+await chequear('cuando alguien dice que transfirió, al panel le llega el aviso', async () => {
+  // "Le avisa a Carli" sin servidor: el panel escucha la lista y, cuando
+  // aparece un aviso nuevo, muestra una notificación. Acá se reemplaza el
+  // mecanismo del navegador por uno que anota lo que se habría mostrado.
+  const q = await db.collection('barra').doc('eventos').collection('items')
+    .where('estado', '==', 'abierto').get();
+  if (q.empty) throw new Error('no hay ninguna noche abierta para probar');
+  const noche = q.docs[0].id;
+  await barra.evaluate(() => {
+    window.__avisos = [];
+    window.Notification = { permission: 'granted', requestPermission: () => Promise.resolve('granted') };
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { ready: Promise.resolve({ showNotification: (t, o) => { window.__avisos.push({ t, o }); return Promise.resolve(); } }) },
+    });
+  });
+  const ref = db.collection('invitados').doc('invitado-que-avisa-que-transfirio');
+  await ref.set({ eventoId: noche, nombre: 'Avisa Transferencia', telefono: '',
+                  pago: 'virtual', creadoEn: new Date(), ingresadoEn: null });
+  try {
+    // Anotarse no es novedad de transferencia: no avisa.
+    await barra.waitForFunction(() =>
+      (document.querySelector('#puerta')?.textContent || '').includes('Avisa Transferencia')
+      || true, null, { timeout: 5000 }).catch(() => {});
+    await barra.waitForTimeout(800);
+    if ((await barra.evaluate(() => window.__avisos.length)) !== 0)
+      throw new Error('avisó antes de que nadie dijera que transfirió');
+
+    // Dice que transfirió: ahí sí.
+    await ref.update({ avisoPagoEn: new Date() });
+    await barra.waitForFunction(() => window.__avisos.length > 0, null, { timeout: 15000 })
+      .catch(() => { throw new Error('al panel no le llegó el aviso'); });
+    const a = await barra.evaluate(() => window.__avisos[0]);
+    if (!a.t.includes('Avisa Transferencia') || !/transfiri/i.test(a.t))
+      throw new Error('el aviso no dice quién ni qué: ' + JSON.stringify(a));
+    if (!/Cobrado/.test(a.o?.body || ''))
+      throw new Error('el aviso no dice qué hacer: ' + JSON.stringify(a));
+
+    // Y no se repite en cada repintado.
+    await ref.update({ telefono: '1100000001' });
+    await barra.waitForTimeout(1200);
+    if ((await barra.evaluate(() => window.__avisos.length)) !== 1)
+      throw new Error('repitió el aviso sin novedad');
+  } finally {
+    await ref.delete();
+    await barra.evaluate(() => { delete window.__avisos; }).catch(() => {});
+  }
+});
+
 await chequear('cambiar quién está de turno no muestra ni toca el cupo', async () => {
   // La pantalla de turno es la de agendar, prestada: decía «Agendar una noche»
   // con la fecha, el cupo y la entrada en blanco sobre una noche que tiene

@@ -208,11 +208,52 @@ export function filtrarInvitados() {
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 }
 
+// ---------- avisarle a la casa ----------
+//
+// "Le avisa a Carli" sin servidor es esto: el panel ya escucha la lista en
+// vivo; cuando aparece un aviso nuevo, el navegador muestra una notificación
+// y vibra. Funciona mientras el panel esté abierto —en el celular, instalada,
+// también con la pantalla apagada un rato—. Con el panel cerrado no llega
+// nada: para eso hace falta un servidor (plan Blaze), y eso es otra decisión.
+// Mismo mecanismo que "tu pedido está listo" del lado del cliente (app.js).
+export function pedirPermisoAviso() {
+  if (!('Notification' in window) || Notification.permission !== 'default') return;
+  Notification.requestPermission().catch(() => {});
+}
+
+export function avisarCasa(titulo, cuerpo, tag) {
+  if (navigator.vibrate) navigator.vibrate([120, 80, 120]);
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  navigator.serviceWorker?.ready.then((reg) => reg.showNotification(titulo, {
+    body: cuerpo, tag, renotify: true, vibrate: [120, 80, 120],
+    icon: '/iconos/icono-barra-192.png',
+  })).catch(() => {});
+}
+
+// Los avisos de transferencia que ya se vieron, para avisar solo los nuevos.
+// null hasta la primera foto: lo que ya estaba al abrir no es novedad.
+let avisosVistos = null;
+
+function avisarTransferenciasNuevas() {
+  const ahora = new Set((estado.invitados || [])
+    .filter((i) => i.avisoPagoEn && !i.pagadoEn).map((i) => i.id));
+  if (avisosVistos !== null) {
+    for (const i of estado.invitados || []) {
+      if (!ahora.has(i.id) || avisosVistos.has(i.id)) continue;
+      avisarCasa(`${i.nombre} dice que transfirió`,
+        `${hora(i.avisoPagoEn)} · revisá el banco y tocá Cobrado`,
+        'sotano-transferencia-' + i.id);
+    }
+  }
+  avisosVistos = ahora;
+}
+
 export function escucharInvitados() {
   onSnapshot(collection(db, 'invitados'), (snap) => {
     estado.invitadosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     estado.invitadosListos = true;
     filtrarInvitados();
+    avisarTransferenciasNuevas();
     pintarPuerta();
     pintarInvitar();   // si está abierto el diálogo de una noche, su lista también
     // Y el calendario, que es donde vive el bloque del Club. Faltaba: el

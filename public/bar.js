@@ -9,6 +9,7 @@ import { $, estado } from './barra/base.js';
 import { abrirConteo, abrirNuevoProducto, guardarNuevoProducto, guardarReceta } from './barra/carta.js';
 import { abrirCartaDeFecha } from './barra/cartas.js';
 import './barra/cierre.js';
+import { pedirPermisoAviso } from './barra/invitados.js';
 import { guardarInsumo, guardarPrecios, guardarStock, pintarDeposito } from './barra/deposito.js';
 import { abrirVenta, cancelarCobro, cerrarCobro, elegirQuienAtiende, pintarTablero } from './barra/pedidos.js';
 import { crearPersona, limpiarUsuario, pintarUsuarios, pistaPersona } from './barra/usuarios.js';
@@ -46,6 +47,9 @@ $('#btnCancelarProducto').onclick = () => $('#dlgNuevoProducto').close();
 $('#btnCerrarCartaFecha').onclick = () => $('#dlgCartaFecha').close();
 $('#btnCancelarCierre').onclick = () => $('#dlgCerrarJornada').close();
 $('#btnCancelarCierreBarra').onclick = () => $('#dlgCerrarBarra').close();
+// El permiso para avisar se pide con el primer toque en el panel: los
+// navegadores lo exigen desde un gesto, y acá hay uno seguro.
+document.querySelector('.tabs')?.addEventListener('click', pedirPermisoAviso, { once: true });
 $('#btnCancelarInsumo').onclick = () => $('#dlgInsumo').close();
 $('#btnGuardarInsumo').onclick = guardarInsumo;
 $('#btnCancelarStock').onclick = () => $('#dlgStock').close();
