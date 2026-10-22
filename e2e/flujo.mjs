@@ -4390,6 +4390,91 @@ await chequear('el trago por transferencia: entra con "Ya transferí", lo confir
   }
 });
 
+await chequear('la campanita activa los avisos del teléfono y le cuenta al dueño si cambió el alias', async () => {
+  // Carli no vio nunca la pregunta del permiso: se pedía sola, escondida en
+  // el primer toque de una pestaña. Ahora está en la campanita, con un botón
+  // para activarlos y otro para probarlos.
+  await barra.evaluate(() => {
+    window.__avisos = [];
+    window.Notification = { permission: 'default',
+      requestPermission: () => { window.Notification.permission = 'granted'; return Promise.resolve('granted'); } };
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { ready: Promise.resolve({ showNotification: (t, o) => { window.__avisos.push({ t, o }); return Promise.resolve(); } }) },
+    });
+    try { localStorage.removeItem('sotano:alias-visto'); } catch {}
+  });
+  // Otro admin cambia el alias: al dueño le tiene que quedar en la campanita.
+  await db.doc('publico/pagos').set({ alias: 'otro.alias.mp', titular: 'Otra Persona',
+    cambiadoPor: 'carli', cambiadoEn: new Date() });
+  try {
+    await barra.waitForFunction(() => {
+      const g = document.querySelector('#globoAvisos');
+      return g && !g.hidden && Number(g.textContent) >= 1;
+    }, null, { timeout: 15000 }).catch(() => { throw new Error('la campanita no cuenta el cambio de alias'); });
+    await barra.click('#btnSonido');
+    await barra.waitForSelector('#dlgAvisos[open]', { timeout: 10000 });
+    const lista = await barra.textContent('#cuerpoAvisos');
+    if (!lista.includes('otro.alias.mp') || !lista.includes('carli'))
+      throw new Error('no dice a qué alias ni quién lo cambió: ' + lista.slice(0, 200));
+
+    // El permiso, a la vista y con un botón.
+    await barra.waitForSelector('#btnActivarAvisos', { timeout: 5000 })
+      .catch(() => { throw new Error('no ofrece activar los avisos'); });
+    await barra.click('#btnActivarAvisos');
+    await barra.waitForFunction(() =>
+      (document.querySelector('#avisosTelefono')?.textContent || '').includes('Avisos activados'),
+      null, { timeout: 5000 }).catch(() => { throw new Error('activados, no lo dice'); });
+    await barra.waitForFunction(() => (window.__avisos || []).some((a) => a.t.includes('Prueba')),
+      null, { timeout: 5000 }).catch(() => { throw new Error('al activarlos no mandó el aviso de prueba'); });
+
+    // Visto: sale de la lista y no vuelve.
+    await barra.click('[data-alias-visto]');
+    await barra.waitForFunction(() =>
+      !(document.querySelector('#cuerpoAvisos')?.textContent || '').includes('otro.alias.mp'),
+      null, { timeout: 5000 }).catch(() => { throw new Error('"Visto" no lo saca de la campanita'); });
+  } finally {
+    await barra.evaluate(() => {
+      delete window.__avisos;
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+      try { localStorage.removeItem('sotano:alias-visto'); } catch {}
+    }).catch(() => {});
+    await db.doc('publico/pagos').set({ alias: 'sotano.prueba.mp', titular: 'Sotano Prueba' });
+  }
+});
+
+await chequear('cambiar el alias desde Administración pregunta, y deja quién y cuándo', async () => {
+  // Las reglas ahora exigen quién y a qué hora: si la pantalla no lo manda,
+  // en producción "Guardar alias" rebota. Esto lo prueba de punta a punta.
+  if ((await barra.getAttribute('#tabCaja', 'aria-selected')) !== 'true') await barra.click('#tabCaja');
+  await barra.waitForSelector('#inpAlias', { timeout: 10000 });
+  await barra.waitForFunction(() => !document.querySelector('#btnGuardarAlias')?.disabled,
+    null, { timeout: 10000 }).catch(() => { throw new Error('Guardar alias sigue apagado: el alias no cargó'); });
+  let pregunta = '';
+  const oir = async (d) => { pregunta = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.fill('#inpAlias', 'alias.nuevo.prueba');
+    await barra.fill('#inpAliasTitular', 'Titular Prueba');
+    await barra.click('#btnGuardarAlias');
+    for (let i = 0; i < 40; i++) {
+      const d = (await db.doc('publico/pagos').get()).data() || {};
+      if (d.alias === 'alias.nuevo.prueba') {
+        if (!d.cambiadoPor || !d.cambiadoEn) throw new Error('no dejó quién ni cuándo: ' + JSON.stringify(d));
+        break;
+      }
+      if (i === 39) throw new Error('no guardó el alias' + (pregunta ? '' : ' y no preguntó nada'));
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    if (!pregunta.includes('sotano.prueba.mp') || !pregunta.includes('alias.nuevo.prueba'))
+      throw new Error('no mostró el antes y el después: ' + pregunta);
+  } finally {
+    barra.removeListener('dialog', oir);
+    await db.doc('publico/pagos').set({ alias: 'sotano.prueba.mp', titular: 'Sotano Prueba' });
+    await barra.click('#tabTablero').catch(() => {});
+  }
+});
+
 // ---------- la marca la elige el cliente ----------
 // Una cerveza en lata son cuatro latas al mismo precio, cada una de su
 // propia caja. El cliente dice cuál, y esa caja es la que baja.

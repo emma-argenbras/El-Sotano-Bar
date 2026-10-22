@@ -22,6 +22,7 @@ import { EMULADOR, app, auth, db, esElDueno, fallo } from './conexion.js';
 import { pintarDeposito } from './deposito.js';
 import { noches, pintarEvento } from './eventos.js';
 import { pintarQuienAtiende } from './pedidos.js';
+import { pintarAvisos } from './avisos.js';
 
 // ---------- usuarios: quién es quién y qué ve ----------
 // Vive en su propia pestaña y la ve solo quien reparte. Lo que se toca acá es
@@ -266,6 +267,8 @@ export function aplicarRol() {
   // quedaban con la versión de menos y nadie las volvía a dibujar.
   pintarEvento();
   pintarCierre();
+  // Y la campanita: al dueño le cuenta si alguien cambió el alias.
+  pintarAvisos();
 }
 
 export function vigilarMiAcceso(uid) {

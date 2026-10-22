@@ -496,7 +496,11 @@
     casa lo busque en el banco. Confirmalo de un toque desde acá.
   </p>
   <div id="cuerpoAvisos"></div>
-  <button class="btn ancho-full" id="btnSonidoToggle" style="margin-top:1rem"></button>
+  <!-- Si este teléfono avisa o no, y cómo arreglarlo. Antes el permiso se
+       pedía solo, escondido en el primer toque de una pestaña: si el
+       navegador no mostraba la pregunta, nadie sabía por qué no llegaba nada. -->
+  <div id="avisosTelefono" style="margin-top:1rem"></div>
+  <button class="btn ancho-full" id="btnSonidoToggle" style="margin-top:.6rem"></button>
   <button class="btn primario ancho-full" id="btnCerrarAvisos" style="margin-top:.5rem">Cerrar</button>
 </dialog>
 

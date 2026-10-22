@@ -569,11 +569,27 @@ describe('registro de invitados', () => {
   // El alias al que se transfiere lo lee cualquiera —hace falta para pagar—
   // pero lo escribe solo la casa.
   it('el alias de pago lo lee cualquiera y lo escribe la casa', async () => {
-    await assertSucceeds(setDoc(doc(barra(), 'publico/pagos'),
-      { alias: 'sotano.bar.mp', titular: 'Sotano' }));
+    const alias = (extra = {}) => ({ alias: 'sotano.bar.mp', titular: 'Sotano',
+      cambiadoPor: 'guille', cambiadoEn: serverTimestamp(), ...extra });
+    await assertSucceeds(setDoc(doc(barra(), 'publico/pagos'), alias()));
+    await assertSucceeds(setDoc(doc(gerente(), 'publico/pagos'), alias()));
     await assertSucceeds(getDoc(doc(sinLoguear(), 'publico/pagos')));
-    await assertFails(setDoc(doc(anon(), 'publico/pagos'), { alias: 'el.mio' }));
-    await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), { alias: 'el.mio' }));
+    await assertFails(setDoc(doc(anon(), 'publico/pagos'), alias({ alias: 'el.mio' })));
+    await assertFails(setDoc(doc(turnoOk(), 'publico/pagos'), alias({ alias: 'el.mio' })));
+  });
+
+  // Cambiar el alias cambia a quién le llega la plata de toda la noche: deja
+  // quién y cuándo, con la hora del servidor, y es de quien tiene la Caja.
+  it('cambiar el alias deja quién y cuándo, y no se puede sin eso', async () => {
+    await assertFails(setDoc(doc(gerente(), 'publico/pagos'),
+      { alias: 'otro.alias', titular: 'Otro' }));
+    await assertFails(setDoc(doc(gerente(), 'publico/pagos'),
+      { alias: 'otro.alias', titular: 'Otro', cambiadoPor: 'guille', cambiadoEn: new Date('2020-01-01') }));
+    await assertFails(setDoc(doc(gerente(), 'publico/pagos'),
+      { alias: 'otro.alias', titular: 'Otro', cambiadoPor: 'guille', cambiadoEn: serverTimestamp(), cbu: '000' }));
+    // Un admin con la Caja apagada no lo toca.
+    await assertFails(setDoc(doc(recortado(), 'publico/pagos'),
+      { alias: 'otro.alias', titular: 'Otro', cambiadoPor: 'recortado', cambiadoEn: serverTimestamp() }));
   });
 
   // El precio de la entrada vive en dos lugares: la ficha del evento y el

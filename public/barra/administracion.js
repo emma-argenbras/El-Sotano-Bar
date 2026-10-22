@@ -23,6 +23,7 @@ import { cajaActual } from './pedidos.js';
 import { CORTE, alCambiarElCorte, arranqueDeHoy, corteValido, horaCorte } from './jornada.js';
 import { pintarCierre } from './cierre.js';
 import { preciosDe } from './cartas.js';
+import { pintarAvisos } from './avisos.js';
 import { fechaDeHoy } from './jornada.js';
 
 // ---------- la caja de Sótano ----------
@@ -163,8 +164,8 @@ export function pintarCajaGeneral() {
 
     <div class="grupo-personal">Alias para transferencias</div>
     <p style="color:var(--suave);font-size:.84rem;margin:0 0 .5rem">
-      El que ve el invitado en su pase cuando elige pagar la entrada por
-      transferencia. Si está vacío, solo se le ofrece pagar en la puerta.
+      Adónde transfieren todos: la entrada desde el pase y los tragos desde la
+      carta. Si está vacío, solo se ofrece pagar en efectivo.
     </p>
     <label class="campo">
       <span>Alias o CBU</span>
@@ -172,11 +173,21 @@ export function pintarCajaGeneral() {
              placeholder="ej. sotano.bar.mp" value="${esc(estado.pagos.alias || '')}">
     </label>
     <label class="campo">
-      <span>A nombre de <small>(opcional, para que sepa que no se equivocó)</small></span>
+      <span>A nombre de <small>(igual que como lo muestra el banco)</small></span>
       <input id="inpAliasTitular" maxlength="60" autocomplete="off"
              value="${esc(estado.pagos.titular || '')}">
     </label>
-    <button class="btn ancho-full" id="btnGuardarAlias" style="margin-bottom:.4rem">Guardar alias</button>
+    <p style="color:var(--suave);font-size:.78rem;margin:-.3rem 0 .6rem">
+      El nombre que ve el que paga lo pone su banco, no la app: es el titular
+      de la cuenta de ese alias. Para saber cuál es, empezá una transferencia a
+      ese alias desde otro teléfono, mirá el nombre y frená antes de confirmar.
+      Copialo acá tal cual: si no coincide, el que paga desconfía.
+    </p>
+    <button class="btn ancho-full" id="btnGuardarAlias" style="margin-bottom:.4rem"
+            ${estado.pagosListo ? '' : 'disabled'}>Guardar alias</button>
+    ${estado.pagos.cambiadoEn?.toDate ? `<p style="color:var(--suave);font-size:.76rem;margin:0 0 .4rem">
+      Último cambio: ${esc(estado.pagos.cambiadoPor || '—')} · ${
+        estado.pagos.cambiadoEn.toDate().toLocaleString('es-AR', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</p>` : ''}
 
     <div class="grupo-personal" style="display:flex;align-items:center;gap:.6rem">
       <span style="flex:1">Gastos</span>
@@ -212,11 +223,21 @@ export function pintarCajaGeneral() {
   $('#btnGuardarCorte').onclick = guardarCorte;
   $('#btnGuardarAlias').onclick = async (e) => {
     const b = e.currentTarget;
+    const alias = $('#inpAlias').value.trim();
+    const titular = $('#inpAliasTitular').value.trim();
+    const antes = String(estado.pagos.alias || '');
+    if (alias === antes && titular === String(estado.pagos.titular || '')) return;
+    // Cambiar el alias es cambiar a quién le llega la plata de toda la noche:
+    // se pregunta con los dos nombres a la vista, y queda quién lo hizo.
+    if (alias !== antes && !confirm(alias
+      ? `¿Cambiar adónde transfieren todos?\n\nAntes: ${antes || '(ninguno)'}\nAhora: ${alias}${titular ? ' · ' + titular : ''}\n\nDesde ya, cada pase y cada pedido muestran el nuevo. El dueño lo ve en su campanita.`
+      : `¿Sacar el alias "${antes}"?\n\nNadie va a poder pagar por transferencia hasta que cargues otro.`)) return;
     b.disabled = true; b.textContent = 'Guardando…';
     try {
       await setDoc(doc(db, 'publico', 'pagos'), {
-        alias: $('#inpAlias').value.trim(),
-        titular: $('#inpAliasTitular').value.trim(),
+        alias, titular,
+        cambiadoPor: estado.usuario || 'la casa',
+        cambiadoEn: serverTimestamp(),
       });
       b.textContent = 'Guardado ✓';
     } catch (err) {
@@ -336,13 +357,7 @@ export function escucharPlataDeposito() {
     pintarAdmin();
   }, () => { estado.sinPagos = true; pintarAdmin(); });
 
-  // El alias al que transfieren la entrada. Vive en publico/ porque el
-  // invitado lo tiene que poder leer sin cuenta: es lo único que necesita
-  // para pagar.
-  onSnapshot(doc(db, 'publico', 'pagos'), (d) => {
-    estado.pagos = d.exists() ? d.data() : {};
-    pintarCajaGeneral();
-  }, () => {});
+
   onSnapshot(collection(db, 'proveedores'), (snap) => {
     estado.proveedores = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
@@ -1075,4 +1090,20 @@ export async function guardarCompra() {
   }
   btn.disabled = false;
   btn.textContent = c.condicion === 'inicial' ? 'Cargar el stock inicial' : 'Guardar el ingreso';
+}
+
+// El alias al que transfieren. Vive en publico/ porque el invitado lo tiene
+// que poder leer sin cuenta: es lo único que necesita para pagar.
+//
+// Lo escucha todo el panel, no solo quien ve el Depósito. Antes vivía con
+// los pagos del depósito, y un admin con esa pantalla apagada veía el campo
+// vacío: tocar "Guardar alias" borraba el de verdad. Y la campanita del
+// dueño lo necesita para avisar cuando alguien lo cambia.
+export function escucharAlias() {
+  onSnapshot(doc(db, 'publico', 'pagos'), (d) => {
+    estado.pagos = d.exists() ? d.data() : {};
+    estado.pagosListo = true;
+    pintarCajaGeneral();
+    pintarAvisos();
+  }, () => {});
 }

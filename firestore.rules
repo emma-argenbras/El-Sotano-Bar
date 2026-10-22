@@ -461,9 +461,23 @@ service cloud.firestore {
       // Ojo con el orden: Firestore concede si CUALQUIER match permite, así
       // que un match aparte para publico/jornada no restringiría nada. La
       // condición tiene que estar acá, en el comodín.
-      allow create, update: if esAdmin() && (documento != 'jornada'
-        || (puedo('caja') && corteValido()));
+      allow create, update: if esAdmin() && (
+        documento == 'pagos' ? (puedo('caja') && aliasValido())
+        : (documento != 'jornada' || (puedo('caja') && corteValido())));
       allow delete: if esElDueno();
+    }
+
+    // Adónde transfieren todos —entradas y tragos—. Cambiarlo cambia a quién
+    // le llega la plata de la noche, así que es de quien tiene la Caja, y
+    // cada cambio deja quién y a qué hora, con la del servidor: el dueño lo
+    // ve en su campanita. Antes se pisaba sin forma y sin rastro.
+    function aliasValido() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['alias', 'titular', 'cambiadoPor', 'cambiadoEn'])
+        && d.get('alias', '') is string && d.get('alias', '').size() <= 60
+        && d.get('titular', '') is string && d.get('titular', '').size() <= 60
+        && d.get('cambiadoPor', null) is string && d.cambiadoPor.size() <= 60
+        && d.get('cambiadoEn', null) == request.time;
     }
 
     // El contador de registrados lo sube quien se registra, de a uno y solo

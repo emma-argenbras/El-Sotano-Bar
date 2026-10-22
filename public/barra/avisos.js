@@ -71,6 +71,61 @@ export function pedidosPorConfirmar() {
     .filter((p) => p.pagoElegido === 'virtual' && p.avisoPagoEn && !p.pago && p.estado !== 'entregado');
 }
 
+// ---------- el alias cambió ----------
+// Cambiar el alias cambia a quién le llega la plata de toda la noche. Lo
+// puede hacer cualquiera que tenga la Caja —así el personal no depende de
+// nadie—, pero el dueño se entera: queda en su campanita hasta que lo ve.
+// Lo visto se recuerda por teléfono; un cambio propio no se avisa.
+const ALIAS_VISTO = 'sotano:alias-visto';
+const aliasVisto = () => { try { return Number(localStorage.getItem(ALIAS_VISTO) || 0); } catch { return 0; } };
+
+export function cambioDeAlias() {
+  const p = estado.pagos || {};
+  const cuando = p.cambiadoEn?.toMillis?.() || 0;
+  if (!estado.dueno || !cuando || cuando <= aliasVisto()) return null;
+  if (p.cambiadoPor && p.cambiadoPor === estado.usuario) return null;
+  return p;
+}
+
+// ---------- este teléfono ----------
+// En qué está el permiso de avisar, y qué hacer en cada caso. El permiso lo
+// da el navegador, una vez por teléfono, y solo si se pide desde un toque:
+// por eso hay un botón, y no una pregunta que aparece sola.
+function pintarTelefono() {
+  const cont = $('#avisosTelefono');
+  if (!cont) return;
+  const soporta = 'Notification' in window && 'serviceWorker' in navigator;
+  const permiso = soporta ? Notification.permission : 'no';
+  cont.innerHTML = {
+    no: `<div class="aviso"><span>📵</span><div><b>Este navegador no muestra avisos.</b><br>
+      <small>En iPhone solo funcionan con la app instalada: Compartir → Agregar a
+      inicio, y abrila desde el ícono. La campanita igual cuenta todo acá.</small></div></div>`,
+    default: `<button class="btn primario ancho-full" id="btnActivarAvisos">🔔 Activar avisos en este teléfono</button>
+      <small style="display:block;color:var(--suave);margin-top:.3rem">Te avisa con el panel abierto, aunque
+      estés en otra pestaña o con la pantalla apagada un rato.</small>`,
+    granted: `<div class="aviso ok"><span>✓</span><div style="flex:1"><b>Avisos activados en este teléfono.</b><br>
+      <small>Con el panel cerrado no llegan: dejalo abierto en segundo plano.</small></div>
+      <button class="btn" id="btnProbarAviso" style="padding:.35rem .7rem;font-size:.8rem">Probar</button></div>`,
+    denied: `<div class="aviso mal"><span>🔕</span><div><b>Este teléfono tiene los avisos bloqueados.</b><br>
+      <small>En Chrome: tocá el candado (o ⋮ → Información del sitio) → Permisos →
+      Notificaciones → Permitir. Si usás la app instalada: mantené apretado el
+      ícono → Información de la app → Notificaciones. Después volvé acá.</small></div></div>`,
+  }[permiso] || '';
+  const activar = $('#btnActivarAvisos');
+  if (activar) activar.onclick = async () => {
+    try { await Notification.requestPermission(); } catch {}
+    pintarTelefono();
+    if (Notification.permission === 'granted') probarAviso();
+  };
+  const probar = $('#btnProbarAviso');
+  if (probar) probar.onclick = probarAviso;
+}
+
+function probarAviso() {
+  avisarCasa('Prueba de aviso · Sótano',
+    'Así te llega cuando alguien dice que transfirió.', 'sotano-prueba');
+}
+
 // ---------- la campanita ----------
 // Lo último que se dibujó: la lista se vuelve a armar en cada foto de cinco
 // escuchas, y si el HTML es el mismo no se toca el DOM —si no, con el
@@ -80,7 +135,8 @@ let ultimoAvisos = null;
 export function pintarAvisos() {
   const pedidos = pedidosPorConfirmar();
   const entradas = entradasPorConfirmar();
-  const n = pedidos.length + entradas.length;
+  const alias = cambioDeAlias();
+  const n = pedidos.length + entradas.length + (alias ? 1 : 0);
 
   const globo = $('#globoAvisos');
   globo.hidden = n === 0;
@@ -91,6 +147,15 @@ export function pintarAvisos() {
   const noche = (id) => estado.registros?.[id]?.nombre || '';
   const deLaPuerta = eventoDePuerta();
   const html = n ? `
+    ${alias ? `
+      <div class="item aviso-pendiente">
+        <div class="cuerpo">
+          <div class="nombre">🏦 Cambió el alias: ahora transfieren a <b>${esc(alias.alias || '(ninguno)')}</b></div>
+          <div class="desc">${alias.titular ? esc(alias.titular) + ' · ' : ''}lo cambió ${
+            esc(alias.cambiadoPor || '—')} · ${hora(alias.cambiadoEn)}</div>
+        </div>
+        <button class="btn" data-alias-visto style="padding:.4rem .7rem;font-size:.82rem">Visto</button>
+      </div>` : ''}
     ${pedidos.map((p) => {
       const cancelado = p.estado === 'cancelado';
       return `
@@ -121,10 +186,16 @@ export function pintarAvisos() {
         <small>Cuando alguien toque "Ya transferí" aparece acá, con un número
         arriba de la campana, hasta que lo confirmes.</small></div>`;
 
+  pintarTelefono();
   if (html === ultimoAvisos) return;
   ultimoAvisos = html;
   const cuerpo = $('#cuerpoAvisos');
   cuerpo.innerHTML = html;
+  const visto = cuerpo.querySelector('[data-alias-visto]');
+  if (visto) visto.onclick = () => {
+    try { localStorage.setItem(ALIAS_VISTO, String(estado.pagos?.cambiadoEn?.toMillis?.() || Date.now())); } catch {}
+    pintarAvisos();
+  };
   cuerpo.querySelectorAll('[data-cobrar-pedido]').forEach((b) =>
     b.onclick = () => confirmarCobroPedido(b.dataset.cobrarPedido, b));
   cuerpo.querySelectorAll('[data-cobrado]').forEach((b) =>
