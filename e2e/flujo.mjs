@@ -3352,7 +3352,11 @@ await chequear('con alias cargado, el invitado elige transferencia y lo ve en su
       null, { timeout: 15000 });
     if (await pg.locator('#btnYaTransferi').count())
       throw new Error('después de avisar sigue ofreciendo el botón');
-    // Y la casa lo ve en su lista, con la hora, sin recargar.
+    // Y la casa lo ve en su lista, con la hora, sin recargar. Antes de tocar
+    // la pestaña: el diálogo de agendar de arriba se cierra solo cuando
+    // termina de escribir, y es modal. Tocar con él abierto es colgarse 30s.
+    await barra.waitForFunction(() =>
+      !document.querySelector('#dlgEvento')?.open, null, { timeout: 15000 });
     await barra.click('#tabCalendario');
     await barra.waitForFunction(() =>
       (document.querySelector('#calendario')?.textContent || '').includes('dice que transfirió'),
