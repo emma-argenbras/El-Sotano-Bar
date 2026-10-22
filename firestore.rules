@@ -344,7 +344,9 @@ service cloud.firestore {
                              'proveedorId', 'compraId'])
         && d.concepto is string && d.concepto.size() >= 2 && d.concepto.size() <= 80
         && d.categoria in ['proveedor', 'sueldo', 'insumo', 'retiro', 'otro']
-        && d.monto is number && d.monto > 0 && d.monto <= 5000000
+        // Mismo tope que una compra: una compra pagada deja su gasto, y con
+        // un tope menor el gasto rebotaba y el ingreso quedaba sin él.
+        && d.monto is number && d.monto > 0 && d.monto <= 50000000
         && d.pago in ['efectivo', 'virtual']
         && d.fecha is timestamp;
     }
@@ -400,6 +402,7 @@ service cloud.firestore {
         && (esElDueno() || soloCobro() || soloCosto())
         && cobroValido()
         && transferenciaRespetada()
+        && noSeEntregaDosVeces()
         && entregadoSeCorrigeConMotivo(pedidoId);
 
       // Borrar es del dueño y de nadie más.
@@ -410,14 +413,28 @@ service cloud.firestore {
     // cobrarlo de nuevo— saca plata de la caja. Lo hace un superadministrador,
     // con motivo, y queda en el registro: el dueño se entera en su campanita.
     // Antes lo podía hacer cualquier barman de turno, sin rastro.
+    //
+    // Lo mismo cancelar un pedido que ya tiene la plata confirmada —una
+    // transferencia que la casa vio—: cancelarlo sin más lo hacía desaparecer
+    // con la plata adentro.
     function entregadoSeCorrigeConMotivo(pedidoId) {
       let antes = resource.data.estado;
       let despues = request.resource.data.estado;
       let n = request.resource.data.get('vecesCorregido', 0);
-      return antes != 'entregado' || despues == 'entregado' || esElDueno()
+      let sacaPlata = (antes == 'entregado' && despues != 'entregado')
+        || (resource.data.get('pago', null) != null && antes != 'cancelado' && despues == 'cancelado');
+      return !sacaPlata || esElDueno()
         || (esSuperAdmin()
             && n == resource.data.get('vecesCorregido', 0) + 1
             && conRegistro('anular-pedido-' + pedidoId + '-' + string(n)));
+    }
+
+    // Un pedido entregado no se vuelve a entregar: dos celulares que tocan
+    // Entregado a la vez descontaban el stock dos veces y pisaban el cobro.
+    // Lo único que se le escribe después es el costo congelado.
+    function noSeEntregaDosVeces() {
+      return !(resource.data.estado == 'entregado' && request.resource.data.estado == 'entregado')
+        || soloCosto();
     }
 
     // ---------- el registro de cambios ----------
@@ -677,10 +694,12 @@ service cloud.firestore {
         && entradaCoherente();
 
       // Confirmar que la transferencia llegó. Es plata, así que lo hace la
-      // barra o la casa, nunca la puerta ni el invitado: el que mira el banco
+      // casa, nunca la barra, la puerta ni el invitado: el que mira el banco
       // no es el que está en la entrada. Se puede deshacer, por si se
       // confundió de persona.
-      allow update: if esBarra()
+      // Desde ahora es de la casa (administrador): el barman y el celular de
+      // la barra no confirman plata, igual que en los pedidos.
+      allow update: if esAdmin()
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['pagadoEn', 'pagadoPor']);
 

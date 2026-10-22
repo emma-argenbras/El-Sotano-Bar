@@ -13,7 +13,7 @@ import {
 } from '/vendor/firebase.js';
 import { $, COLUMNAS, DEMORA_MS, esc, estado, plata } from './base.js';
 import { costoDeItems, moverInsumos, opcionesDe, recetaCompleta } from './stock.js';
-import { app, auth, db, pintarConexion } from './conexion.js';
+import { app, auth, db, pintarConexion, sinAcceso } from './conexion.js';
 import { cajaDeHoy, fechaDeHoy } from './jornada.js';
 import { preciosDe } from './cartas.js';
 import { desdeCuando, pintarEvento, resumirCaja } from './eventos.js';
@@ -37,10 +37,15 @@ export function escucharPedidos() {
     where('creadoEn', '>=', Timestamp.fromDate(desde)),
     orderBy('creadoEn', 'asc'),
   );
+  // Si ya llegó la primera foto del servidor. Antes se miraba si había
+  // algún pedido visto, y con la lista vacía —el arranque de cada noche— el
+  // primer pedido entraba sin sonar.
+  let yaCargo = false;
   dejarDeEscucharPedidos = onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
     estado.desdeCache = snap.metadata.fromCache;
     pintarConexion();
-    const antes = estado.vistos.size > 0;
+    const antes = yaCargo;
+    if (!snap.metadata.fromCache) yaCargo = true;
     const nuevos = [];
     snap.docChanges().forEach((c) => {
       if (c.type === 'added' && !estado.vistos.has(c.doc.id)) nuevos.push(c.doc.id);
@@ -56,7 +61,7 @@ export function escucharPedidos() {
     // No sonar en la carga inicial, solo cuando entra algo nuevo estando ya abierto.
     if (antes && nuevos.some((id) => estado.pedidos.find((p) => p.id === id)?.estado === 'nuevo')) avisar();
   }, (e) => {
-    if (e.code === 'permission-denied') $('#avisoPermiso').classList.remove('oculto');
+    if (e.code === 'permission-denied') sinAcceso();
     $('#tablero').innerHTML = `<div class="aviso mal"><span>⚠</span><div>${esc(e.code || e.message)}</div></div>`;
   });
 }
@@ -77,6 +82,17 @@ export function pintarTablero() {
     b.onclick = () => cambiarEstado(b.dataset.avanzar, b.dataset.a));
   cont.querySelectorAll('[data-cancelar]').forEach((b) => b.onclick = () => {
     const p = estado.pedidos.find((x) => x.id === b.dataset.cancelar);
+    // Ya tiene la plata confirmada: cancelarlo es anular un cobro. Lo hace un
+    // superadministrador, con motivo y registro, como con un entregado.
+    if (p?.pago) {
+      if (!estado.sadmin) {
+        alert('Este pedido ya está cobrado: anularlo lo hace Carli, con motivo.');
+        return;
+      }
+      anularConMotivo(p, 'cancelado', 'Anular un pedido ya cobrado',
+        `${quienPidio(p)} · ${plata(p.total)} · cobrado en ${p.pago}\nSi la plata llegó, hay que devolverla.`, 'Anular');
+      return;
+    }
     // Si dijo que transfirió, la plata puede estar en el banco: cancelar no
     // la devuelve. Queda en la campanita hasta que la casa lo resuelva.
     const pregunta = p && esperaConfirmacion(p)
@@ -103,12 +119,18 @@ export async function corregirEntregado(p) {
     + 'Dejalo vacío para no tocar nada.', '');
   if (r !== '1' && r !== '2') return;
   const nuevo = r === '1' ? 'cancelado' : 'listo';
-  const motivo = await pedirMotivo({
-    titulo: r === '1' ? 'Anular un pedido entregado' : 'Volver a Listo un pedido entregado',
-    texto: `${quienPidio(p)} · ${plata(p.total)}${p.pago ? ' · cobrado en ' + p.pago : ''}\n`
+  await anularConMotivo(p, nuevo,
+    r === '1' ? 'Anular un pedido entregado' : 'Volver a Listo un pedido entregado',
+    `${quienPidio(p)} · ${plata(p.total)}${p.pago ? ' · cobrado en ' + p.pago : ''}\n`
       + (r === '1' ? 'Sale de la caja y se devuelve el stock.' : 'Se devuelve el stock y al entregarlo se vuelve a cobrar.'),
-    boton: r === '1' ? 'Anular' : 'Volver a Listo',
-  });
+    r === '1' ? 'Anular' : 'Volver a Listo');
+}
+
+// La escritura de toda corrección que saca plata: motivo, entrada del
+// registro y el cambio de estado en un solo lote. Si estaba entregado,
+// después se devuelve el stock.
+async function anularConMotivo(p, nuevo, titulo, texto, boton) {
+  const motivo = await pedirMotivo({ titulo, texto, boton });
   if (!motivo) return;
   const n = Number(p.vecesCorregido || 0) + 1;
   try {
@@ -309,10 +331,21 @@ export function partirVenta(clave) {
   return i < 0 ? { id: clave, opcionId: null } : { id: clave.slice(0, i), opcionId: clave.slice(i + 2) };
 }
 
+// La carta del mostrador es la de esta noche: si la noche tiene carta
+// propia, solo lo que está en ella y a su precio. Antes cobraba siempre con
+// la de todos los días, y el tablero marcaba la venta como adulterada.
+function cartaDeEstaNoche() {
+  const precios = preciosDe(fechaDeHoy());
+  const vendible = estado.carta.filter((x) => x.enCarta !== false);
+  if (!precios) return vendible;
+  return vendible.filter((x) => precios[x.id] !== undefined)
+    .map((x) => ({ ...x, precio: Number(precios[x.id]) }));
+}
+
 // Cada renglón vendible: el producto solo, o el producto por cada marca.
 export function renglonesVendibles() {
   const out = [];
-  for (const i of estado.carta.filter((x) => x.enCarta !== false)) {
+  for (const i of cartaDeEstaNoche()) {
     const marcas = opcionesDe(i);
     if (!marcas.length) {
       out.push({ clave: i.id, item: i, opcion: null, nombre: i.nombre || i.id,
@@ -333,7 +366,7 @@ export function renglonesVendibles() {
 export function totalVenta() {
   return Object.entries(estado.venta).reduce((s, [clave, cant]) => {
     const { id } = partirVenta(clave);
-    const c = estado.carta.find((x) => x.id === id);
+    const c = cartaDeEstaNoche().find((x) => x.id === id);
     return s + Number(c?.precio || 0) * cant;
   }, 0);
 }
@@ -383,7 +416,7 @@ export function pintarVenta() {
 export async function cobrarVenta(pago) {
   const items = Object.entries(estado.venta).map(([clave, cantidad]) => {
     const { id, opcionId } = partirVenta(clave);
-    const c = estado.carta.find((x) => x.id === id) || {};
+    const c = cartaDeEstaNoche().find((x) => x.id === id) || {};
     const o = opcionId ? opcionesDe(c).find((x) => x.id === opcionId) : null;
     return {
       id, nombre: c.nombre || id, precio: Number(c.precio || 0), cantidad,
@@ -480,7 +513,12 @@ export async function moverStock(pedido, signo) {
     [...porInsumo].map(([insumoId, medidas]) => ({ insumoId, delta: signo * medidas })),
     extras,
     apuntes,
-  ).catch(() => {});
+  ).catch((e) => {
+    // Antes se tragaba el error: el pedido quedaba cobrado sin descontar el
+    // stock ni congelar el costo, y nadie se enteraba.
+    alert(`Se ${signo === -1 ? 'entregó' : 'corrigió'}, pero no se pudo mover el stock `
+      + `(${e.code || e.message}).\n\nAvisale a Carli: el depósito quedó sin actualizar.`);
+  });
 }
 
 // ---------- cobrar ----------
@@ -511,6 +549,12 @@ export async function cerrarCobro(pago) {
   cobrando = null;
   $('#dlgCobro').close();
   if (!p) return;
+  // Otro celular ya lo entregó mientras este preguntaba cómo pagó: no se
+  // cobra ni se descuenta dos veces (las reglas tampoco lo dejan).
+  if (estado.pedidos.find((x) => x.id === p.id)?.estado === 'entregado') {
+    alert(`Ese pedido ya lo entregó otro (${estado.pedidos.find((x) => x.id === p.id)?.vendidoPor || 'la barra'}).`);
+    return;
+  }
   const quien = quienAtiende() || estado.usuario || 'casa';
   try {
     await updateDoc(doc(db, 'pedidos', p.id), {

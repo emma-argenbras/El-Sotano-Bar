@@ -270,7 +270,8 @@ function pintar() {
       <button class="btn primario ancho-full" id="btnRegistrar" type="submit">Reservar mi lugar</button>
     </form>
     <p style="color:var(--suave);font-size:.8rem;margin-top:1rem">
-      Usamos tu teléfono solo para la lista de la puerta de esa noche.
+      Guardamos tu nombre y teléfono para la lista de la puerta y para reconocerte
+      la próxima vez que vengas. No lo compartimos con nadie.
     </p>`;
 
   $('#formRegistro').onsubmit = registrar;

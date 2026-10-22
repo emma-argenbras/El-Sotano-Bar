@@ -4,8 +4,10 @@ import {
   connectFirestoreEmulator,
   doc,
   getDoc,
-  getFirestore,
   initializeApp,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
   onSnapshot,
   serverTimestamp,
   updateDoc,
@@ -19,7 +21,12 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
 const app = initializeApp(CFG);
-const db = getFirestore(app);
+// Con cache persistente, igual que la carta: el pase se muestra en la
+// puerta, que está abajo y sin señal. Sin esto, abierto sin red se quedaba
+// en "Buscando tu pase…" aunque ya se hubiera visto antes.
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+});
 if (['localhost', '127.0.0.1'].includes(location.hostname)) {
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
 }

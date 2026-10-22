@@ -208,13 +208,14 @@ function tarjetaGanancia(n) {
   const vendido = n.ventas.total + n.entradas.total;
   return `
   <div class="tarjeta">
-    <div class="rotulo">Ganancia${parcial ? ' · parcial' : ''}</div>
+    <div class="rotulo">Margen${parcial ? ' · parcial' : ''}</div>
     <div class="numeron ${parcial ? 'parcial' : 'bueno'}">${plata(n.resultado)}</div>
     ${n.costo.mercaderia > 0 ? barraPartida([
       { nombre: 'Costo', valor: n.costo.mercaderia, color: 'var(--apagado)' },
       { nombre: 'Queda', valor: Math.max(0, vendido - n.costo.mercaderia), color: 'var(--graf-verde)' },
     ]) : ''}
-    <p class="pie-chico">${n.costo.cobertura >= 100
+    <p class="pie-chico">Lo vendido menos lo que costó la mercadería: no resta sueldos
+      ni otros gastos. ${n.costo.cobertura >= 100
       ? 'Calculado sobre todo lo vendido.'
       : `Calculado sobre el ${n.costo.cobertura}% de lo vendido: al resto le falta
          el costo cargado en el depósito.`}</p>
@@ -266,7 +267,7 @@ export function verMedida(cual) { medida = cual; pintarCierre(); }
 const MEDIDAS = {
   vendido: { titulo: 'Vendido', de: (c) => (c?.ventas?.total || 0) + (c?.entradas?.total || 0),
              como: plata, color: 'var(--graf-oro)' },
-  ganancia: { titulo: 'Ganancia', de: (c) => c?.resultado || 0,
+  ganancia: { titulo: 'Margen', de: (c) => c?.resultado || 0,
               como: plata, color: 'var(--graf-verde)' },
   caja: { titulo: 'Diferencia de caja', de: (c) => c?.caja?.diferencia || 0,
           como: signo, color: 'var(--graf-rojo)' },
@@ -317,7 +318,7 @@ function pintarComparar() {
     <div class="tarjeta">
       <div class="rotulo">Todo junto</div>
       <table class="comparar"><thead><tr>
-        <th>Jornada</th><th>Vendido</th><th>Ganancia</th><th>Caja</th><th>Entraron</th>
+        <th>Jornada</th><th>Vendido</th><th>Margen</th><th>Caja</th><th>Entraron</th>
       </tr></thead><tbody>
         ${[...cerradas].map((j) => {
           const c = j.cierre;
@@ -348,7 +349,7 @@ function avisoBarra(b) {
   }
   const d = Number(b.diferencia || 0);
   const hora = b.cerradaEn?.toDate?.()
-    ? b.cerradaEn.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    ? b.cerradaEn.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     : '';
   return `<div class="aviso ${d === 0 ? 'ok' : 'mal'}"><span>💵</span><div>
     <b>La barra la cerró ${esc(b.cerradaPor || 'la casa')}${hora ? ` a las ${hora}` : ''}.</b>
@@ -466,6 +467,13 @@ function nocheEnCurso() {
 }
 
 export function abrirCierre() {
+  // Lo que todavía está en el tablero sin entregar no entra en ninguna
+  // jornada: al cerrar quedaba afuera sin que nadie lo notara.
+  const pendientes = (estado.pedidos || []).filter((p) => !['entregado', 'cancelado'].includes(p.estado));
+  if (pendientes.length && !confirm(
+    `Hay ${pendientes.length} ${pendientes.length === 1 ? 'pedido' : 'pedidos'} sin entregar en el tablero.\n\n`
+    + 'Si cerrás ahora, quedan afuera de estos números. Entregalos o cancelalos primero.\n\n'
+    + '¿Cerrar igual?')) return;
   const noche = nocheEnCurso();
   if (noche && !confirm(
     `«${noche}» sigue abierta.\n\n`
@@ -642,7 +650,7 @@ export function pintarCierreBarra() {
     const d = Number(ya.diferencia || 0);
     const hora = ya.cerradaEn?.toDate?.()
       ? ya.cerradaEn.toDate().toLocaleTimeString('es-AR',
-        { hour: '2-digit', minute: '2-digit' })
+        { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
       : '';
     cont.innerHTML = `
       <div class="aviso ${d === 0 ? 'ok' : 'mal'}"><span>${d === 0 ? '✓' : '⚠'}</span><div>

@@ -430,7 +430,7 @@ export async function marcarIngreso(id, entra, cobro) {
 //
 // Devuelve { pago, monto }, o null si la puerta se arrepintió: ahí no entra
 // nadie y no se escribe nada.
-export function pedirFormaDeEntrada(nombre, precio) {
+export function pedirFormaDeEntrada(nombre, precio, avisoPagoEn = null) {
   return new Promise((listo) => {
     const dlg = $('#dlgEntrada');
     let resuelto = false;
@@ -446,6 +446,10 @@ export function pedirFormaDeEntrada(nombre, precio) {
       <p style="margin:.2rem 0 1rem">
         <b style="font-size:1.1rem">${esc(nombre)}</b><br>
         <span style="color:var(--suave)">Entrada ${plata(precio)}</span></p>
+      ${avisoPagoEn ? `<div class="aviso" style="margin-bottom:.8rem"><span>📲</span><div>
+        <b>Dijo que transfirió a las ${hora(avisoPagoEn)} y la casa todavía no lo confirmó.</b><br>
+        <small>Elegí Transferencia solo si ya la viste en el banco. Si no, que pague acá, o
+        pedile a Carli que la confirme.</small></div></div>` : ''}
       ${FORMAS_ENTRADA.map(([clave, icono, titulo, pie]) => `
         <button class="btn ancho-full" data-forma="${clave}"
                 style="margin-bottom:.5rem;text-align:left;padding:.8rem .9rem">
@@ -482,7 +486,10 @@ export async function cobrarYEntrar(inv) {
     return true;
   }
 
-  const cobro = await pedirFormaDeEntrada(inv.nombre, precio);
+  // Si dijo que transfirió y nadie lo confirmó, la puerta lo ve antes de
+  // elegir: elegir Transferencia sin mirar el banco la daba por cobrada.
+  const cobro = await pedirFormaDeEntrada(inv.nombre, precio,
+    inv.pago === 'virtual' && !inv.pagadoEn ? inv.avisoPagoEn || null : null);
   if (!cobro) return false;
   await marcarIngreso(inv.id, true, cobro);
   return true;
@@ -495,6 +502,9 @@ export let leyendo = false;
 export async function abrirCamara() {
   const video = $('#visor');
   if (!video) return;
+  // "Escanear el siguiente" abría otra cámara sin soltar la anterior: el
+  // celular de la puerta terminaba con varias abiertas y se trababa.
+  cerrarCamara();
   try {
     camara = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment' }, audio: false,
@@ -612,7 +622,7 @@ export function renglonInvitado(i, conBoton) {
               dias ? ' · hace ' + dias + (dias === 1 ? ' día' : ' días') : ''}</b>`) : ''}${
         i.pago === 'virtual' && i.pagadoEn ? ' · <b style="color:var(--verde)">pagó</b>' : ''}</div>
     </div>
-    ${i.pago === 'virtual' ? `<button class="btn ${esperaPago ? 'primario' : ''}" data-cobrado="${esc(i.id)}"
+    ${i.pago === 'virtual' ? `<button class="btn ${esperaPago ? 'primario' : ''} solo-gerente-inline" data-cobrado="${esc(i.id)}"
             title="${esperaPago ? 'Confirmar que llegó la transferencia' : 'Deshacer: no había llegado'}"
             style="padding:.4rem .7rem;font-size:.82rem">
       ${esperaPago ? 'Cobrado' : 'Sin cobrar'}</button>` : ''}

@@ -147,8 +147,9 @@ onAuthStateChanged(auth, (u) => {
 
 function mostrarFalloAuth(e) {
   $('#carta').innerHTML =
-    `<div class="aviso mal"><span>⚠</span><div><b>No se pudo entrar.</b><br>${e.code || e.message}
-     <br><small>Revisá que el acceso anónimo esté habilitado en Firebase Authentication.</small></div></div>`;
+    `<div class="aviso mal"><span>⚠</span><div><b>No pudimos abrir la carta.</b><br>
+     Revisá la señal y volvé a abrir la página. Si sigue igual, pedí en la barra.
+     <br><small style="color:var(--suave)">${esc(e.code || e.message)}</small></div></div>`;
 }
 
 // ---------- vigencia: ¿el local está tomando pedidos? ----------
@@ -264,8 +265,8 @@ function pintarCategorias() {
 function pintarCarta() {
   const cont = $('#carta');
   if (!loDeEstaNoche().length) {
-    cont.innerHTML = `<div class="vacio">Todavía no hay nada cargado en la carta.<br>
-      <small>Desde la Mac: <code>npm run seed</code></small></div>`;
+    cont.innerHTML = `<div class="vacio">Todavía no hay nada en la carta.<br>
+      <small>Pedí en la barra.</small></div>`;
     return;
   }
   const deEstaNoche = loDeEstaNoche();

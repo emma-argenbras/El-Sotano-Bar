@@ -146,6 +146,14 @@ async function chequear(m, fn) {
 }
 
 // ---------- preparar datos en el emulador ----------
+// Esto escribe con permisos de administrador sobre el proyecto de verdad.
+// Sin los emuladores apuntados, escribiría la carta de prueba y crearía un
+// usuario en PRODUCCIÓN. Se corre con npm run e2e, que los prende.
+if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+  console.error('✗ Sin emuladores (FIRESTORE_EMULATOR_HOST / FIREBASE_AUTH_EMULATOR_HOST): '
+    + 'esto tocaría producción. Corré npm run e2e.');
+  process.exit(1);
+}
 initializeApp({ projectId: 'el-sotano-bar' });
 const db = getFirestore();
 const auth = getAuth();
@@ -4059,7 +4067,7 @@ await chequear('el tablero muestra los cinco números de la noche', async () => 
   await barra.click('#tabCaja');
   await barra.waitForSelector('#cierre .tarjeta', { timeout: 20000 });
   const t = await barra.textContent('#cierre');
-  for (const debe of ['Total vendido', 'Diferencia de caja', 'Ganancia', 'Lo más vendido']) {
+  for (const debe of ['Total vendido', 'Diferencia de caja', 'Margen', 'Lo más vendido']) {
     if (!t.includes(debe)) throw new Error('le falta "' + debe + '": ' + t.slice(0, 300));
   }
   if (!t.includes('Jornada en curso'))
@@ -4207,7 +4215,7 @@ await chequear('comparar jornadas no inventa lo que no hay', async () => {
     document.querySelector('#cierre')?.textContent.includes('Vendido'),
     null, { timeout: 10000 });
   const t = await barra.textContent('#cierre');
-  for (const medida of ['Vendido', 'Ganancia', 'Diferencia de caja', 'Asistencia']) {
+  for (const medida of ['Vendido', 'Margen', 'Diferencia de caja', 'Asistencia']) {
     if (!t.includes(medida)) throw new Error('falta la medida ' + medida);
   }
   if (!t.includes('Todo junto')) throw new Error('no muestra la tabla con todo');

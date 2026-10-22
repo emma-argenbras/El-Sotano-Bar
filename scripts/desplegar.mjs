@@ -140,7 +140,8 @@ listo(`todo guardado (estás en ${volverA})`);
 // --- 2. que la cuenta esté conectada ---------------------------------------
 paso(2, 'Revisando la cuenta de Firebase');
 
-const FB = mirar('firebase', ['--version']) ? 'firebase' : 'npx --yes firebase-tools';
+// Clavada como en .github/workflows/publicar.yml: 15.34.1 rebota el hosting con 403.
+const FB = 'npx --yes firebase-tools@15.34.0';
 if (FB.startsWith('npx')) listo('uso firebase-tools por npx (no está instalado aparte)');
 
 const cuenta = mirar('sh', ['-c', `${FB} login:list 2>&1`]);

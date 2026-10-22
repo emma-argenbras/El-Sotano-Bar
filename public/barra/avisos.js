@@ -231,7 +231,7 @@ export function pintarAvisos() {
           <div class="desc">${hora(i.avisoPagoEn)}${
             i.eventoId !== deLaPuerta && noche(i.eventoId) ? ' · ' + esc(noche(i.eventoId)) : ''} · revisá el banco</div>
         </div>
-        <button class="btn primario" data-cobrado="${esc(i.id)}"
+        <button class="btn primario solo-gerente-inline" data-cobrado="${esc(i.id)}"
                 style="padding:.4rem .7rem;font-size:.82rem">Cobrado</button>
       </div>`).join('')}`
     : `<div class="vacio">Nada por confirmar.<br>

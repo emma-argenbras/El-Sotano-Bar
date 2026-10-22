@@ -2361,6 +2361,52 @@ describe('registro de cambios: anular, borrar gasto, reabrir', () => {
   });
 });
 
+// Lo que se ajustó después de la auditoría del 22/10.
+describe('plata: lo que se cerró después de la auditoría', () => {
+  const sembrar = (ruta, datos) => env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), ruta), datos);
+  });
+  const pedido = (extra) => ({ clienteId: 'cliente-anon-1',
+    items: [{ id: 'fernet', nombre: 'Fernet con coca', precio: 4500, cantidad: 1 }],
+    total: 4500, creadoEn: new Date(), ...extra });
+
+  it('un pedido entregado no se vuelve a entregar; el costo sí se le anota', async () => {
+    await sembrar('pedidos/p-dos-veces', pedido({ estado: 'entregado', pago: 'efectivo', vendidoPor: 'nico' }));
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-dos-veces'),
+      { estado: 'entregado', pago: 'efectivo', vendidoPor: 'juan', cobradoEn: serverTimestamp(), cobradoPor: 'juan' }));
+    await assertFails(updateDoc(doc(gerente(), 'pedidos/p-dos-veces'), { estado: 'entregado', vendidoPor: 'carli' }));
+    await assertSucceeds(updateDoc(doc(turnoOk(), 'pedidos/p-dos-veces'), { costoMercaderia: 1200, costoDe: 1 }));
+  });
+
+  it('cancelar un pedido con la plata confirmada es anularlo: superadministrador con registro', async () => {
+    await sembrar('pedidos/p-cobrado-sin-entregar', pedido({ estado: 'listo', pagoElegido: 'virtual',
+      avisoPagoEn: new Date(), pago: 'virtual', cobradoEn: new Date(), cobradoPor: 'carli' }));
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-cobrado-sin-entregar'), { estado: 'cancelado' }));
+    await assertFails(updateDoc(doc(gerente(), 'pedidos/p-cobrado-sin-entregar'), { estado: 'cancelado' }));
+    const db = sadmin();
+    const b = writeBatch(db);
+    b.set(doc(db, 'registro/anular-pedido-p-cobrado-sin-entregar-1'), { que: 'anular-pedido',
+      motivo: 'se fue sin tomarlo', quien: 'carli', cuando: serverTimestamp(), detalle: {} });
+    b.update(doc(db, 'pedidos/p-cobrado-sin-entregar'), { estado: 'cancelado', vecesCorregido: 1 });
+    await assertSucceeds(b.commit());
+  });
+
+  it('la transferencia de una entrada la confirma la casa, no la barra', async () => {
+    await sembrar('invitados/token-confirma-la-casa-1', { eventoId: 'ev-1', nombre: 'Lu', telefono: '1155550001',
+      pago: 'virtual', creadoEn: new Date(), ingresadoEn: null });
+    const pago = { pagadoEn: serverTimestamp(), pagadoPor: 'x' };
+    await assertFails(updateDoc(doc(turnoOk(), 'invitados/token-confirma-la-casa-1'), pago));
+    await assertFails(updateDoc(doc(aparato(), 'invitados/token-confirma-la-casa-1'), pago));
+    await assertFails(updateDoc(doc(puerta(), 'invitados/token-confirma-la-casa-1'), pago));
+    await assertSucceeds(updateDoc(doc(gerente(), 'invitados/token-confirma-la-casa-1'), pago));
+  });
+
+  it('un gasto grande —el de una compra pagada— entra igual', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'egresos/g-grande'), { concepto: 'Mercadería', categoria: 'insumo',
+      monto: 12000000, pago: 'virtual', fecha: new Date() }));
+  });
+});
+
 describe('barra (colección privada)', () => {
   it('cliente anónimo NO puede leer la caja', async () => {
     await assertFails(getDoc(doc(anon(), 'barra/caja')));

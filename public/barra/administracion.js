@@ -1115,7 +1115,12 @@ export async function guardarCompra() {
         fecha: Timestamp.fromDate(new Date()),
         cajaId: cajaActual(), proveedorId, compraId: ref.id,
         cargadoPor: estado.usuario || 'casa', creadoEn: serverTimestamp(),
-      }).catch(() => {});
+      }).catch((e) => {
+        // Antes se tragaba el error: el stock sumaba, el gasto no quedaba y
+        // el cajón esperado del cierre salía inflado sin que nadie supiera.
+        alert(`El ingreso quedó cargado, pero el gasto de ${plata(total)} en la caja NO `
+          + `(${e.code || e.message}).\n\nCargalo a mano en Administración → Cargar gasto.`);
+      });
     }
     $('#dlgCompra').close();
   } catch (e) {

@@ -159,7 +159,7 @@ try {
 
 console.log('\n       Publicando la app\n');
 try {
-  execSync('npx --yes firebase-tools deploy --only hosting --project ' + PROYECTO
+  execSync('npx --yes firebase-tools@15.34.0 deploy --only hosting --project ' + PROYECTO
     + ' --non-interactive', conLlave);
 } catch {
   cortar('No se pudo publicar la app.',

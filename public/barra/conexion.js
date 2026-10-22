@@ -68,8 +68,20 @@ export const TURNO = () => doc(db, 'barra', 'turno');
 
 
 
+// Sin acceso a algo. A la puerta le pasa siempre —no ve la caja ni el
+// depósito, y está bien—, así que a ella no se le muestra nada. Al barman
+// sin turno sí, con lo que tiene que hacer: antes decía que editara
+// firestore.rules, que no es algo que pueda hacer nadie en la barra.
+export function sinAcceso() {
+  if (estado.rol === 'puerta' || estado.esAparato) return;
+  $('#avisoPermisoTexto').textContent = estado.rol === 'barman'
+    ? 'No estás de turno esta noche. Pedile a Carli que te ponga (Noche → Quién está de turno) y después tocá ↻ Actualizar.'
+    : 'Si te falta una pantalla, pedile a quien administra que te la active en Usuarios.';
+  $('#avisoPermiso').classList.remove('oculto');
+}
+
 export const fallo = (sel) => (e) => {
-  if (e.code === 'permission-denied') $('#avisoPermiso').classList.remove('oculto');
+  if (e.code === 'permission-denied') sinAcceso();
   // failed-precondition acá es casi siempre un índice que falta o que todavía
   // se está construyendo. Decirlo así, y no con el código pelado.
   const texto = e.code === 'failed-precondition'

@@ -22,6 +22,7 @@ import { bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoch
 import { escucharPedidos, pintarCaja, ticket } from './pedidos.js';
 import { pintarAvisos } from './avisos.js';
 import { pintarCierre } from './cierre.js';
+import { arranqueDeHoy } from './jornada.js';
 
 export async function marcarTurno(eventoId, barmanes) {
   await setDoc(TURNO(), { eventoId, barmanes, cambiadoEn: serverTimestamp() });
@@ -103,8 +104,10 @@ export function escucharEvento() {
 export function desdeCuando() {
   const abierto = estado.evento?.abiertoEn?.toDate?.();
   if (abierto) return abierto;
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-  return hoy;
+  // Sin noche abierta, desde el arranque de la jornada —la hora de corte—
+  // y no desde la medianoche: un pedido de las 23:50 que todavía no se
+  // entregó desaparecía de la barra a las 00:00.
+  return arranqueDeHoy();
 }
 
 export function abrirEvento(editando = null, cuando = null) {
