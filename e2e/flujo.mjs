@@ -4944,6 +4944,41 @@ const esperarCobro = async (id, comoDebeQuedar) => {
 const laNoche = await nocheDeLaPuerta();
 await db.doc(`registros/${laNoche}`).set({ entrada: 5000 }, { merge: true });
 
+await chequear('una entrada se cuenta una vez, por cómo pagó y no por cómo dijo que pagaba', async () => {
+  // Se anotó diciendo transferencia, nadie la confirmó, y en la puerta pagó
+  // en efectivo. Antes sumaba en las dos columnas: $5.000 aparecían $10.000.
+  const id = 'token-dijo-virtual-pago-efectivo';
+  await db.collection('invitados').doc(id).set({
+    eventoId: laNoche, nombre: 'Dijo Virtual Prueba', telefono: '', pago: 'virtual', creadoEn: new Date(),
+  });
+  await barra.waitForFunction(() =>
+    document.querySelector('#puerta')?.textContent.includes('Dijo Virtual Prueba'), null, { timeout: 15000 });
+  await barra.locator('.invitado', { hasText: 'Dijo Virtual Prueba' }).locator('[data-ingreso]').click();
+  await barra.waitForSelector('#dlgEntrada[open]', { timeout: 10000 });
+  await barra.click('[data-forma="efectivo"]');
+  await esperarCobro(id, (d) => d.ingresadoEn && d.entradaPago === 'efectivo');
+
+  // Lo que dice el cierre contra lo que hay en la base, entrada por entrada.
+  const desde = Date.now() - 12 * 3600e3;
+  const enLaBase = { efectivo: 0, virtual: 0 };
+  for (const d of (await db.collection('invitados').get()).docs) {
+    const x = d.data();
+    if (x.entradaEn?.toMillis?.() >= desde && enLaBase[x.entradaPago] !== undefined)
+      enLaBase[x.entradaPago] += Number(x.entradaMonto || 0);
+  }
+  let cuenta;
+  for (let i = 0; i < 40; i++) {
+    cuenta = await barra.evaluate(async (ms) => {
+      const { numerosDe } = await import('/barra/cierre.js');
+      return numerosDe(new Date(ms), null).entradas;
+    }, desde);
+    if (cuenta.efectivo === enLaBase.efectivo && cuenta.virtual === enLaBase.virtual) break;
+    if (i === 39) throw new Error('el cierre no cuenta las entradas como la base: '
+      + JSON.stringify({ cierre: cuenta, base: enLaBase }));
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+});
+
 await chequear('la puerta pregunta cómo paga antes de dejar entrar', async () => {
   const quien = await quienEntra(laNoche);
   await barra.locator('.invitado', { hasText: quien.nombre }).locator('[data-ingreso]').click();

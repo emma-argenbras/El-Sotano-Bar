@@ -50,9 +50,17 @@ export function loDeLaJornada(desde, hasta) {
   return { ventas, gastos, entradas };
 }
 
+// Ventas y gastos se parten por `pago`. Las entradas, por `entradaPago`:
+// en un invitado, `pago` es cómo DIJO que iba a pagar al anotarse —efectivo
+// si no eligió nada— y no cómo pagó. Antes se miraban los dos, y quien se
+// anotó con efectivo y pagó por transferencia en la puerta (o al revés)
+// sumaba en las dos columnas: una entrada de $10.000 aparecía como $20.000.
 const sumar = (lista, campo, como) => lista
-  .filter((x) => !como || x.pago === como || x.entradaPago === como)
+  .filter((x) => !como || x.pago === como)
   .reduce((a, x) => a + Number(x[campo] || 0), 0);
+const sumarEntradas = (lista, como) => lista
+  .filter((x) => !como || x.entradaPago === como)
+  .reduce((a, x) => a + Number(x.entradaMonto || 0), 0);
 
 // Los cinco números de la noche, calculados en vivo. Al cerrar, esto es lo
 // que queda congelado.
@@ -66,8 +74,8 @@ export function numerosDe(desde, hasta, contado, fondo = 0) {
   const vVirtual = sumar(ventas, 'total', 'virtual');
   const vTotal = sumar(ventas, 'total');
 
-  const eEfectivo = sumar(entradas, 'entradaMonto', 'efectivo');
-  const eVirtual = sumar(entradas, 'entradaMonto', 'virtual');
+  const eEfectivo = sumarEntradas(entradas, 'efectivo');
+  const eVirtual = sumarEntradas(entradas, 'virtual');
   const cortesias = entradas.filter((i) => i.entradaPago === 'cortesia').length;
 
   const gEfectivo = sumar(gastos, 'monto', 'efectivo');
