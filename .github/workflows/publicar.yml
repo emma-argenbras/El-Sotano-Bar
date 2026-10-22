@@ -70,8 +70,14 @@ jobs:
 
       # La máquina de GitHub no la trae. La necesitan los tests (levantan el
       # emulador) y el despliegue de la app.
+      #
+      # Clavada a una version exacta, no a la mayor. El 21/10 salio 15.34.1 y
+      # desde entonces el despliegue del hosting pide un permiso que la llave
+      # no tiene (serviceusage.services.get) y rebota con 403. La 15.34.0 del
+      # lunes publicaba bien con la misma llave. Cuando se suba la version, que
+      # sea a proposito y con una publicacion de prueba, no porque npm quiso.
       - name: Instalar la herramienta de Firebase
-        run: npm i -g firebase-tools@15
+        run: npm i -g firebase-tools@15.34.0
 
       # Primero la hora: si no se puede publicar, no se gasta nada más.
       #
