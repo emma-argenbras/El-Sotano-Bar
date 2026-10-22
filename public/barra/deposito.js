@@ -27,13 +27,28 @@ export const sueltasDe = (ins) => Number(ins.stock || 0) % Math.max(1, Number(in
 // Lo ultimo que se dibujo en el deposito, para no volver a escribir lo mismo.
 let ultimoDeposito = '';
 
+// El plural de la unidad. La barra escribe "Botella 1lts" o "Lata 473 ml", y
+// pegarle una s al final daba "Botella 1ltss" y "Lata 473 mls" en la
+// pantalla. Se pluraliza la primera palabra, que es la que nombra la cosa,
+// y el resto —el tamaño— queda como está. Y "unidad" da "unidades", no
+// "unidads".
+export function plural(unidad, n) {
+  const u = String(unidad || 'unidad').trim();
+  if (n === 1 || !u) return u;
+  const [primera, ...resto] = u.split(/\s+/);
+  const p = /s$/i.test(primera) ? primera
+    : /[aeiouáéíóú]$/i.test(primera) ? primera + 's'
+    : /ón$/i.test(primera) ? primera.replace(/ón$/i, 'ones')   // bidón → bidones
+    : primera + 'es';
+  return [p, ...resto].join(' ');
+}
+
 export function comoSeDice(ins) {
   const m = Math.max(1, Number(ins.medidas || 1));
   const u = unidadesDe(ins), sueltas = sueltasDe(ins);
-  const unidad = ins.unidad || 'unidad';
-  if (m === 1) return `${u} ${unidad}${u === 1 ? '' : 's'}`;
-  return `${u} ${unidad}${u === 1 ? '' : 's'}`
-    + (sueltas ? ` y ${sueltas} medida${sueltas === 1 ? '' : 's'}` : '');
+  const dicho = `${u} ${plural(ins.unidad, u)}`;
+  if (m === 1) return dicho;
+  return dicho + (sueltas ? ` y ${sueltas} medida${sueltas === 1 ? '' : 's'}` : '');
 }
 
 // ---------- la carta atada al depósito ----------
