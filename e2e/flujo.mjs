@@ -95,11 +95,30 @@ async function comoEstabaLaBarra() {
         const r = e.getBoundingClientRect();
         return Math.round(r.top) + ',' + Math.round(r.left);
       };
+      // Y la pregunta que de verdad contesta por que un click no entra: si
+      // apoyo el dedo en el centro del boton, ¿que elemento toco? Playwright
+      // pide que el hit-test devuelva el elemento o un hijo suyo. Si devuelve
+      // otra cosa, ESA es la que esta tapando, sea un dialogo o un div
+      // invisible estirado por encima.
+      const tapa = (sel) => {
+        const e = document.querySelector(sel);
+        if (!e) return null;
+        const r = e.getBoundingClientRect();
+        const o = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (!o) return 'nada (fuera de la pantalla)';
+        if (o === e || e.contains(o)) return 'el mismo';
+        return (o.tagName.toLowerCase() + (o.id ? '#' + o.id : '')
+                + (o.className && typeof o.className === 'string'
+                    ? '.' + o.className.trim().split(/\s+/).join('.') : ''));
+      };
       return {
         largo: document.body.innerHTML.length,
         dep: document.querySelector('#deposito')?.innerHTML.length ?? -1,
         btn: caja('#btnNuevoInsumo'),
         tab: caja('#tabCaja'),
+        tapaBtn: tapa('#btnNuevoInsumo'),
+        tapaTab: tapa('#tabCaja'),
+        scroll: Math.round(scrollY),
       };
     });
     const a = await foto();
