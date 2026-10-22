@@ -37,27 +37,46 @@ export function avisarCasa(titulo, cuerpo, tag) {
 
 // ---------- lo que espera ----------
 
-// Las noches que todavía cuentan: la que está en curso y las agendadas. Una
-// entrada sin confirmar de una noche que ya pasó no es plata por buscar: es
-// alguien que no vino.
+// Las noches que todavía cuentan: la que está en curso y las agendadas de
+// hoy en adelante. Una entrada sin confirmar de una noche que ya pasó no es
+// plata por buscar: es alguien que no vino. La agenda trae también las
+// agendadas vencidas que nadie borró —el Calendario las marca "ya pasó"—,
+// así que acá se filtran por fecha, con el mismo criterio.
 function nochesVigentes() {
-  return new Set([estado.evento?.id, ...(estado.agenda || []).map((e) => e.id)].filter(Boolean));
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const vienen = (estado.agenda || [])
+    .filter((e) => (e.fecha?.toDate?.() || 0) >= hoy)
+    .map((e) => e.id);
+  return new Set([estado.evento?.id, ...vienen].filter(Boolean));
 }
 
+// Avisó que transfirió, nadie confirmó, y todavía no entró: el que ya está
+// adentro pagó en la puerta —en efectivo, o se le confirmó ahí—, así que no
+// hay plata por buscar.
 export function entradasPorConfirmar() {
   const vigentes = nochesVigentes();
   return (estado.invitadosTodos || [])
-    .filter((i) => i.avisoPagoEn && !i.pagadoEn && vigentes.has(i.eventoId))
+    .filter((i) => i.avisoPagoEn && !i.pagadoEn && !i.ingresadoEn && !i.entradaPago
+      && vigentes.has(i.eventoId))
     .sort((a, b) => (a.avisoPagoEn?.toMillis?.() || 0) - (b.avisoPagoEn?.toMillis?.() || 0));
 }
 
+// Dijo que transfirió y la casa no vio la plata. El entregado no entra —se
+// entregó, así que alguien la confirmó o la cobró—. El cancelado sí: si la
+// transferencia llegó, hay que devolverla, y si no queda a la vista nadie
+// se entera de que hay plata de más en el banco.
 export function pedidosPorConfirmar() {
   return (estado.pedidos || [])
-    .filter((p) => p.pagoElegido === 'virtual' && p.avisoPagoEn && !p.pago
-      && !['entregado', 'cancelado'].includes(p.estado));
+    .filter((p) => p.pagoElegido === 'virtual' && p.avisoPagoEn && !p.pago && p.estado !== 'entregado');
 }
 
 // ---------- la campanita ----------
+// Lo último que se dibujó: la lista se vuelve a armar en cada foto de cinco
+// escuchas, y si el HTML es el mismo no se toca el DOM —si no, con el
+// diálogo abierto, el botón que estabas por tocar desaparece abajo del dedo.
+let ultimoAvisos = null;
+
 export function pintarAvisos() {
   const pedidos = pedidosPorConfirmar();
   const entradas = entradasPorConfirmar();
@@ -69,21 +88,25 @@ export function pintarAvisos() {
   $('#btnSonido').title = n ? `${n} por confirmar en el banco` : 'Avisos';
   pintarSonido();
 
-  // La lista se redibuja aunque el diálogo esté cerrado: es barata, y así al
-  // abrirlo ya está, y si está abierto cambia sola cuando alguien confirma.
   const noche = (id) => estado.registros?.[id]?.nombre || '';
   const deLaPuerta = eventoDePuerta();
-  $('#cuerpoAvisos').innerHTML = n ? `
-    ${pedidos.map((p) => `
+  const html = n ? `
+    ${pedidos.map((p) => {
+      const cancelado = p.estado === 'cancelado';
+      return `
       <div class="item aviso-pendiente">
         <div class="cuerpo">
-          <div class="nombre">🍸 ${esc(quienPidio(p))} dice que transfirió ${plata(p.total)}</div>
+          <div class="nombre">🍸 ${esc(quienPidio(p))} dice que transfirió ${plata(p.total)}${
+            cancelado ? ' · <b style="color:var(--rojo)">pedido cancelado</b>' : ''}</div>
           <div class="desc">${hora(p.avisoPagoEn)} · ${esc((p.items || [])
-            .map((i) => `${Number(i.cantidad)}× ${i.nombre}`).join(', '))} · revisá el banco</div>
+            .map((i) => `${Number(i.cantidad)}× ${i.nombre}`).join(', '))} · ${
+            cancelado ? 'si la plata llegó, hay que devolverla' : 'revisá el banco'}</div>
         </div>
-        <button class="btn primario solo-gerente-inline" data-cobrar-pedido="${esc(p.id)}"
-                style="padding:.4rem .7rem;font-size:.82rem">Cobrado</button>
-      </div>`).join('')}
+        <button class="btn ${cancelado ? '' : 'primario'} solo-gerente-inline" data-cobrar-pedido="${esc(p.id)}"
+                title="${cancelado ? 'La vi y la resolví: devuelta, o nunca llegó' : 'Confirmar que llegó la transferencia'}"
+                style="padding:.4rem .7rem;font-size:.82rem">${cancelado ? 'Resuelto' : 'Cobrado'}</button>
+      </div>`;
+    }).join('')}
     ${entradas.map((i) => `
       <div class="item aviso-pendiente">
         <div class="cuerpo">
@@ -98,9 +121,13 @@ export function pintarAvisos() {
         <small>Cuando alguien toque "Ya transferí" aparece acá, con un número
         arriba de la campana, hasta que lo confirmes.</small></div>`;
 
-  $('#cuerpoAvisos').querySelectorAll('[data-cobrar-pedido]').forEach((b) =>
+  if (html === ultimoAvisos) return;
+  ultimoAvisos = html;
+  const cuerpo = $('#cuerpoAvisos');
+  cuerpo.innerHTML = html;
+  cuerpo.querySelectorAll('[data-cobrar-pedido]').forEach((b) =>
     b.onclick = () => confirmarCobroPedido(b.dataset.cobrarPedido, b));
-  $('#cuerpoAvisos').querySelectorAll('[data-cobrado]').forEach((b) =>
+  cuerpo.querySelectorAll('[data-cobrado]').forEach((b) =>
     b.onclick = () => marcarCobrado(b.dataset.cobrado, b));
 }
 

@@ -73,8 +73,15 @@ export function pintarTablero() {
 
   cont.querySelectorAll('[data-avanzar]').forEach((b) =>
     b.onclick = () => cambiarEstado(b.dataset.avanzar, b.dataset.a));
-  cont.querySelectorAll('[data-cancelar]').forEach((b) =>
-    b.onclick = () => { if (confirm('¿Cancelar este pedido?')) cambiarEstado(b.dataset.cancelar, 'cancelado'); });
+  cont.querySelectorAll('[data-cancelar]').forEach((b) => b.onclick = () => {
+    const p = estado.pedidos.find((x) => x.id === b.dataset.cancelar);
+    // Si dijo que transfirió, la plata puede estar en el banco: cancelar no
+    // la devuelve. Queda en la campanita hasta que la casa lo resuelva.
+    const pregunta = p && esperaConfirmacion(p)
+      ? 'Dijo que transfirió y nadie confirmó la plata.\n\nSi la transferencia llegó, hay que devolverla. ¿Cancelar el pedido igual?'
+      : '¿Cancelar este pedido?';
+    if (confirm(pregunta)) cambiarEstado(b.dataset.cancelar, 'cancelado');
+  });
   cont.querySelectorAll('[data-cobrar-pedido]').forEach((b) =>
     b.onclick = () => confirmarCobroPedido(b.dataset.cobrarPedido, b));
   // Entregado por error: sin esto la caja queda mal para siempre.
@@ -112,11 +119,17 @@ function lineaPago(p, col) {
       p.pagoElegido === 'virtual' ? quien('cobradoPor') : ''}</div>`;
   }
   if (p.pagoElegido === 'virtual') {
-    return esperaConfirmacion(p)
-      ? `<div class="pago espera">📲 Dice que transfirió ${hora(p.avisoPagoEn)} · <b>falta que la casa la confirme</b>
+    if (esperaConfirmacion(p)) {
+      return `<div class="pago espera">📲 Dice que transfirió ${hora(p.avisoPagoEn)} · <b>falta que la casa la confirme</b>
            <button class="btn primario solo-gerente-inline" data-cobrar-pedido="${p.id}"
-                   title="Confirmar que llegó la transferencia">Cobrado</button></div>`
-      : `<div class="pago ok">📲 Transferencia confirmada${quien('cobradoPor')} ${hora(p.cobradoEn)}
+                   title="Confirmar que llegó la transferencia">Cobrado</button></div>`;
+    }
+    // Dijo que transfería pero la casa lo cobró en efectivo —la plata nunca
+    // llegó y pagó en la barra—: se dice tal cual, y no hay nada que deshacer.
+    if (p.pago === 'efectivo') {
+      return `<div class="pago ok">💵 Cobrado en efectivo${quien('cobradoPor')} ${hora(p.cobradoEn)}</div>`;
+    }
+    return `<div class="pago ok">📲 Transferencia confirmada${quien('cobradoPor')} ${hora(p.cobradoEn)}
            <button class="btn solo-gerente-inline" data-cobrar-pedido="${p.id}"
                    title="Deshacer: no había llegado">Sin cobrar</button></div>`;
   }
@@ -544,8 +557,11 @@ export async function cambiarEstado(id, nuevo) {
   // Entregar es cobrar: no se pasa de largo.
   if (nuevo === 'entregado') {
     const p = estado.pedidos.find((x) => x.id === id);
-    // Salvo que la plata ya esté confirmada: ahí no hay nada que preguntar.
-    if (p && p.pago) return entregarCobrado(p);
+    // Salvo la transferencia que la casa ya confirmó: ahí no hay nada que
+    // preguntar. Para todo lo demás se pregunta siempre, aunque ya tenga un
+    // pago anotado: ↩ → "volverlo a Listo" → Entregado es la forma de
+    // corregir un cobro mal cargado, y si no preguntara, no habría otra.
+    if (p && p.pagoElegido === 'virtual' && p.pago === 'virtual') return entregarCobrado(p);
     if (p) return pedirPago(p);
   }
   try {

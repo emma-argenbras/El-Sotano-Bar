@@ -12,6 +12,7 @@ const ESENCIALES = [
   '/barra/pedidos.js', '/barra/carta.js', '/barra/deposito.js',
   '/barra/administracion.js', '/barra/pantallas.js', '/barra/stock.js',
   '/barra/jornada.js', '/barra/cartas.js', '/barra/cierre.js',
+  '/barra/avisos.js',
   '/manifest.webmanifest', '/vendor/firebase.js',
   '/iconos/icono.svg', '/iconos/icono-192.png', '/iconos/apple-touch-icon.png',
   '/iconos/logo-horizontal.svg', '/iconos/logo-horizontal-claro.svg', '/iconos/logo.svg',

@@ -380,8 +380,11 @@ service cloud.firestore {
         && (
           // El cliente, desde su celular: arranca en "nuevo" y solo si el local
           // está tomando pedidos.
+          // Nadie, ni la barra: un pedido "nuevo" que ya trae cobro se saltea
+          // a la casa, que es la que confirma la plata.
           (request.resource.data.estado == 'nuevo'
-            && (esBarra() || (tomandoPedidos() && sinCobro(request.resource.data))))
+            && sinCobro(request.resource.data)
+            && (esBarra() || tomandoPedidos()))
           // O la barra cargando una venta de mostrador, que nace cobrada.
           || (esBarra() && ventaDeBarra(request.resource.data))
         );

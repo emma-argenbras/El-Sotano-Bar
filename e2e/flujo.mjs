@@ -261,6 +261,10 @@ const ctxBarra = await navegador.newContext({ viewport: { width: 1400, height: 9
 const barra = await ctxBarra.newPage();
 paginas.push(barra);
 barra.on('pageerror', (e) => errores.push('barra: ' + e.message));
+// Lo que un escucha de Firestore tira adentro del callback no llega como
+// pageerror: el SDK lo atrapa y lo manda a console.error. Sin esto, una
+// pantalla que se queda vieja porque su escucha explotó no deja rastro.
+barra.on('console', (m) => { if (m.type() === 'error') errores.push('barra/console: ' + m.text()); });
 await barra.goto(`${BASE}/bar.html`, { waitUntil: 'domcontentloaded' });
 
 await chequear('el panel pide login', async () => {
@@ -2991,6 +2995,24 @@ await chequear('un entregado por error se puede corregir', async () => {
   await barra.click('#tabTablero');
   const antes = await barra.textContent('#chipCaja');
   await barra.waitForSelector('.ticket.entregado [data-corregir]', { timeout: 10000 });
+
+  // Volverlo a Listo y entregarlo de nuevo tiene que volver a preguntar cómo
+  // pagó: es el único camino para corregir un cobro mal anotado. Dejó de
+  // preguntar una vez, cuando "ya tiene pago" se tomó por "ya está
+  // confirmado", y lo encontró una revisión antes de publicar.
+  const quien = (await barra.locator('.ticket.entregado').first().locator('.mesa').textContent()).trim();
+  barra.once('dialog', (d) => d.accept('2'));
+  await barra.locator('.ticket.entregado [data-corregir]').first().click();
+  const enListo = barra.locator('.ticket.listo', { hasText: quien }).first();
+  await enListo.waitFor({ timeout: 10000 });
+  await enListo.locator('[data-avanzar]').click();
+  await barra.waitForSelector('#dlgCobro[open]', { timeout: 10000 })
+    .catch(() => { throw new Error('al volver a entregar no preguntó cómo pagó'); });
+  await barra.click('#btnEfectivo');
+  await barra.waitForSelector('#dlgCobro[open]', { state: 'detached', timeout: 10000 });
+  await barra.locator('.ticket.entregado', { hasText: quien }).first().waitFor({ timeout: 10000 });
+
+  // Y cancelarlo lo saca de la caja.
   barra.once('dialog', (d) => d.accept('1'));
   await barra.locator('.ticket.entregado [data-corregir]').first().click();
   await barra.waitForFunction((t) =>

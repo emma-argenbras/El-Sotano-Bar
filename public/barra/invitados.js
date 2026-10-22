@@ -218,8 +218,10 @@ export function filtrarInvitados() {
 let avisosVistos = null;
 
 function avisarTransferenciasNuevas() {
+  // Mismo filtro que la campanita: quien ya entró pagando en la puerta no
+  // tiene nada por confirmar, aunque haya avisado que transfería.
   const ahora = new Set((estado.invitados || [])
-    .filter((i) => i.avisoPagoEn && !i.pagadoEn).map((i) => i.id));
+    .filter((i) => i.avisoPagoEn && !i.pagadoEn && !i.ingresadoEn && !i.entradaPago).map((i) => i.id));
   if (avisosVistos !== null) {
     for (const i of estado.invitados || []) {
       if (!ahora.has(i.id) || avisosVistos.has(i.id)) continue;

@@ -2082,6 +2082,17 @@ describe('pedidos — crear', () => {
     await assertFails(setDoc(doc(db, 'pedidos/p-transfiere-cobrado'),
       pedidoDe('cliente-anon-1', { pagoElegido: 'virtual', avisoPagoEn: serverTimestamp(), pago: 'virtual' })));
   });
+
+  it('tampoco la barra crea un pedido "nuevo" que ya venga cobrado', async () => {
+    // La venta de mostrador nace entregada y cobrada, y eso está bien. Un
+    // pedido en la cola con el cobro puesto se saltea a la casa.
+    await assertFails(setDoc(doc(turnoOk(), 'pedidos/p-nuevo-cobrado'),
+      pedidoDe('uid-turno-ok', { pagoElegido: 'virtual', avisoPagoEn: serverTimestamp(),
+        pago: 'virtual', cobradoEn: serverTimestamp(), vendidoPor: 'nico' })));
+    await assertFails(setDoc(doc(aparato(), 'pedidos/p-nuevo-cobrado-2'),
+      pedidoDe('uid-aparato', { pago: 'efectivo' })));
+    await assertSucceeds(setDoc(doc(turnoOk(), 'pedidos/p-nuevo-limpio'), pedidoDe('uid-turno-ok')));
+  });
 });
 
 describe('pedidos — leer', () => {
@@ -2210,6 +2221,14 @@ describe('pedidos — transferencia', () => {
     await transferido('p-tr-6', { estado: 'entregado', vendidoPor: 'nico',
       pago: 'virtual', cobradoEn: new Date(), cobradoPor: 'carli' });
     await assertFails(updateDoc(doc(gerente(), 'pedidos/p-tr-6'), deshacer));
+  });
+
+  it('un pedido cancelado que avisó la transferencia se puede dar por resuelto, solo la casa', async () => {
+    // Cancelar no devuelve la plata: queda en la campanita hasta que la casa
+    // lo resuelva. Resolverlo es la misma escritura que confirmar.
+    await transferido('p-tr-8', { estado: 'cancelado' });
+    await assertFails(updateDoc(doc(turnoOk(), 'pedidos/p-tr-8'), { ...cobro, cobradoPor: 'nico' }));
+    await assertSucceeds(updateDoc(doc(gerente(), 'pedidos/p-tr-8'), cobro));
   });
 
   it('la casa entrega y confirma de una, desde "¿Cómo pagó?"', async () => {
