@@ -18,7 +18,7 @@ import { $, esc, estado, plata } from './base.js';
 import { dondeRepartir } from '/corte.js';
 import { irA } from './pantallas.js';
 import { ESTADO_LOCAL, EVENTOS, TURNO, app, db, fallo } from './conexion.js';
-import { bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoche, hora, pintarPuerta, plegable } from './invitados.js';
+import { bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoche, filtrarInvitados, hora, pintarPuerta, plegable } from './invitados.js';
 import { escucharPedidos, pintarCaja, ticket } from './pedidos.js';
 import { pintarCierre } from './cierre.js';
 
@@ -46,6 +46,9 @@ export function escucharEvento() {
 
   onSnapshot(query(EVENTOS(), where('estado', '==', 'abierto'), limit(1)), (snap) => {
     estado.evento = snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+    // La lista de invitados de "esta noche" depende de cuál es esta noche:
+    // se vuelve a filtrar acá, no solo cuando llegan invitados.
+    filtrarInvitados();
     // Siempre: escucharPedidos() no hace nada si el "desde" no cambió. Hace
     // falta llamarlo igual porque abiertoEn es un serverTimestamp y llega null
     // en la primera vuelta — el evento no cambia de id, pero sí de arranque.

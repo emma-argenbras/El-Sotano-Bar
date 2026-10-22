@@ -1417,6 +1417,52 @@ await chequear('con el evento abierto, el cliente puede pedir', async () => {
   }
   if (d?.tomandoPedidos !== true) throw new Error('abrir el evento no habilitó los pedidos');
 });
+await chequear('al arrancar otra noche, "adentro" no arrastra a los de la anterior', async () => {
+  // Lo que se vio en la noche de prueba: "0 de 45 anotados · 3 adentro". Los
+  // tres habían entrado al Cumple de la semana anterior. La lista de invitados
+  // de "esta noche" se filtraba solo cuando llegaban invitados; si la noche
+  // arrancaba después, quedaba filtrada por la anterior hasta que alguien se
+  // anotara. El contador de anotados era de la noche nueva y el de adentro de
+  // la vieja, en la misma línea.
+  const q = await db.collection('barra').doc('eventos').collection('items')
+    .where('estado', '==', 'abierto').get();
+  if (q.empty) throw new Error('no hay ninguna noche abierta para probar');
+  const abierta = q.docs[0];
+
+  // Un invitado que ENTRÓ a otra noche, cualquiera, cargado directo.
+  const otraNoche = 'noche-de-la-semana-pasada';
+  const ref = db.collection('invitados').doc('invitado-que-entro-a-otra-noche');
+  await ref.set({ eventoId: otraNoche, nombre: 'Entró a otra', telefono: '',
+                  creadoEn: new Date(), ingresadoEn: new Date(), ingresadoPor: 'casa' });
+  try {
+    // Hacemos que la lista se filtre con la noche abierta "ausente" un instante:
+    // se cierra y se vuelve a abrir la misma noche. Entre medio, eventoDePuerta()
+    // cae en otra cosa y la lista queda filtrada por eso.
+    await abierta.ref.update({ estado: 'agendado' });
+    await barra.waitForFunction(() =>
+      !(document.querySelector('#evento')?.textContent || '').includes('adentro'),
+      null, { timeout: 15000 }).catch(() => {});
+    await abierta.ref.update({ estado: 'abierto' });
+
+    await barra.click('#tabEvento');
+    await barra.waitForFunction(() =>
+      (document.querySelector('#evento')?.textContent || '').includes('adentro'),
+      null, { timeout: 15000 });
+    // Sin que llegue ningún invitado nuevo, el contador tiene que ser el de
+    // ESTA noche: cero adentro, no el que entró a la otra.
+    await barra.waitForFunction(() =>
+      /\b0 adentro/.test(document.querySelector('#evento')?.textContent || ''),
+      null, { timeout: 10000 }).catch(async () => {
+        const t = (await barra.textContent('#evento')).replace(/\s+/g, ' ');
+        const m = t.match(/\d+ de \d+ anotados · \d+ adentro/);
+        throw new Error('arrastra gente de otra noche: "' + (m ? m[0] : t.slice(0, 160)) + '"');
+      });
+  } finally {
+    await ref.delete();
+    await abierta.ref.update({ estado: 'abierto' }).catch(() => {});
+  }
+});
+
 await chequear('cambiar quién está de turno no muestra ni toca el cupo', async () => {
   // La pantalla de turno es la de agendar, prestada: decía «Agendar una noche»
   // con la fecha, el cupo y la entrada en blanco sobre una noche que tiene

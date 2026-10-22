@@ -194,13 +194,25 @@ export function eventoDePuerta() {
   return proxima?.id || estado.registro?.eventoId || '';
 }
 
+// La lista de ESTA noche, sacada de la lista entera. Es una cuenta derivada:
+// depende de los invitados Y de cuál es la noche abierta, así que hay que
+// rehacerla cuando cambia cualquiera de las dos cosas. Antes se hacía solo
+// cuando llegaban invitados: si la noche arrancaba después, la lista se
+// quedaba filtrada por la noche anterior, y la Noche mostraba "0 de 45
+// anotados · 3 adentro" —los tres eran del Cumple de la semana pasada—
+// hasta que alguien se anotara y la lista se volviera a filtrar.
+export function filtrarInvitados() {
+  const noche = eventoDePuerta();
+  estado.invitados = (estado.invitadosTodos || [])
+    .filter((i) => !noche || i.eventoId === noche)
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+}
+
 export function escucharInvitados() {
   onSnapshot(collection(db, 'invitados'), (snap) => {
     estado.invitadosTodos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     estado.invitadosListos = true;
-    estado.invitados = estado.invitadosTodos
-      .filter((i) => !eventoDePuerta() || i.eventoId === eventoDePuerta())
-      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    filtrarInvitados();
     pintarPuerta();
     pintarInvitar();   // si está abierto el diálogo de una noche, su lista también
     // Y el calendario, que es donde vive el bloque del Club. Faltaba: el
