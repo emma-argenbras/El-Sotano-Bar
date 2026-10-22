@@ -3368,17 +3368,19 @@ await chequear('con alias cargado, el invitado elige transferencia y lo ve en su
       null, { timeout: 15000 });
     if (await pg.locator('#btnYaTransferi').count())
       throw new Error('después de avisar sigue ofreciendo el botón');
-    // Y la casa lo ve en su lista, con la hora, sin recargar. Antes de tocar
-    // la pestaña: el diálogo de agendar de arriba se cierra solo cuando
-    // termina de escribir, y es modal. Tocar con él abierto es colgarse 30s.
-    await barra.waitForFunction(() =>
-      !document.querySelector('#dlgEvento')?.open, null, { timeout: 15000 });
-    await barra.click('#tabCalendario');
-    await barra.waitForFunction(() =>
-      (document.querySelector('#calendario')?.textContent || '').includes('dice que transfirió'),
-      null, { timeout: 15000 }).catch(async () => {
-        throw new Error('la casa no ve el aviso de transferencia en su lista');
-      });
+    // Y quedó escrito con la hora del servidor: es lo único que el botón hace.
+    // (La casa lo ve en la lista de la noche; eso se mira más abajo, donde el
+    // caso ya abre esa lista. Tocar la pestaña Calendario acá, antes de que
+    // el caso la toque de nuevo, dejaba el segundo click colgado 30s, tres
+    // corridas seguidas, con la pestaña ya activa y nada encima: un click
+    // sobre una pestaña YA SELECCIONADA se cuelga. Queda anotado para la
+    // investigación del intermitente, porque es reproducible.)
+    for (let i = 0; i < 40; i++) {
+      const d = (await db.collection('invitados').where('eventoId', '==', idTrans).get()).docs[0];
+      if (d?.data().avisoPagoEn) break;
+      if (i === 39) throw new Error('el aviso no quedó escrito: ' + JSON.stringify(d?.data() || null));
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
 
     // Todavía NO tiene QR: dijo que transfiere y nadie confirmó que llegó.
     await pg.waitForFunction(() =>
@@ -3417,6 +3419,13 @@ await chequear('con alias cargado, el invitado elige transferencia y lo ve en su
     await barra.evaluate(() => {
       document.querySelector('#cuerpoInvitar [data-pliegue="anotados"]').open = true;
     });
+    // Y acá la casa ve el aviso: a quién buscar en el banco, y a qué hora.
+    await barra.waitForFunction(() =>
+      (document.querySelector('#cuerpoInvitar')?.textContent || '').includes('dice que transfirió'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('la casa no ve "dice que transfirió" en la lista: '
+          + (await barra.textContent('#cuerpoInvitar')).replace(/\s+/g, ' ').slice(0, 300));
+      });
     await barra.waitForSelector('#cuerpoInvitar [data-cobrado]', { timeout: 15000 })
       .catch(async () => {
         throw new Error('no apareció el botón de cobrado: '
