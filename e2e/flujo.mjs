@@ -4118,8 +4118,16 @@ await chequear('con una noche abierta, cerrar los números avisa antes', async (
 });
 
 await chequear('sin contar el cajón no se cierra nada', async () => {
-  await barra.click('#btnCerrarJornada');
-  await barra.waitForSelector('#dlgCerrarJornada[open]', { timeout: 10000 });
+  // Quedan pedidos sin entregar en el tablero: antes de abrir el cierre lo
+  // avisa, una sola vez, y se sigue igual.
+  let aviso = '';
+  const oir = async (d) => { aviso = d.message(); await d.accept(); };
+  barra.on('dialog', oir);
+  try {
+    await barra.click('#btnCerrarJornada');
+    await barra.waitForSelector('#dlgCerrarJornada[open]', { timeout: 10000 });
+  } finally { barra.removeListener('dialog', oir); }
+  if (aviso && !/sin entregar/.test(aviso)) throw new Error('preguntó otra cosa antes de cerrar: ' + aviso);
 
   // Contar ANTES de ver lo esperado: si se ve primero, se copia.
   const antes = await barra.textContent('#cuerpoCerrarJornada');
