@@ -3346,7 +3346,23 @@ await chequear('con alias cargado, el invitado elige transferencia y lo ve en su
       throw new Error('el pase no ofrece avisar que transfirió: '
         + (await pg.textContent('#pase')).replace(/\s+/g, ' ').slice(0, 200));
     });
-    await pg.click('#btnYaTransferi');
+    // Si el click se cuelga, que el fallo diga QUE pasa en la pagina del
+    // invitado: la sonda del harness solo mira la pagina de la barra.
+    await pg.click('#btnYaTransferi', { timeout: 15000 }).catch(async (e) => {
+      const d = await pg.evaluate(() => {
+        const b = document.querySelector('#btnYaTransferi');
+        const r = b?.getBoundingClientRect();
+        const o = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
+        return { url: location.href, estado: document.readyState, hayBoton: !!b,
+                 deshabilitado: b?.disabled, texto: b?.textContent.trim(),
+                 pos: r ? Math.round(r.top) + ',' + Math.round(r.left) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) : null,
+                 tapa: !o ? 'nada' : (o === b || b.contains(o)) ? 'el mismo'
+                   : o.tagName.toLowerCase() + (o.id ? '#' + o.id : ''),
+                 dialogos: [...document.querySelectorAll('dialog[open]')].map((x) => x.id) };
+      }).catch((x) => ({ evaluateFallo: String(x.message).split('\n')[0] }));
+      if (FOTOS) await pg.screenshot({ path: `${FOTOS}/pase-ya-transferi.png`, fullPage: true }).catch(() => {});
+      throw new Error('no pude tocar "Ya transferí": ' + JSON.stringify(d) + ' — ' + String(e.message).split('\n')[0]);
+    });
     await pg.waitForFunction(() =>
       (document.querySelector('#pase')?.textContent || '').includes('Avisaste que transferiste'),
       null, { timeout: 15000 });
