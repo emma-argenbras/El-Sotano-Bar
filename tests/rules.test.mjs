@@ -734,6 +734,14 @@ describe('registro de invitados', () => {
         barraCierre({ fecha: '2026-12-02' })));
     });
 
+    // El cambio con que arrancó el cajón va sumado en el esperado.
+    it('con fondo de cambio, entero y no negativo', async () => {
+      await assertSucceeds(setDoc(doc(aparato(), 'cierresBarra/2026-12-03'),
+        barraCierre({ fecha: '2026-12-03', fondo: 10000, esperado: 60000, contado: 60000, diferencia: 0 })));
+      await assertFails(setDoc(doc(aparato(), 'cierresBarra/2026-12-04'),
+        barraCierre({ fecha: '2026-12-04', fondo: -500 })));
+    });
+
     // El candado del conteo a ciegas: si se pudiera reescribir después de ver
     // la diferencia, el número sería una confirmación y no un conteo.
     it('contado una vez, el barman no lo reescribe', async () => {

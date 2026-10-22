@@ -56,7 +56,10 @@ const sumar = (lista, campo, como) => lista
 
 // Los cinco números de la noche, calculados en vivo. Al cerrar, esto es lo
 // que queda congelado.
-export function numerosDe(desde, hasta, contado) {
+// El fondo es el cambio con que arrancó el cajón. Antes no existía y el
+// cierre suponía cajón vacío: si arrancaba con $20.000 de cambio, "sobraban"
+// $20.000 todas las noches y la diferencia de caja no decía nada.
+export function numerosDe(desde, hasta, contado, fondo = 0) {
   const { ventas, gastos, entradas } = loDeLaJornada(desde, hasta);
 
   const vEfectivo = sumar(ventas, 'total', 'efectivo');
@@ -72,7 +75,7 @@ export function numerosDe(desde, hasta, contado) {
 
   // Lo que tendría que haber en el cajón: el efectivo que entró, por la barra
   // y por la puerta, menos lo que salió en efectivo.
-  const esperado = vEfectivo + eEfectivo - gEfectivo;
+  const esperado = Number(fondo || 0) + vEfectivo + eEfectivo - gEfectivo;
 
   // El costo viene congelado en cada pedido, del momento de la venta. Lo que
   // no tiene costo conocido no suma ni al costo ni a la cobertura: media
@@ -102,7 +105,7 @@ export function numerosDe(desde, hasta, contado) {
     entradas: { personas: entradas.length, cortesias,
                 efectivo: eEfectivo, virtual: eVirtual, total: eEfectivo + eVirtual },
     gastos: { efectivo: gEfectivo, virtual: gTotal - gEfectivo, total: gTotal },
-    caja: { esperado,
+    caja: { fondo: Number(fondo || 0), esperado,
             contado: contado === null || contado === undefined ? null : Number(contado),
             diferencia: contado === null || contado === undefined
               ? null : Number(contado) - esperado },
@@ -196,8 +199,8 @@ function tarjetaCaja(n) {
       <span class="cuanto">${sinContar ? '—' : plata(n.caja.contado)}</span>
       ${sinContar ? '' : via(n.caja.contado, d < 0 ? 'var(--graf-rojo)' : 'var(--graf-oro)')}
     </div>
-    <p class="pie-chico">Efectivo que entró, por la barra y por la puerta, menos
-      los gastos pagados en efectivo.</p>
+    <p class="pie-chico">${n.caja.fondo ? `El cambio con que arrancó (${plata(n.caja.fondo)}), más el` : 'Efectivo'}
+      efectivo que entró, por la barra y por la puerta, menos los gastos pagados en efectivo.</p>
   </div>`;
 }
 
@@ -353,7 +356,8 @@ function avisoBarra(b) {
     : '';
   return `<div class="aviso ${d === 0 ? 'ok' : 'mal'}"><span>💵</span><div>
     <b>La barra la cerró ${esc(b.cerradaPor || 'la casa')}${hora ? ` a las ${hora}` : ''}.</b>
-    Contó ${plata(b.contado)} sobre ${plata(b.esperado)} cobrados en efectivo.
+    Contó ${plata(b.contado)} sobre ${plata(b.esperado)} cobrados en efectivo${
+      b.fondo ? ` (incluye ${plata(b.fondo)} de cambio)` : ''}.
     ${d === 0 ? 'Esa parte cuadra.'
       : `<b>${d < 0 ? 'Faltan' : 'Sobran'} ${plata(Math.abs(d))}</b> en la barra.`}
     </div></div>`;
@@ -466,24 +470,42 @@ function nocheEnCurso() {
   return ev?.id ? (ev.nombre || 'La noche') : '';
 }
 
+// El fondo se recuerda en el teléfono: casi siempre es el mismo.
+const FONDO = 'sotano:fondo';
+const FONDO_BARRA = 'sotano:fondo-barra';
+const fondoGuardado = (clave) => { try { return localStorage.getItem(clave) || ''; } catch { return ''; } };
+const leerFondo = (sel, clave) => {
+  const f = Math.max(0, Math.round(Number($(sel)?.value || 0))) || 0;
+  try { localStorage.setItem(clave, String(f)); } catch {}
+  return f;
+};
+const campoFondo = (id, clave) => `
+    <label class="campo">
+      <span>Con cuánto cambio arrancó el cajón <small>(0 si arrancó vacío)</small></span>
+      <input id="${id}" type="number" min="0" inputmode="numeric" placeholder="0"
+             value="${esc(fondoGuardado(clave))}">
+    </label>`;
+
 export function abrirCierre() {
   // Lo que todavía está en el tablero sin entregar no entra en ninguna
   // jornada: al cerrar quedaba afuera sin que nadie lo notara.
+  //
+  // Una sola pregunta con todo lo que hay que saber: dos seguidas, la
+  // segunda se contesta sin leer.
   const pendientes = (estado.pedidos || []).filter((p) => !['entregado', 'cancelado'].includes(p.estado));
-  if (pendientes.length && !confirm(
-    `Hay ${pendientes.length} ${pendientes.length === 1 ? 'pedido' : 'pedidos'} sin entregar en el tablero.\n\n`
-    + 'Si cerrás ahora, quedan afuera de estos números. Entregalos o cancelalos primero.\n\n'
-    + '¿Cerrar igual?')) return;
   const noche = nocheEnCurso();
-  if (noche && !confirm(
-    `«${noche}» sigue abierta.\n\n`
-    + 'Si cerrás los números ahora, lo que se venda después queda afuera de '
-    + 'esta noche y hay que reabrir la jornada para recuperarlo.\n\n'
-    + '¿Cerrar igual?')) return;
+  const avisos = [
+    noche ? `«${noche}» sigue abierta. Si cerrás los números ahora, lo que se venda después `
+      + 'queda afuera de esta noche y hay que reabrir la jornada para recuperarlo.' : '',
+    pendientes.length ? `Hay ${pendientes.length} ${pendientes.length === 1 ? 'pedido' : 'pedidos'} `
+      + 'sin entregar en el tablero: quedan afuera de estos números. Entregalos o cancelalos primero.' : '',
+  ].filter(Boolean);
+  if (avisos.length && !confirm(`${avisos.join('\n\n')}\n\n¿Cerrar igual?`)) return;
   $('#cuerpoCerrarJornada').innerHTML = `
     <p style="color:var(--suave);font-size:.9rem;margin:.2rem 0 1rem">
       Contá la plata que hay en el cajón y escribila. Recién después vas a ver
       lo que la app esperaba.</p>
+    ${campoFondo('inpFondo', FONDO)}
     <label class="campo">
       <span>Cuánta plata hay en el cajón</span>
       <input id="inpContado" type="number" min="0" inputmode="numeric" placeholder="0">
@@ -504,7 +526,8 @@ export function revisarCierre() {
     $('#inpContado').focus();
     return;
   }
-  const n = numerosDe(arranqueDeHoy(), null, Math.round(Number(contado)));
+  const fondo = leerFondo('#inpFondo', FONDO);
+  const n = numerosDe(arranqueDeHoy(), null, Math.round(Number(contado)), fondo);
   const d = n.caja.diferencia;
 
   $('#cuerpoCerrarJornada').innerHTML = `
@@ -525,15 +548,15 @@ export function revisarCierre() {
         Cerrar los números</button>
     </div>`;
   $('#btnVolverCierre').onclick = abrirCierre;
-  $('#btnConfirmarCierre').onclick = () => cerrarJornada(Math.round(Number(contado)));
+  $('#btnConfirmarCierre').onclick = () => cerrarJornada(Math.round(Number(contado)), fondo);
 }
 
-export async function cerrarJornada(contado) {
+export async function cerrarJornada(contado, fondo = 0) {
   const btn = $('#btnConfirmarCierre');
   btn.disabled = true; btn.textContent = 'Cerrando…';
   const fecha = fechaDeHoy();
   const desde = arranqueDeHoy();
-  const n = numerosDe(desde, null, contado);
+  const n = numerosDe(desde, null, contado, fondo);
   const asistencia = asistenciaDe(estado.evento?.id);
   const ya = (estado.jornadas || []).find((j) => j.fecha === fecha);
 
@@ -626,7 +649,7 @@ async function ventasDeLaBarra(desde) {
   return snap.docs.map((d) => d.data());
 }
 
-export function numerosDeBarra(ventas, contado) {
+export function numerosDeBarra(ventas, contado, fondo = 0) {
   const efectivo = sumar(ventas, 'total', 'efectivo');
   const virtual = sumar(ventas, 'total', 'virtual');
   const total = sumar(ventas, 'total');
@@ -634,8 +657,8 @@ export function numerosDeBarra(ventas, contado) {
   return {
     ventas: { efectivo, virtual, sinForma: total - efectivo - virtual,
               total, cantidad: ventas.length },
-    caja: { esperado: efectivo, contado: conto,
-            diferencia: conto === null ? null : conto - efectivo },
+    caja: { fondo: Number(fondo || 0), esperado: Number(fondo || 0) + efectivo, contado: conto,
+            diferencia: conto === null ? null : conto - Number(fondo || 0) - efectivo },
   };
 }
 
@@ -655,7 +678,8 @@ export function pintarCierreBarra() {
     cont.innerHTML = `
       <div class="aviso ${d === 0 ? 'ok' : 'mal'}"><span>${d === 0 ? '✓' : '⚠'}</span><div>
         <b>La barra la cerró ${esc(ya.cerradaPor || 'la casa')}${hora ? ` a las ${hora}` : ''}.</b>
-        Contó ${plata(ya.contado)} y la app esperaba ${plata(ya.esperado)}.
+        Contó ${plata(ya.contado)} y la app esperaba ${plata(ya.esperado)}${
+          ya.fondo ? ` (incluye ${plata(ya.fondo)} de cambio)` : ''}.
         ${d === 0 ? 'Cuadra.'
           : `<b>${d < 0 ? 'Faltan' : 'Sobran'} ${plata(Math.abs(d))}.</b>`}<br>
         <small>Si se siguió vendiendo después de contar, la cuenta de la
@@ -677,6 +701,7 @@ export function abrirCierreBarra() {
     <p style="color:var(--suave);font-size:.9rem;margin:.2rem 0 1rem">
       Contá la plata que hay en el cajón de la barra y escribila. Recién
       después vas a ver lo que la app esperaba.</p>
+    ${campoFondo('inpFondoBarra', FONDO_BARRA)}
     <label class="campo">
       <span>Cuánta plata hay en el cajón</span>
       <input id="inpContadoBarra" type="number" min="0" inputmode="numeric" placeholder="0">
@@ -711,7 +736,7 @@ export async function revisarCierreBarra() {
     return;
   }
 
-  const n = numerosDeBarra(ventas, contado);
+  const n = numerosDeBarra(ventas, contado, leerFondo('#inpFondoBarra', FONDO_BARRA));
   const d = n.caja.diferencia;
 
   $('#cuerpoCerrarBarra').innerHTML = `
@@ -758,6 +783,7 @@ export async function cerrarBarra(contado, n) {
       contado,
       esperado: n.caja.esperado,
       diferencia: n.caja.diferencia,
+      ...(n.caja.fondo ? { fondo: n.caja.fondo } : {}),
       ventas: n.ventas,
     });
     $('#dlgCerrarBarra').close();
