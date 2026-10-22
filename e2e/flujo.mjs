@@ -3341,6 +3341,25 @@ await chequear('con alias cargado, el invitado elige transferencia y lo ve en su
     await pg.click('#btnRegistrar');
     await pg.waitForURL(/pase\.html/, { timeout: 20000 });
 
+    // "Ya transferí": avisa a la casa, una vez, y la pantalla lo confirma sola.
+    await pg.waitForSelector('#btnYaTransferi', { timeout: 15000 }).catch(async () => {
+      throw new Error('el pase no ofrece avisar que transfirió: '
+        + (await pg.textContent('#pase')).replace(/\s+/g, ' ').slice(0, 200));
+    });
+    await pg.click('#btnYaTransferi');
+    await pg.waitForFunction(() =>
+      (document.querySelector('#pase')?.textContent || '').includes('Avisaste que transferiste'),
+      null, { timeout: 15000 });
+    if (await pg.locator('#btnYaTransferi').count())
+      throw new Error('después de avisar sigue ofreciendo el botón');
+    // Y la casa lo ve en su lista, con la hora, sin recargar.
+    await barra.click('#tabCalendario');
+    await barra.waitForFunction(() =>
+      (document.querySelector('#calendario')?.textContent || '').includes('dice que transfirió'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('la casa no ve el aviso de transferencia en su lista');
+      });
+
     // Todavía NO tiene QR: dijo que transfiere y nadie confirmó que llegó.
     await pg.waitForFunction(() =>
       document.querySelector('#pase')?.textContent.includes('sotano.prueba.mp'),

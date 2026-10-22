@@ -582,6 +582,17 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['pagadoEn', 'pagadoPor']);
 
+      // "Ya transferí": el invitado avisa. No le da nada —el QR sigue esperando
+      // pagadoEn, que solo escribe la casa—: es una bandera que solo se puede
+      // levantar, una vez, con la hora del servidor, y que le dice a la casa a
+      // quién buscar en el banco. Antes de esto transferían y nadie se
+      // enteraba hasta que la persona escribía por WhatsApp.
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['avisoPagoEn'])
+        && resource.data.get('pago', '') == 'virtual'
+        && resource.data.get('avisoPagoEn', null) == null
+        && request.resource.data.avisoPagoEn == request.time;
+
       // Sacar a alguien de la lista es de la casa: se anotó dos veces, se
       // equivocó de noche. No es borrar la base, es arreglar la lista.
       allow delete: if esAdmin();

@@ -577,8 +577,12 @@ export function renglonInvitado(i, conBoton) {
         gastó ? ' · consumió ' + plata(gastó) : ''}${
         // Quien dijo que transfiere no tiene QR hasta que alguien confirme que
         // la plata llegó. Hasta entonces ocupa un lugar sin haber pagado.
-        esperaPago ? ` · <b style="color:var(--naranja)">esperando pago${
-          dias ? ' · hace ' + dias + (dias === 1 ? ' día' : ' días') : ''}</b>` : ''}${
+        // Si tocó "Ya transferí", acá dice a qué hora: es a quién buscar en el
+        // banco. Sin el aviso, "esperando pago" a secas.
+        esperaPago ? (i.avisoPagoEn
+          ? ` · <b style="color:var(--oro)">dice que transfirió ${hora(i.avisoPagoEn)}</b> · revisá el banco`
+          : ` · <b style="color:var(--naranja)">esperando pago${
+              dias ? ' · hace ' + dias + (dias === 1 ? ' día' : ' días') : ''}</b>`) : ''}${
         i.pago === 'virtual' && i.pagadoEn ? ' · <b style="color:var(--verde)">pagó</b>' : ''}</div>
     </div>
     ${i.pago === 'virtual' ? `<button class="btn ${esperaPago ? 'primario' : ''}" data-cobrado="${esc(i.id)}"

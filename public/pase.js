@@ -1,7 +1,14 @@
 // El pase del invitado: su QR para la puerta. El token va en la URL y es lo
 // único que hace falta — no hay cuenta ni login para un invitado.
 import {
-  initializeApp, getFirestore, connectFirestoreEmulator, doc, getDoc, onSnapshot,
+  connectFirestoreEmulator,
+  doc,
+  getDoc,
+  getFirestore,
+  initializeApp,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
 } from '/vendor/firebase.js';
 import { dondeRepartir } from '/corte.js';
 import { qrDataURL } from '/vendor/qr.js';
@@ -80,6 +87,8 @@ function cuando(f) {
 // Todavía no confirmamos su pago: en vez del QR, adónde transferir y qué va a
 // pasar después. Esta pantalla se actualiza sola cuando la casa confirma —está
 // escuchando el documento—, así que el QR le aparece sin hacer nada.
+const horaDe = (t) => t.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
 function pintarEsperandoPago(inv, noche, fecha, entrada, al) {
   $('#pase').innerHTML = `
     <div class="aviso" style="margin-bottom:.9rem"><span>⏳</span><div>
@@ -96,10 +105,32 @@ function pintarEsperandoPago(inv, noche, fecha, entrada, al) {
       <div class="aviso mal"><span>⚠</span><div>
         <b>Todavía no hay alias cargado.</b> Escribinos y lo arreglamos.</div></div>`}
 
+    ${al.alias ? (inv.avisoPagoEn ? `
+      <div class="aviso ok" style="margin-top:.9rem"><span>✓</span><div>
+        <b>Avisaste que transferiste${inv.avisoPagoEn?.toDate ? ' a las ' + horaDe(inv.avisoPagoEn) : ''}.</b><br>
+        La casa lo revisa en el banco y te confirma acá.</div></div>` : `
+      <button class="btn primario ancho-full" id="btnYaTransferi" style="margin-top:.9rem">
+        Ya transferí</button>
+      <small style="display:block;color:var(--suave);margin-top:.4rem;text-align:center">
+        Tocalo después de mandar la plata: le avisa a la casa que te busque en el banco.</small>`) : ''}
+
     <div class="aviso" style="margin-top:.9rem"><span>📲</span><div>
       <b>Ni bien confirmemos tu pago te avisamos por acá.</b><br>
       Instalate la app y tu QR de acceso aparece solo en esta misma pantalla:
       no tenés que hacer nada ni volver a buscar el link.</div></div>`;
+
+  // El aviso es una sola escritura, de un solo campo, que las reglas dejan
+  // levantar una vez. La pantalla escucha el documento: se redibuja sola.
+  if ($('#btnYaTransferi')) $('#btnYaTransferi').onclick = async () => {
+    const b = $('#btnYaTransferi');
+    b.disabled = true; b.textContent = 'Avisando…';
+    try {
+      await updateDoc(doc(db, 'invitados', inv.id), { avisoPagoEn: serverTimestamp() });
+    } catch (e) {
+      b.disabled = false; b.textContent = 'Ya transferí';
+      alert('No se pudo avisar: ' + (e.code || e.message) + '\n\nProbá de nuevo, o escribinos.');
+    }
+  };
 
   if ($('#btnCopiarAlias')) $('#btnCopiarAlias').onclick = async () => {
     try {

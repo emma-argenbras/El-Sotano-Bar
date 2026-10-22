@@ -509,6 +509,37 @@ describe('registro de invitados', () => {
       invitadoNuevo({ pago: 'gratis' })));
   });
 
+  // "Ya transferí": el invitado avisa, una vez, y nada más. No es marcar el
+  // pago —eso lo hace la casa—: es decirle a quién buscar en el banco.
+  it('el que dijo transferencia puede avisar que transfirió, una sola vez', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'invitados/token-aviso-pago-00001'),
+      invitadoNuevo({ pago: 'virtual' })));
+    await assertSucceeds(updateDoc(doc(sinLoguear(), 'invitados/token-aviso-pago-00001'),
+      { avisoPagoEn: serverTimestamp() }));
+    // Segunda vez no: la bandera solo se levanta.
+    await assertFails(updateDoc(doc(sinLoguear(), 'invitados/token-aviso-pago-00001'),
+      { avisoPagoEn: serverTimestamp() }));
+  });
+
+  it('el aviso no sirve para marcarse pagado ni para tocar otra cosa', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'invitados/token-aviso-pago-00002'),
+      invitadoNuevo({ pago: 'virtual' })));
+    await assertFails(updateDoc(doc(anon(), 'invitados/token-aviso-pago-00002'),
+      { avisoPagoEn: serverTimestamp(), pagadoEn: serverTimestamp() }));
+    await assertFails(updateDoc(doc(anon(), 'invitados/token-aviso-pago-00002'),
+      { avisoPagoEn: serverTimestamp(), nombre: 'Otro' }));
+    // Con la hora inventada tampoco: tiene que ser la del servidor.
+    await assertFails(updateDoc(doc(anon(), 'invitados/token-aviso-pago-00002'),
+      { avisoPagoEn: new Date(2020, 0, 1) }));
+  });
+
+  it('el que paga en la puerta no tiene nada que avisar', async () => {
+    await assertSucceeds(setDoc(doc(anon(), 'invitados/token-aviso-pago-00003'),
+      invitadoNuevo({ pago: 'efectivo' })));
+    await assertFails(updateDoc(doc(anon(), 'invitados/token-aviso-pago-00003'),
+      { avisoPagoEn: serverTimestamp() }));
+  });
+
   // Nadie se marca su propio pago: su QR depende de eso.
   it('no se puede anotar diciendo que ya pagó', async () => {
     await assertFails(setDoc(doc(anon(), 'invitados/token-ya-pague-1111'),
