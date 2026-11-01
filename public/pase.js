@@ -1,6 +1,7 @@
 // El pase del invitado: su QR para la puerta. El token va en la URL y es lo
 // único que hace falta — no hay cuenta ni login para un invitado.
 import {
+  collection,
   connectFirestoreEmulator,
   doc,
   getDoc,
@@ -9,8 +10,10 @@ import {
   persistentLocalCache,
   persistentSingleTabManager,
   onSnapshot,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
 } from '/vendor/firebase.js';
 import { dondeRepartir } from '/corte.js';
 import { qrDataURL } from '/vendor/qr.js';
@@ -55,7 +58,9 @@ if (!id) {
            href="/registro.html">Anotarme para la próxima</a>`;
       return;
     }
-    pintar({ id: d.id, ...d.data() });
+    const inv = { id: d.id, ...d.data() };
+    pintar(inv);
+    escucharMensajes(inv);
   }, (e) => {
     $('#pase').innerHTML = `<div class="aviso mal"><span>⚠</span><div>${esc(e.code || e.message)}</div></div>`;
   });
@@ -204,4 +209,73 @@ async function pintar(inv) {
     try { await navigator.clipboard.writeText(url); $('#btnCompartir').textContent = 'Link copiado ✓'; }
     catch { $('#btnCompartir').textContent = url; }
   };
+}
+
+// ---------- lo que dice la casa ----------
+// Los mensajes de la casa a los anotados de esta noche, arriba del pase. Si
+// el último pide confirmar, el invitado contesta si viene o no: es lo que
+// le dice a la casa cuántos esperar y qué lugares liberar.
+//
+// Llega mientras el pase está abierto: si entra uno nuevo, además avisa con
+// una notificación, si el teléfono ya dio permiso. Con el pase cerrado no
+// llega nada hasta que haya notificaciones push (plan Blaze).
+let mirandoMensajes = null;
+let mensajes = null;
+let elInvitado = null;
+
+function escucharMensajes(inv) {
+  elInvitado = inv;
+  if (mirandoMensajes === inv.eventoId) { pintarMensajes(); return; }
+  mirandoMensajes = inv.eventoId;
+  if (!inv.eventoId) return;
+  onSnapshot(query(collection(db, 'mensajes'), where('eventoId', '==', inv.eventoId)), (snap) => {
+    const antes = mensajes ? new Set(mensajes.map((m) => m.id)) : null;
+    mensajes = snap.docs.map((x) => ({ id: x.id, ...x.data() }))
+      .sort((a, b) => (b.en?.toMillis?.() || 0) - (a.en?.toMillis?.() || 0));
+    if (antes) {
+      for (const m of mensajes) {
+        if (antes.has(m.id) || !('Notification' in window) || Notification.permission !== 'granted') continue;
+        navigator.serviceWorker?.ready.then((reg) => reg.showNotification('Sótano', {
+          body: m.texto, tag: 'sotano-mensaje-' + m.id, icon: '/iconos/icono-club-192.png',
+        })).catch(() => {});
+      }
+    }
+    pintarMensajes();
+  }, () => {});
+}
+
+function pintarMensajes() {
+  const cont = $('#mensajesCasa');
+  const inv = elInvitado;
+  if (!cont || !inv || !mensajes?.length) { if (cont) cont.innerHTML = ''; return; }
+  const ultimos = mensajes.slice(0, 3);
+  const pide = ultimos[0].pideConfirmar === true && !inv.ingresadoEn;
+  const dijo = inv.asistencia === 'si' ? 'Dijiste que venís' : inv.asistencia === 'no' ? 'Dijiste que no venís' : '';
+  cont.innerHTML = `
+    <div class="aviso mensajes-casa" style="margin-bottom:.9rem;flex-direction:column;align-items:stretch">
+      ${ultimos.map((m, i) => `
+        <div style="${i ? 'margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--borde);opacity:.75' : ''}">
+          <small style="color:var(--suave)">📣 La casa${m.en?.toDate ? ' · ' + horaDe(m.en) : ''}</small><br>
+          <span style="white-space:pre-line">${esc(m.texto)}</span>
+        </div>`).join('')}
+      ${pide ? `
+        <div style="margin-top:.8rem">
+          ${dijo ? `<small style="display:block;color:var(--verde);margin-bottom:.4rem">✓ ${dijo}. Si cambiás de idea, tocá la otra.</small>` : ''}
+          <div style="display:flex;gap:.6rem">
+            <button class="btn ${inv.asistencia === 'si' ? 'primario' : ''}" data-asistencia="si" style="flex:1">Voy</button>
+            <button class="btn ${inv.asistencia === 'no' ? 'primario' : ''}" data-asistencia="no" style="flex:1">No voy</button>
+          </div>
+        </div>` : ''}
+    </div>`;
+  cont.querySelectorAll('[data-asistencia]').forEach((b) => b.onclick = async () => {
+    if (b.dataset.asistencia === inv.asistencia) return;
+    cont.querySelectorAll('[data-asistencia]').forEach((x) => { x.disabled = true; });
+    try {
+      await updateDoc(doc(db, 'invitados', inv.id),
+        { asistencia: b.dataset.asistencia, asistenciaEn: serverTimestamp() });
+    } catch (e) {
+      cont.querySelectorAll('[data-asistencia]').forEach((x) => { x.disabled = false; });
+      alert('No se pudo guardar: ' + (e.code || e.message) + '\n\nProbá de nuevo.');
+    }
+  });
 }

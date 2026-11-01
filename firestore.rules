@@ -714,8 +714,36 @@ service cloud.firestore {
         && resource.data.get('avisoPagoEn', null) == null
         && request.resource.data.avisoPagoEn == request.time;
 
+      // "¿Venís?": el invitado contesta si viene o no, desde su pase. Puede
+      // cambiar de idea mientras no entró; la hora es la del servidor. No le
+      // da nada: es para que la casa sepa cuántos esperar y libere lugares.
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['asistencia', 'asistenciaEn'])
+        && request.resource.data.asistencia in ['si', 'no']
+        && request.resource.data.asistenciaEn == request.time
+        && resource.data.get('ingresadoEn', null) == null;
+
       // Sacar a alguien de la lista es de la casa: se anotó dos veces, se
       // equivocó de noche. No es borrar la base, es arreglar la lista.
+      allow delete: if esAdmin();
+    }
+
+    // ---------- mensajes de la casa ----------
+    // Lo que la casa le dice a los anotados de una noche: "confirmá si venís",
+    // "abrimos a las 23". Es un aviso para esa lista y lo lee el pase, que no
+    // tiene cuenta: por eso se lee sin login. Lo escribe un administrador.
+    function mensajeValido(d) {
+      return d.keys().hasOnly(['eventoId', 'texto', 'por', 'en', 'pideConfirmar'])
+        && d.eventoId is string && d.eventoId.size() >= 1 && d.eventoId.size() <= 60
+        && d.texto is string && d.texto.size() >= 2 && d.texto.size() <= 500
+        && d.por is string && d.por.size() <= 60
+        && d.en == request.time
+        && (!('pideConfirmar' in d.keys()) || d.pideConfirmar is bool);
+    }
+
+    match /mensajes/{id} {
+      allow read: if true;
+      allow create: if esAdmin() && mensajeValido(request.resource.data);
       allow delete: if esAdmin();
     }
 

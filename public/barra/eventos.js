@@ -11,6 +11,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  deleteDoc,
 } from '/vendor/firebase.js';
 import { pintarAdminEntradas } from './administracion.js';
 import { pintarUsuarios } from './usuarios.js';
@@ -92,6 +93,14 @@ export function escucharEvento() {
   onSnapshot(ESTADO_LOCAL(), (d) => {
     estado.tomandoPedidos = d.exists() ? d.data().tomandoPedidos !== false : true;
     pintarEvento();
+  }, () => {});
+
+  // Los mensajes de la casa a los anotados. Se muestran en las Invitaciones
+  // de cada noche, con lo que ya se mandó.
+  onSnapshot(collection(db, 'mensajes'), (snap) => {
+    estado.mensajes = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.en?.toMillis?.() || 0) - (a.en?.toMillis?.() || 0));
+    pintarInvitar();
   }, () => {});
 
   onSnapshot(query(EVENTOS(), where('estado', '==', 'cerrado'), orderBy('fecha', 'desc'), limit(30)), (snap) => {
@@ -327,6 +336,12 @@ export async function pintarInvitar() {
     .filter((i) => i.eventoId === ev.id)
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 
+  // Esta pantalla se redibuja con cada anotado y cada respuesta: lo que se
+  // está escribiendo en el mensaje no se puede perder en el medio.
+  const borrador = $('#inpMensaje')?.value || '';
+  const pedirConfirmar = $('#chkConfirmar') ? $('#chkConfirmar').checked : true;
+  const escribiendo = document.activeElement?.id === 'inpMensaje';
+
   const img = await qrRegistro(ev.id);
   if (estado.invitandoA !== ev || !$('#dlgInvitar').open) return;  // cambió mientras cargaba
 
@@ -351,6 +366,7 @@ export async function pintarInvitar() {
     <button class="btn ${abierto ? 'peligro' : 'primario'} ancho-full solo-gerente-inline"
             id="btnAbrirRegistro" style="margin-top:.6rem">
       ${abierto ? 'Cerrar el registro de esta noche' : 'Abrir el registro de esta noche'}</button>
+    ${bloqueMensajes(ev, dela)}
     ${plegable('anotados', 'Quiénes se anotaron', dela, { abierto: estado.pliegues.anotados })}
     <p style="font-size:.74rem;color:var(--suave);margin:.7rem 0 0">
       Este link y este QR son <b>de esta noche</b>: no llevan a ninguna otra. La app
@@ -365,6 +381,70 @@ export async function pintarInvitar() {
     a.click();
   };
   if ($('#btnAbrirRegistro')) $('#btnAbrirRegistro').onclick = (e) => abrirCerrarRegistro(ev, abierto, e.currentTarget);
+  if ($('#inpMensaje')) {
+    $('#inpMensaje').value = borrador;
+    $('#chkConfirmar').checked = pedirConfirmar;
+    if (escribiendo) $('#inpMensaje').focus();
+  }
+  engancharMensajes(ev);
+}
+
+// ---------- mensajes a los anotados ----------
+// Lo que la casa le dice a la lista de una noche. Cada anotado lo ve arriba
+// de su pase; si pide confirmar, contesta Voy o No voy y acá se cuenta.
+// Con el pase cerrado no le llega nada hasta que haya notificaciones push:
+// por eso conviene mandarles también el link por WhatsApp.
+function bloqueMensajes(ev, dela) {
+  const enviados = (estado.mensajes || []).filter((m) => m.eventoId === ev.id);
+  const van = dela.filter((i) => i.asistencia === 'si').length;
+  const noVan = dela.filter((i) => i.asistencia === 'no').length;
+  const pidio = enviados.some((m) => m.pideConfirmar);
+  return `
+    <div class="solo-gerente" style="margin-top:1rem">
+      <div class="grupo-personal">📣 Mensaje a los anotados</div>
+      ${pidio ? `<p style="margin:.2rem 0 .6rem;font-size:.9rem">
+        <b style="color:var(--verde)">Vienen ${van}</b> · <b style="color:var(--rojo)">No vienen ${noVan}</b>
+        · Sin responder ${Math.max(0, dela.length - van - noVan)}</p>` : ''}
+      <label class="campo" style="margin-bottom:.4rem">
+        <textarea id="inpMensaje" maxlength="500" placeholder="Ej: ¡Hoy abrimos a las 23! Confirmá si venís."></textarea>
+      </label>
+      <label style="display:flex;gap:.5rem;align-items:center;font-size:.88rem;margin-bottom:.5rem">
+        <input type="checkbox" id="chkConfirmar" checked> Pedir que confirmen si vienen
+      </label>
+      <button class="btn primario ancho-full" id="btnMandarMensaje">Mandar a los ${dela.length} anotados</button>
+      <p style="font-size:.74rem;color:var(--suave);margin:.4rem 0 0">Lo ven arriba de su pase.
+        Con el pase cerrado no les llega aviso: mandales también el link por WhatsApp.</p>
+      ${enviados.length ? `<div style="margin-top:.6rem">${enviados.map((m) => `
+        <div class="item"><div class="cuerpo">
+          <div class="nombre" style="font-size:.88rem;white-space:pre-line">${esc(m.texto)}</div>
+          <div class="desc">${esc(m.por || '')}${m.en?.toDate ? ' · ' + hora(m.en) : ''}${m.pideConfirmar ? ' · pide confirmar' : ''}</div>
+        </div>
+        <button class="btn peligro" data-borrar-mensaje="${esc(m.id)}" title="Borrar el mensaje"
+                style="padding:.3rem .55rem;font-size:.78rem">✕</button></div>`).join('')}</div>` : ''}
+    </div>`;
+}
+
+function engancharMensajes(ev) {
+  const b = $('#btnMandarMensaje');
+  if (b) b.onclick = async () => {
+    const texto = $('#inpMensaje').value.trim();
+    if (texto.length < 2) { $('#inpMensaje').focus(); return; }
+    b.disabled = true; b.textContent = 'Mandando…';
+    try {
+      await addDoc(collection(db, 'mensajes'), {
+        eventoId: ev.id, texto, por: estado.usuario || 'la casa',
+        en: serverTimestamp(), pideConfirmar: $('#chkConfirmar').checked,
+      });
+      $('#inpMensaje').value = '';
+    } catch (e) {
+      alert('No se pudo mandar: ' + (e.code || e.message));
+    } finally { b.disabled = false; }
+  };
+  $('#cuerpoInvitar').querySelectorAll('[data-borrar-mensaje]').forEach((x) => x.onclick = async () => {
+    if (!confirm('¿Borrar este mensaje? Deja de verse en los pases.')) return;
+    try { await deleteDoc(doc(db, 'mensajes', x.dataset.borrarMensaje)); }
+    catch (e) { alert('No se pudo: ' + (e.code || e.message)); }
+  });
 }
 
 // Abrir o cerrar la lista de una noche, sin tocar las otras.

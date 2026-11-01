@@ -3252,6 +3252,57 @@ await chequear('el QR del pase codifica su token', async () => {
   if (leido?.data !== tokenInvitado) throw new Error('el QR dice: ' + leido?.data);
 });
 
+await chequear('la casa le escribe a la lista, el invitado lo ve en su pase y contesta si viene', async () => {
+  const idNoche = await idDeNoche('Noche con lista');
+  if (!idNoche || !tokenInvitado) throw new Error('falta la noche o el invitado de los casos de arriba');
+  await barra.click('#tabCalendario');
+  await barra.locator('#calendario .item', { hasText: 'Noche con lista' }).first().locator('[data-invitar]').click();
+  await barra.waitForSelector('#dlgInvitar[open]', { timeout: 10000 });
+  try {
+    await barra.waitForSelector('#inpMensaje', { timeout: 15000 })
+      .catch(() => { throw new Error('las Invitaciones no ofrecen mandar un mensaje'); });
+    await barra.fill('#inpMensaje', 'Confirmá si venís hoy');
+    if (!(await barra.isChecked('#chkConfirmar'))) await barra.check('#chkConfirmar');
+    await barra.click('#btnMandarMensaje');
+    for (let i = 0; i < 40; i++) {
+      const q = await db.collection('mensajes').where('eventoId', '==', idNoche).get();
+      if (!q.empty) {
+        const m = q.docs[0].data();
+        if (m.texto !== 'Confirmá si venís hoy' || m.pideConfirmar !== true || !m.en)
+          throw new Error('el mensaje quedó mal: ' + JSON.stringify(m));
+        break;
+      }
+      if (i === 39) throw new Error('el mensaje nunca se guardó');
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+
+    // El invitado lo ve arriba de su pase, sin recargar, y contesta.
+    await invitado.waitForFunction(() =>
+      (document.querySelector('#mensajesCasa')?.textContent || '').includes('Confirmá si venís hoy'),
+      null, { timeout: 15000 }).catch(() => { throw new Error('el pase no muestra el mensaje de la casa'); });
+    await invitado.click('#mensajesCasa [data-asistencia="si"]');
+    for (let i = 0; i < 40; i++) {
+      const d = (await db.collection('invitados').doc(tokenInvitado).get()).data();
+      if (d.asistencia === 'si' && d.asistenciaEn) break;
+      if (i === 39) throw new Error('la respuesta no quedó guardada: ' + JSON.stringify({ a: d.asistencia }));
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    await invitado.waitForFunction(() =>
+      (document.querySelector('#mensajesCasa')?.textContent || '').includes('Dijiste que venís'),
+      null, { timeout: 10000 }).catch(() => { throw new Error('el pase no le confirma lo que contestó'); });
+
+    // Y la casa lo cuenta.
+    await barra.waitForFunction(() =>
+      (document.querySelector('#cuerpoInvitar')?.textContent || '').includes('Vienen 1'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('la casa no cuenta la respuesta: ' + (await barra.textContent('#cuerpoInvitar')).replace(/\s+/g, ' ').slice(0, 300));
+      });
+  } finally {
+    await barra.click('#btnCerrarInvitar').catch(() => {});
+    for (const d of (await db.collection('mensajes').where('eventoId', '==', idNoche).get()).docs) await d.ref.delete();
+  }
+});
+
 await chequear('el teléfono se escribe de una sola manera: sin 0 y sin 15', async () => {
   const ctxTel = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   const pg = await ctxTel.newPage();

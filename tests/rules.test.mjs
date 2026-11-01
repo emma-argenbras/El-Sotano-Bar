@@ -2415,6 +2415,39 @@ describe('plata: lo que se cerró después de la auditoría', () => {
   });
 });
 
+// Mensajes de la casa a los anotados de una noche, y el "¿Venís?" del pase.
+describe('mensajes de la casa y confirmación de asistencia', () => {
+  const mensaje = (extra = {}) => ({ eventoId: 'ev-1', texto: 'Confirmá si venís hoy',
+    por: 'carli', en: serverTimestamp(), pideConfirmar: true, ...extra });
+
+  it('un administrador manda un mensaje a la lista; la barra y los de afuera no', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'mensajes/m-1'), mensaje()));
+    await assertFails(setDoc(doc(turnoOk(), 'mensajes/m-2'), mensaje()));
+    await assertFails(setDoc(doc(anon(), 'mensajes/m-3'), mensaje()));
+    await assertFails(setDoc(doc(gerente(), 'mensajes/m-4'), mensaje({ en: new Date('2020-01-01') })));
+    await assertFails(setDoc(doc(gerente(), 'mensajes/m-5'), mensaje({ texto: 'x'.repeat(501) })));
+  });
+
+  it('el pase lo lee sin cuenta', async () => {
+    await assertSucceeds(getDoc(doc(sinLoguear(), 'mensajes/m-1')));
+    await assertSucceeds(getDocs(query(collection(sinLoguear(), 'mensajes'), where('eventoId', '==', 'ev-1'))));
+  });
+
+  it('el invitado dice si viene, con la hora del servidor, y puede cambiar de idea', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'invitados/token-dice-si-viene-1'),
+        { eventoId: 'ev-1', nombre: 'Vale', telefono: '1155550002', creadoEn: new Date(), ingresadoEn: null });
+    });
+    const ref = doc(sinLoguear(), 'invitados/token-dice-si-viene-1');
+    await assertSucceeds(updateDoc(ref, { asistencia: 'si', asistenciaEn: serverTimestamp() }));
+    await assertSucceeds(updateDoc(ref, { asistencia: 'no', asistenciaEn: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { asistencia: 'tal-vez', asistenciaEn: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { asistencia: 'si', asistenciaEn: new Date('2020-01-01') }));
+    // Y de paso no se cuela otra cosa.
+    await assertFails(updateDoc(ref, { asistencia: 'si', asistenciaEn: serverTimestamp(), nombre: 'Otra' }));
+  });
+});
+
 describe('barra (colección privada)', () => {
   it('cliente anónimo NO puede leer la caja', async () => {
     await assertFails(getDoc(doc(anon(), 'barra/caja')));

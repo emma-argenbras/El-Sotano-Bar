@@ -612,6 +612,9 @@ export function renglonInvitado(i, conBoton) {
       <div class="desc">${esc(i.telefono)}${i.ingresadoEn ? ' · entró ' + hora(i.ingresadoEn) : ''}${
         comoEntro(i)}${
         gastó ? ' · consumió ' + plata(gastó) : ''}${
+        // Lo que contestó al "¿Venís?" de su pase, mientras no entró.
+        !i.ingresadoEn && i.asistencia === 'si' ? ' · <b style="color:var(--verde)">✓ viene</b>'
+          : !i.ingresadoEn && i.asistencia === 'no' ? ' · <b style="color:var(--rojo)">✗ no viene</b>' : ''}${
         // Quien dijo que transfiere no tiene QR hasta que alguien confirme que
         // la plata llegó. Hasta entonces ocupa un lugar sin haber pagado.
         // Si tocó "Ya transferí", acá dice a qué hora: es a quién buscar en el
