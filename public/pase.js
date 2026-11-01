@@ -261,7 +261,7 @@ function pintarMensajes() {
       ${ultimos.map((m, i) => `
         <div style="${i ? 'margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--borde);opacity:.75' : ''}">
           <small style="color:var(--suave)">📣 La casa${m.en?.toDate ? ' · ' + horaDe(m.en) : ''}</small><br>
-          <span style="white-space:pre-line">${esc(m.texto)}</span>
+          <span style="white-space:pre-line">${esc(conNombre(m.texto, inv))}</span>
         </div>`).join('')}
       ${pide ? `
         <div style="margin-top:.8rem">
@@ -339,4 +339,10 @@ function engancharAvisarme(inv) {
     }
     pintarMensajes();
   };
+}
+
+// {nombre} en un mensaje de la casa es el nombre de quien lo lee.
+function conNombre(texto, inv) {
+  const nombre = String(inv?.nombre || '').split(' ')[0];
+  return String(texto || '').replaceAll('{nombre}', nombre).replace(/\s+([,.!?])/g, '$1');
 }

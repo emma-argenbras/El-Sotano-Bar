@@ -394,6 +394,16 @@ export async function pintarInvitar() {
 // de su pase; si pide confirmar, contesta Voy o No voy y acá se cuenta.
 // Con el pase cerrado no le llega nada hasta que haya notificaciones push:
 // por eso conviene mandarles también el link por WhatsApp.
+// Plantillas para no arrancar de cero: se tocan, quedan en el cuadro y se
+// editan antes de mandar. {nombre} lo completa cada pase (y cada aviso) con
+// el nombre de esa persona; {noche} se completa acá con el de la noche.
+const PLANTILLAS = [
+  ['¿Venís?', 'Hola {nombre}! ¿Venís a {noche}? Confirmá acá abajo así te guardamos el lugar.', true],
+  ['Horario', '{nombre}, hoy en {noche} abrimos a las 23 hs. ¡Te esperamos!', false],
+  ['Últimos lugares', 'Quedan pocos lugares para {noche}. Si no venís, avisanos así se lo damos a otro.', true],
+  ['Recordatorio', '{nombre}, mañana es {noche}. Tu QR de entrada está en este mismo pase.', false],
+];
+
 function bloqueMensajes(ev, dela) {
   const enviados = (estado.mensajes || []).filter((m) => m.eventoId === ev.id);
   const van = dela.filter((i) => i.asistencia === 'si').length;
@@ -405,9 +415,15 @@ function bloqueMensajes(ev, dela) {
       ${pidio ? `<p style="margin:.2rem 0 .6rem;font-size:.9rem">
         <b style="color:var(--verde)">Vienen ${van}</b> · <b style="color:var(--rojo)">No vienen ${noVan}</b>
         · Sin responder ${Math.max(0, dela.length - van - noVan)}</p>` : ''}
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem">
+        ${PLANTILLAS.map(([t], i) => `<button class="btn" data-plantilla="${i}"
+          style="padding:.3rem .65rem;font-size:.8rem">${esc(t)}</button>`).join('')}
+      </div>
       <label class="campo" style="margin-bottom:.4rem">
-        <textarea id="inpMensaje" maxlength="500" placeholder="Ej: ¡Hoy abrimos a las 23! Confirmá si venís."></textarea>
+        <textarea id="inpMensaje" maxlength="500" placeholder="Elegí una plantilla o escribí el tuyo."></textarea>
       </label>
+      <p style="font-size:.74rem;color:var(--suave);margin:-.2rem 0 .5rem">Escribí <b>{nombre}</b> y a cada uno
+        le aparece con su nombre.</p>
       <label style="display:flex;gap:.5rem;align-items:center;font-size:.88rem;margin-bottom:.5rem">
         <input type="checkbox" id="chkConfirmar" checked> Pedir que confirmen si vienen
       </label>
@@ -425,9 +441,15 @@ function bloqueMensajes(ev, dela) {
 }
 
 function engancharMensajes(ev) {
+  $('#cuerpoInvitar').querySelectorAll('[data-plantilla]').forEach((x) => x.onclick = () => {
+    const [, texto, pide] = PLANTILLAS[Number(x.dataset.plantilla)];
+    $('#inpMensaje').value = texto.replaceAll('{noche}', ev.nombre || 'la noche');
+    $('#chkConfirmar').checked = pide;
+    $('#inpMensaje').focus();
+  });
   const b = $('#btnMandarMensaje');
   if (b) b.onclick = async () => {
-    const texto = $('#inpMensaje').value.trim();
+    const texto = $('#inpMensaje').value.trim().replaceAll('{noche}', ev.nombre || 'la noche');
     if (texto.length < 2) { $('#inpMensaje').focus(); return; }
     b.disabled = true; b.textContent = 'Mandando…';
     try {

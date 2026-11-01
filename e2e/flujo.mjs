@@ -3261,14 +3261,18 @@ await chequear('la casa le escribe a la lista, el invitado lo ve en su pase y co
   try {
     await barra.waitForSelector('#inpMensaje', { timeout: 15000 })
       .catch(() => { throw new Error('las Invitaciones no ofrecen mandar un mensaje'); });
-    await barra.fill('#inpMensaje', 'Confirmá si venís hoy');
-    if (!(await barra.isChecked('#chkConfirmar'))) await barra.check('#chkConfirmar');
+    // La plantilla llena el cuadro y se puede editar antes de mandar.
+    await barra.click('[data-plantilla="0"]');
+    if (!(await barra.inputValue('#inpMensaje')).includes('Noche con lista'))
+      throw new Error('la plantilla no completó el nombre de la noche');
+    if (!(await barra.isChecked('#chkConfirmar'))) throw new Error('la plantilla ¿Venís? no pide confirmar');
+    await barra.fill('#inpMensaje', 'Hola {nombre}, confirmá si venís hoy');
     await barra.click('#btnMandarMensaje');
     for (let i = 0; i < 40; i++) {
       const q = await db.collection('mensajes').where('eventoId', '==', idNoche).get();
       if (!q.empty) {
         const m = q.docs[0].data();
-        if (m.texto !== 'Confirmá si venís hoy' || m.pideConfirmar !== true || !m.en)
+        if (m.texto !== 'Hola {nombre}, confirmá si venís hoy' || m.pideConfirmar !== true || !m.en)
           throw new Error('el mensaje quedó mal: ' + JSON.stringify(m));
         break;
       }
@@ -3278,8 +3282,10 @@ await chequear('la casa le escribe a la lista, el invitado lo ve en su pase y co
 
     // El invitado lo ve arriba de su pase, sin recargar, y contesta.
     await invitado.waitForFunction(() =>
-      (document.querySelector('#mensajesCasa')?.textContent || '').includes('Confirmá si venís hoy'),
-      null, { timeout: 15000 }).catch(() => { throw new Error('el pase no muestra el mensaje de la casa'); });
+      (document.querySelector('#mensajesCasa')?.textContent || '').includes('Hola Ana, confirmá si venís hoy'),
+      null, { timeout: 15000 }).catch(async () => {
+        throw new Error('el pase no muestra el mensaje con su nombre: ' + (await invitado.textContent('#mensajesCasa')).slice(0, 200));
+      });
     await invitado.click('#mensajesCasa [data-asistencia="si"]');
     for (let i = 0; i < 40; i++) {
       const d = (await db.collection('invitados').doc(tokenInvitado).get()).data();
