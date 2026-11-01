@@ -33,31 +33,41 @@ export const avisarMensaje = onDocumentCreated({
 
   const db = getFirestore();
   const subs = await db.collection('suscripciones').where('eventoId', '==', m.eventoId).get();
-  const tokens = subs.docs.map((d) => d.id);
-  if (!tokens.length) { logger.info('nadie pidió aviso', { evento: m.eventoId }); return; }
+  if (subs.empty) { logger.info('nadie pidió aviso', { evento: m.eventoId }); return; }
+
+  // {nombre} se reemplaza por el nombre de cada uno: "Hola {nombre}, ¿venís?"
+  // le llega a Ana como "Hola Ana, ¿venís?". Por eso un mensaje por persona.
+  const refs = [...new Set(subs.docs.map((d) => d.data().invitadoId))]
+    .map((id) => db.collection('invitados').doc(id));
+  const nombres = new Map((await db.getAll(...refs))
+    .map((d) => [d.id, String(d.data()?.nombre || '').split(' ')[0]]));
+  const texto = (invitadoId) => String(m.texto)
+    .replaceAll('{nombre}', nombres.get(invitadoId) || '').replace(/\s+([,.!?])/g, '$1').slice(0, 240);
+
+  const mensajes = subs.docs.map((d) => ({
+    token: d.id,
+    // Como datos y no como "notificación": la dibuja el service worker del
+    // pase (public/sw.js), igual en todos los navegadores.
+    webpush: {
+      headers: { Urgency: 'high', TTL: String(12 * 3600) },
+      data: {
+        titulo: 'Sótano',
+        texto: texto(d.data().invitadoId),
+        link: '/pase.html',
+        tag: 'sotano-mensaje-' + event.params.id,
+      },
+    },
+  }));
 
   let enviados = 0, fallidos = 0;
-  // FCM acepta hasta 500 direcciones por envío.
-  for (let i = 0; i < tokens.length; i += 500) {
-    const lote = tokens.slice(i, i + 500);
-    const r = await getMessaging().sendEachForMulticast({
-      tokens: lote,
-      // Como datos y no como "notificación": la dibuja el service worker del
-      // pase (public/sw.js), igual en todos los navegadores.
-      webpush: {
-        headers: { Urgency: 'high', TTL: String(12 * 3600) },
-        data: {
-          titulo: 'Sótano',
-          texto: String(m.texto).slice(0, 240),
-          link: '/pase.html',
-          tag: 'sotano-mensaje-' + event.params.id,
-        },
-      },
-    });
+  // FCM acepta hasta 500 por envío.
+  for (let i = 0; i < mensajes.length; i += 500) {
+    const lote = mensajes.slice(i, i + 500);
+    const r = await getMessaging().sendEach(lote);
     enviados += r.successCount;
     fallidos += r.failureCount;
     await Promise.all(r.responses.map((x, j) => (!x.success && VENCIDAS.has(x.error?.code)
-      ? db.collection('suscripciones').doc(lote[j]).delete().catch(() => {})
+      ? db.collection('suscripciones').doc(lote[j].token).delete().catch(() => {})
       : null)));
   }
   logger.info('mensaje avisado', { evento: m.eventoId, enviados, fallidos });
