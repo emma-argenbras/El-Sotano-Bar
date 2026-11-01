@@ -22,7 +22,12 @@ const VENCIDAS = new Set([
   'messaging/invalid-registration-token',
 ]);
 
-export const avisarMensaje = onDocumentCreated('mensajes/{id}', async (event) => {
+// En la misma región que la base (southamerica-east1, San Pablo): un
+// disparador de Firestore tiene que estar donde está la base.
+export const avisarMensaje = onDocumentCreated({
+  document: 'mensajes/{id}',
+  region: 'southamerica-east1',
+}, async (event) => {
   const m = event.data?.data();
   if (!m?.eventoId || !m?.texto) return;
 
