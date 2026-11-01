@@ -15,7 +15,7 @@ window.CONFIG_FIREBASE = {
 // web" (consola de Firebase → Configuración → Cloud Messaging): NO es secreta.
 // Vacía, el pase no ofrece "Avisarme".
 window.CONFIG_PUSH = {
-  vapidKey: '',
+  vapidKey: 'BP-IuZ01aY8e3XeC1119SeSFWiXUbLPVGkLEMZ-mPGhWEfigD5Wpyf3YpV_GpJHJXA0saVOvj1SKLwNHaxaRuVA',
 };
 
 // Ajustes del local
