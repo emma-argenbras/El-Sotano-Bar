@@ -653,9 +653,15 @@ service cloud.firestore {
             || request.resource.data.get('entradaPago', null) == null);
     }
 
+    // Lo que suma la casa por fuera del link es un extra: va marcado, con
+    // quién lo sumó y, si se quiere, de parte de quién.
     function invitadoDeLaCasa(d) {
       return d.keys().hasOnly(['eventoId', 'nombre', 'telefono', 'creadoEn', 'ingresadoEn', 'ingresadoPor',
-                               'entradaEn', 'entradaPor', 'entradaPago', 'entradaMonto'])
+                               'entradaEn', 'entradaPor', 'entradaPago', 'entradaMonto',
+                               'extra', 'anotadoPor', 'deParteDe'])
+        && (!('extra' in d.keys()) || d.extra == true)
+        && (!('anotadoPor' in d.keys()) || (d.anotadoPor is string && d.anotadoPor.size() <= 60))
+        && (!('deParteDe' in d.keys()) || (d.deParteDe is string && d.deParteDe.size() <= 60))
         && d.keys().hasAll(['eventoId', 'nombre', 'telefono', 'creadoEn'])
         && d.eventoId is string
         && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 60

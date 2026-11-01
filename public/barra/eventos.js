@@ -19,7 +19,7 @@ import { $, esc, estado, plata } from './base.js';
 import { dondeRepartir } from '/corte.js';
 import { irA } from './pantallas.js';
 import { ESTADO_LOCAL, EVENTOS, TURNO, app, db, fallo } from './conexion.js';
-import { bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoche, filtrarInvitados, hora, pintarPuerta, plegable } from './invitados.js';
+import { abrirAltaInvitado, bloqueClub, engancharClub, engancharPliegues, enganchatNoches, filaNoche, filtrarInvitados, hora, pintarPuerta, plegable } from './invitados.js';
 import { escucharPedidos, pintarCaja, ticket } from './pedidos.js';
 import { pintarAvisos } from './avisos.js';
 import { pintarCierre } from './cierre.js';
@@ -675,11 +675,14 @@ export function pintarEvento() {
           <b>Registro de invitados</b>
           <span>${Number(estado.registros[estado.evento.id]?.registrados || 0)} de ${Number(estado.evento.capacidad)} anotados
             · ${estado.invitados.filter((i) => i.ingresadoEn).length} adentro${
+            estado.invitados.some((i) => i.extra) ? ` · ${estado.invitados.filter((i) => i.extra).length} extras` : ''}${
             estado.registros[estado.evento.id]?.abierto === false ? ' · registro cerrado' : ''}</span>
           <span style="word-break:break-all;color:var(--oro)">${esc(LINK_REGISTRO(estado.evento.id))}</span>
         </div>
         <button class="btn solo-gerente-inline" id="btnLinkRegistro">Invitaciones</button>
-      </div>` : ''}
+      </div>
+      <button class="btn ancho-full solo-gerente-inline" id="btnExtraNoche" style="margin-top:.6rem">
+        + Sumar invitado extra</button>` : ''}
       <div class="interruptor" style="margin-top:.9rem">
         <div>
           <b>De turno</b>
@@ -712,6 +715,7 @@ export function pintarEvento() {
   if ($('#btnCerrarEvento')) $('#btnCerrarEvento').onclick = cerrarEvento;
   if ($('#btnTurno')) $('#btnTurno').onclick = editarTurno;
   if ($('#btnLinkRegistro')) $('#btnLinkRegistro').onclick = () => abrirInvitar(estado.evento);
+  if ($('#btnExtraNoche')) $('#btnExtraNoche').onclick = abrirAltaInvitado;
   if ($('#btnTomando')) $('#btnTomando').onclick = async () => {
     const prender = !estado.tomandoPedidos;
     if (!prender && !confirm('¿Cortar los pedidos?\n\nEl QR sigue andando, pero el cliente no va a poder mandar nada hasta que lo reabras.')) return;

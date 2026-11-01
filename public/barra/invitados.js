@@ -267,6 +267,7 @@ export function tokenInvitado() {
 export function abrirAltaInvitado() {
   $('#inpInvNombre').value = '';
   $('#inpInvTel').value = '';
+  $('#inpInvDeParte').value = '';
   $('#inpInvEntra').checked = true;
   $('#paseNuevo').innerHTML = '';
   $('#btnGuardarInvitado').hidden = false;
@@ -288,6 +289,7 @@ $('#btnGuardarInvitado').onclick = async () => {
     $('#inpInvTel').focus(); return;
   }
   const entra = $('#inpInvEntra').checked;
+  const deParteDe = $('#inpInvDeParte').value.trim().slice(0, 60);
   const btn = $('#btnGuardarInvitado');
   const evento = eventoDePuerta();
 
@@ -320,6 +322,11 @@ $('#btnGuardarInvitado').onclick = async () => {
       eventoId: evento,
       nombre, telefono,
       creadoEn: serverTimestamp(),
+      // Lo sumó la casa, por fuera del link: queda marcado como extra, con
+      // quién y de parte de quién, para contarlos aparte y saber por qué.
+      extra: true,
+      anotadoPor: estado.usuario || 'casa',
+      ...(deParteDe ? { deParteDe } : {}),
       ...(entra ? { ingresadoEn: serverTimestamp(), ingresadoPor: estado.usuario || 'casa' } : {}),
       ...(cobro ? {
         entradaEn: serverTimestamp(),
@@ -611,6 +618,8 @@ export function renglonInvitado(i, conBoton) {
       <div class="nombre">${esc(i.nombre)}</div>
       <div class="desc">${esc(i.telefono)}${i.ingresadoEn ? ' · entró ' + hora(i.ingresadoEn) : ''}${
         comoEntro(i)}${
+        i.extra ? ` · <b style="color:var(--oro)">➕ extra${i.deParteDe ? ' · de ' + esc(i.deParteDe) : ''}${
+          i.anotadoPor ? ' · sumó ' + esc(i.anotadoPor) : ''}</b>` : ''}${
         gastó ? ' · consumió ' + plata(gastó) : ''}${
         // Lo que contestó al "¿Venís?" de su pase, mientras no entró.
         !i.ingresadoEn && i.asistencia === 'si' ? ' · <b style="color:var(--verde)">✓ viene</b>'
@@ -725,6 +734,7 @@ export function pintarPuerta() {
   if (!cont) return;
   const invs = estado.invitados;
   const adentro = invs.filter((i) => i.ingresadoEn).length;
+  const extras = invs.filter((i) => i.extra).length;
   const cupo = Number(estado.registros[eventoDePuerta()]?.capacidad || 0);
   // Lo que hay que cobrarle a cada uno, a la vista de quien está en la puerta.
   const entrada = Number(estado.registros[eventoDePuerta()]?.entrada || 0);
@@ -739,6 +749,7 @@ export function pintarPuerta() {
       <div class="${lleno ? 'lleno' : ''}"><b>${adentro}</b><span>adentro</span></div>
       <div><b>${invs.length}</b><span>registrados</span></div>
       <div><b>${cupo || '—'}</b><span>cupo</span></div>
+      ${extras ? `<div><b>${extras}</b><span>extras</span></div>` : ''}
     </div>
     ${entrada ? `<div class="aviso" style="margin-top:.8rem"><span>🎟</span><div>
       <b>Entrada ${plata(entrada)}</b> por persona. Se cobra acá.</div></div>` : ''}
@@ -750,7 +761,7 @@ export function pintarPuerta() {
       <button class="btn" id="btnCerrarCam" style="flex:0 0 auto" hidden>Cerrar cámara</button>
     </div>
     <button class="btn ancho-full solo-gerente-inline" id="btnAltaInvitado" style="margin-top:.6rem">
-      + Invitado de último momento</button>
+      + Sumar invitado extra</button>
     <video id="visor" hidden muted playsinline></video>
     <div class="resultado-escaneo" id="escaneo"></div>
 

@@ -2469,6 +2469,25 @@ describe('suscripciones a las notificaciones push', () => {
   });
 });
 
+describe('invitados extra que suma la casa', () => {
+  const extra = (x = {}) => ({ eventoId: 'ev-1', nombre: 'Extra del DJ', telefono: '', creadoEn: serverTimestamp(),
+    extra: true, anotadoPor: 'carli', deParteDe: 'del DJ', ...x });
+  it('un administrador suma un extra, marcado, aunque no haya lugar', async () => {
+    await assertSucceeds(setDoc(doc(gerente(), 'invitados/token-extra-de-la-casa-1'), extra()));
+    const { deParteDe, ...sinDeParte } = extra();
+    await assertSucceeds(setDoc(doc(sadmin(), 'invitados/token-extra-de-la-casa-2'), sinDeParte));
+  });
+  it('la barra, la puerta y los de afuera no suman extras', async () => {
+    await assertFails(setDoc(doc(turnoOk(), 'invitados/token-extra-de-la-casa-3'), extra()));
+    await assertFails(setDoc(doc(puerta(), 'invitados/token-extra-de-la-casa-4'), extra()));
+    await assertFails(setDoc(doc(anon(), 'invitados/token-extra-de-la-casa-5'), extra()));
+  });
+  it('la marca de extra es verdadera y los textos tienen tope', async () => {
+    await assertFails(setDoc(doc(gerente(), 'invitados/token-extra-de-la-casa-6'), extra({ extra: false })));
+    await assertFails(setDoc(doc(gerente(), 'invitados/token-extra-de-la-casa-7'), extra({ deParteDe: 'x'.repeat(61) })));
+  });
+});
+
 describe('barra (colección privada)', () => {
   it('cliente anónimo NO puede leer la caja', async () => {
     await assertFails(getDoc(doc(anon(), 'barra/caja')));

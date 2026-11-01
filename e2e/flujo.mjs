@@ -3848,6 +3848,7 @@ await chequear('la casa anota un invitado de último momento, con la lista llena
   await barra.waitForSelector('#dlgInvitado[open]', { timeout: 5000 });
   await barra.fill('#inpInvNombre', 'Cami Última');
   await barra.fill('#inpInvTel', '11 5555 7777');
+  await barra.fill('#inpInvDeParte', 'del DJ');
   await barra.click('#btnGuardarInvitado');
 
   await barra.waitForSelector('#paseNuevo .lienzo-pase .qr', { timeout: 15000 });
@@ -3865,6 +3866,17 @@ await chequear('la casa anota un invitado de último momento, con la lista llena
   if (g.empty) throw new Error('no quedó guardada');
   if (!g.docs[0].data().ingresadoEn) throw new Error('no quedó marcada como entrada');
   if (g.docs[0].id.length < 16) throw new Error('token flojo: ' + g.docs[0].id);
+
+  // Y queda identificada como extra: quién la sumó y de parte de quién, a la
+  // vista en la lista y contada aparte.
+  const d = g.docs[0].data();
+  if (d.extra !== true || !d.anotadoPor || d.deParteDe !== 'del DJ')
+    throw new Error('no quedó marcada como extra: ' + JSON.stringify({ extra: d.extra, por: d.anotadoPor, de: d.deParteDe }));
+  const fila = await barra.locator('.invitado', { hasText: 'Cami Última' }).first().textContent();
+  if (!fila.includes('extra') || !fila.includes('del DJ'))
+    throw new Error('la lista no la muestra como extra: ' + fila.replace(/\s+/g, ' ').slice(0, 200));
+  if (!(await barra.textContent('#puerta .contador-puerta')).includes('extras'))
+    throw new Error('la puerta no cuenta los extras');
 });
 
 await chequear('la casa saca a alguien de la lista y le libera el teléfono', async () => {

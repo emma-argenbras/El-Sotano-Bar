@@ -195,9 +195,10 @@
 </dialog>
 
 <dialog id="dlgInvitado">
-  <h2 style="margin-top:0">Invitado de último momento</h2>
+  <h2 style="margin-top:0">Sumar invitado extra</h2>
   <p style="color:var(--suave);font-size:.9rem;margin-top:0">
-    Mismo formato que el registro por link. Entra aunque la lista esté llena.
+    Entra aunque la lista esté llena o la noche ya haya empezado. Queda marcado
+    como <b>extra</b>, con quién lo sumó.
   </p>
   <label class="campo">
     <span>Nombre y apellido</span>
@@ -211,6 +212,10 @@
              autocomplete="off" placeholder="3454 18 9066">
     </div>
     <small class="pista">Diez números, sin 0 y sin 15. Sin teléfono también se puede.</small>
+  </label>
+  <label class="campo">
+    <span>De parte de quién <small>(opcional)</small></span>
+    <input id="inpInvDeParte" maxlength="60" autocomplete="off" placeholder="Ej: del DJ, prensa, amigo de Juan">
   </label>
   <label class="campo" style="display:flex;align-items:center;gap:.6rem">
     <input type="checkbox" id="inpInvEntra" checked style="width:auto;margin:0">
