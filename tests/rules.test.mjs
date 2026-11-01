@@ -2448,6 +2448,27 @@ describe('mensajes de la casa y confirmación de asistencia', () => {
   });
 });
 
+describe('suscripciones a las notificaciones push', () => {
+  const TOKEN = 'fcm-token-de-prueba-0123456789abcdef:APA91b';
+  it('el pase guarda la dirección del teléfono para una invitación de esa noche', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'invitados/token-quiere-avisos-1'),
+        { eventoId: 'ev-1', nombre: 'Sol', telefono: '1155550003', creadoEn: new Date(), ingresadoEn: null });
+    });
+    const db = sinLoguear();
+    const sub = (extra = {}) => ({ invitadoId: 'token-quiere-avisos-1', eventoId: 'ev-1', creadoEn: serverTimestamp(), ...extra });
+    await assertSucceeds(setDoc(doc(db, `suscripciones/${TOKEN}`), sub()));
+    // Ni para otra noche, ni para una invitación que no existe, ni con otra cosa adentro.
+    await assertFails(setDoc(doc(db, `suscripciones/${TOKEN}-2`), sub({ eventoId: 'otra-noche' })));
+    await assertFails(setDoc(doc(db, `suscripciones/${TOKEN}-3`), sub({ invitadoId: 'no-existe-este' })));
+    await assertFails(setDoc(doc(db, `suscripciones/${TOKEN}-4`), sub({ telefono: '1' })));
+    // Y nadie la lee ni la borra desde afuera.
+    await assertFails(getDoc(doc(db, `suscripciones/${TOKEN}`)));
+    await assertFails(getDoc(doc(gerente(), `suscripciones/${TOKEN}`)));
+    await assertFails(deleteDoc(doc(db, `suscripciones/${TOKEN}`)));
+  });
+});
+
 describe('barra (colección privada)', () => {
   it('cliente anónimo NO puede leer la caja', async () => {
     await assertFails(getDoc(doc(anon(), 'barra/caja')));

@@ -5,13 +5,17 @@ import {
   connectFirestoreEmulator,
   doc,
   getDoc,
+  getMessaging,
+  getToken,
   initializeApp,
+  isSupported,
   initializeFirestore,
   persistentLocalCache,
   persistentSingleTabManager,
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from '/vendor/firebase.js';
@@ -247,7 +251,8 @@ function escucharMensajes(inv) {
 function pintarMensajes() {
   const cont = $('#mensajesCasa');
   const inv = elInvitado;
-  if (!cont || !inv || !mensajes?.length) { if (cont) cont.innerHTML = ''; return; }
+  if (!cont || !inv) return;
+  if (!mensajes?.length) { cont.innerHTML = cajaAvisarme(inv); engancharAvisarme(inv); return; }
   const ultimos = mensajes.slice(0, 3);
   const pide = ultimos[0].pideConfirmar === true && !inv.ingresadoEn;
   const dijo = inv.asistencia === 'si' ? 'Dijiste que venís' : inv.asistencia === 'no' ? 'Dijiste que no venís' : '';
@@ -266,7 +271,9 @@ function pintarMensajes() {
             <button class="btn ${inv.asistencia === 'no' ? 'primario' : ''}" data-asistencia="no" style="flex:1">No voy</button>
           </div>
         </div>` : ''}
-    </div>`;
+    </div>
+    ${cajaAvisarme(inv)}`;
+  engancharAvisarme(inv);
   cont.querySelectorAll('[data-asistencia]').forEach((b) => b.onclick = async () => {
     if (b.dataset.asistencia === inv.asistencia) return;
     cont.querySelectorAll('[data-asistencia]').forEach((x) => { x.disabled = true; });
@@ -278,4 +285,58 @@ function pintarMensajes() {
       alert('No se pudo guardar: ' + (e.code || e.message) + '\n\nProbá de nuevo.');
     }
   });
+}
+
+// ---------- avisame ----------
+// Para que los mensajes de la casa le lleguen con el pase cerrado. Guarda la
+// dirección de este teléfono para notificaciones (la da Firebase Cloud
+// Messaging) atada a su invitación; el envío lo hace la función del servidor.
+//
+// El permiso se pide desde un toque, nunca solo. En iPhone funciona solo con
+// la app instalada en la pantalla de inicio: desde Safari, isSupported() da
+// false y se le explica.
+const PUSH = window.CONFIG_PUSH || {};
+const AVISO_GUARDADO = (inv) => `sotano:push-${inv.id}`;
+let soportaPush = null;
+isSupported().then((si) => { soportaPush = si; pintarMensajes(); }).catch(() => { soportaPush = false; });
+
+function yaAvisa(inv) {
+  try { return localStorage.getItem(AVISO_GUARDADO(inv)) === 'si'; } catch { return false; }
+}
+
+function cajaAvisarme(inv) {
+  if (!PUSH.vapidKey || inv.ingresadoEn || !('Notification' in window && 'serviceWorker' in navigator)) {
+    const iphone = /iPhone|iPad/.test(navigator.userAgent) && !navigator.standalone;
+    return PUSH.vapidKey && iphone && !inv.ingresadoEn ? `<p style="color:var(--suave);font-size:.82rem;margin:.2rem 0 .9rem">
+      📲 En iPhone, para que te avisemos de los mensajes de la casa, instalá la app
+      (Compartir → Agregar a inicio) y abrí tu pase desde el ícono.</p>` : '';
+  }
+  if (soportaPush === false || Notification.permission === 'denied') return '';
+  if (yaAvisa(inv) && Notification.permission === 'granted') {
+    return `<p style="color:var(--verde);font-size:.84rem;margin:.2rem 0 .9rem">🔔 Te avisamos cuando la casa mande un mensaje.</p>`;
+  }
+  return `<button class="btn ancho-full" id="btnAvisarme" style="margin-bottom:.9rem">
+    🔔 Avisame cuando la casa mande un mensaje</button>`;
+}
+
+function engancharAvisarme(inv) {
+  const b = $('#btnAvisarme');
+  if (!b) return;
+  b.onclick = async () => {
+    b.disabled = true; b.textContent = 'Activando…';
+    try {
+      if ((await Notification.requestPermission()) !== 'granted') { pintarMensajes(); return; }
+      const token = await getToken(getMessaging(app), {
+        vapidKey: PUSH.vapidKey,
+        serviceWorkerRegistration: await navigator.serviceWorker.ready,
+      });
+      await setDoc(doc(db, 'suscripciones', token), {
+        invitadoId: inv.id, eventoId: inv.eventoId, creadoEn: serverTimestamp(),
+      });
+      try { localStorage.setItem(AVISO_GUARDADO(inv), 'si'); } catch {}
+    } catch (e) {
+      alert('No se pudo activar el aviso: ' + (e.code || e.message));
+    }
+    pintarMensajes();
+  };
 }

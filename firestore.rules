@@ -747,6 +747,21 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // La dirección de un teléfono para las notificaciones push, atada a una
+    // invitación. La escribe el pase, sin cuenta, y solo para una invitación
+    // que existe y de esa noche. Nadie la lee ni la borra desde afuera: la
+    // usa la función del servidor, con el SDK de administrador.
+    match /suscripciones/{token} {
+      allow create, update: if token.size() >= 20 && token.size() <= 600
+        && request.resource.data.keys().hasOnly(['invitadoId', 'eventoId', 'creadoEn'])
+        && request.resource.data.invitadoId is string
+        && request.resource.data.eventoId is string
+        && request.resource.data.creadoEn == request.time
+        && exists(/databases/$(database)/documents/invitados/$(request.resource.data.invitadoId))
+        && get(/databases/$(database)/documents/invitados/$(request.resource.data.invitadoId))
+             .data.eventoId == request.resource.data.eventoId;
+    }
+
     // ---------- un teléfono, una anotación por noche ----------
     // El candado de la lista. Se crea en el mismo lote que el invitado y el
     // contador: como se puede crear pero nunca pisar, el segundo intento con

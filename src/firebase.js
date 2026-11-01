@@ -25,3 +25,7 @@ export {
   increment,
   serverTimestamp, Timestamp,
 } from 'firebase/firestore';
+// Las notificaciones push del pase: "avisame cuando la casa mande algo".
+// La dirección del teléfono la da Firebase Cloud Messaging; el envío lo hace
+// una función del servidor (functions/), que necesita el plan Blaze.
+export { getMessaging, getToken, isSupported } from 'firebase/messaging';

@@ -11,6 +11,13 @@ window.CONFIG_FIREBASE = {
   appId: "1:778763133855:web:6d04d31272dcf5209093aa"
 };
 
+// Notificaciones push del pase. La clave es la pública de "Certificados push
+// web" (consola de Firebase → Configuración → Cloud Messaging): NO es secreta.
+// Vacía, el pase no ofrece "Avisarme".
+window.CONFIG_PUSH = {
+  vapidKey: '',
+};
+
 // Ajustes del local
 window.CONFIG_BAR = {
   nombre: "Sótano",

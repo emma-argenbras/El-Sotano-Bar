@@ -85,3 +85,32 @@ self.addEventListener('fetch', (e) => {
     }),
   );
 });
+
+// ---------- notificaciones push ----------
+// Las manda la función del servidor (functions/index.js) cuando la casa
+// escribe un mensaje a los anotados de una noche. Llegan aunque el pase esté
+// cerrado. Van como datos, no como "notificación" de FCM, así las dibuja
+// este service worker igual en todos los navegadores.
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = {}; }
+  const datos = d.data || d.notification || d;
+  e.waitUntil(self.registration.showNotification(datos.titulo || datos.title || 'Sótano', {
+    body: datos.texto || datos.body || '',
+    icon: '/iconos/icono-club-192.png',
+    badge: '/iconos/icono-club-192.png',
+    tag: datos.tag || 'sotano-mensaje',
+    renotify: true,
+    data: { link: datos.link || '/pase.html' },
+  }));
+});
+
+// Tocarla abre el pase: si ya hay una pestaña de la app, la trae al frente.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const link = e.notification.data?.link || '/pase.html';
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((ventanas) => {
+    const una = ventanas.find((v) => new URL(v.url).pathname === new URL(link, location.origin).pathname);
+    return una ? una.focus() : clients.openWindow(link);
+  }));
+});

@@ -148,6 +148,19 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: firebase deploy --only hosting --project el-sotano-bar --non-interactive
 
+      # La función que manda las notificaciones push (functions/). Necesita el
+      # plan Blaze y permisos de Cloud Functions en la llave. Va después de la
+      # app y no la frena: si no se puede publicar, la app ya quedó, y el
+      # mensaje de la casa igual se ve en el pase; solo no llega el aviso.
+      - name: Publicar las funciones
+        if: ${{ !inputs.solo_reglas && hashFiles('functions/package.json') != '' }}
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          npm ci --prefix functions
+          firebase deploy --only functions --project el-sotano-bar --non-interactive --force
+
       # Contra la API, no contra la esperanza: que el comando haya terminado
       # sin error no es lo mismo que que el sitio esté sirviendo lo nuevo.
       - name: Verificar qué quedó publicado
